@@ -46,7 +46,6 @@ class EmployeeDesignationMasterPayloadDto {
     edId;
     edName;
     edCode;
-    edIsDefault;
     edRemarks;
     edIsActive;
     edIsDeleted;
@@ -66,13 +65,13 @@ __decorate([
     __metadata("design:type", String)
 ], EmployeeDesignationMasterPayloadDto.prototype, "edName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Made from the name on create when sent blank: the whole name, upper case, letters and ' +
+            'digits only, at most 20, then 2, 3, … when taken (Driver → DRIVER). Never made on an edit.',
+    }),
     __metadata("design:type", Object)
 ], EmployeeDesignationMasterPayloadDto.prototype, "edCode", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)(),
-    __metadata("design:type", Boolean)
-], EmployeeDesignationMasterPayloadDto.prototype, "edIsDefault", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)

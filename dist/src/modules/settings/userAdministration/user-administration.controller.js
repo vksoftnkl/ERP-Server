@@ -50,6 +50,18 @@ let UserAdministrationController = class UserAdministrationController {
             data,
         };
     }
+    async resetPassword(dto) {
+        const data = await this.userAdministrationService.resetPassword(dto);
+        return { success: true, message: 'Password reset', data };
+    }
+    async unlock(usrId) {
+        const data = await this.userAdministrationService.unlock(usrId);
+        return { success: true, message: data.changed ? 'User unlocked' : 'Nothing to unlock', data };
+    }
+    async restore(usrId) {
+        const data = await this.userAdministrationService.restore(usrId);
+        return { success: true, message: 'User restored', data };
+    }
 };
 exports.UserAdministrationController = UserAdministrationController;
 __decorate([
@@ -57,7 +69,9 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update user with menu permissions (by usrId presence)',
-        description: 'Omit usrId to create a new user. Provide usrId to update. ' +
+        description: 'Omit usrId to create a new user (menu 58 Create right). Provide usrId to update (menu 58 Edit ' +
+            "right, the caller's own row included: a user changes their own password through " +
+            'POST /auth/change-password). ' +
             'The menus array fully replaces existing menu assignments: omit the field entirely to leave menus unchanged on update.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: user_administration_response_dto_1.UserAdminSuccessSingleDto }),
@@ -72,7 +86,10 @@ __decorate([
 __decorate([
     (0, common_1.Get)('get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Get user by id including all active menu permissions' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Get user by id including all active menu permissions',
+        description: "The caller's own row needs no right; any other user's needs menu 58 View.",
+    }),
     (0, swagger_1.ApiQuery)({ name: 'usrId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: user_administration_response_dto_1.UserAdminSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
@@ -85,7 +102,10 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete user and all their menu assignments by usrId' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete user and all their menu assignments by usrId',
+        description: 'Needs menu 58 Delete right.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'usrId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: user_administration_response_dto_1.UserAdminSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
@@ -95,12 +115,77 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UserAdministrationController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('reset-password'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({
+        summary: "Reset a user's password (typed or generated); the user must change it at next login",
+        description: 'Menu 58 Edit right (403 USER_RIGHT_EDIT). Send newPassword (at least 4 characters, ' +
+            'spaces at either end not counted: 400 USER_PASSWORD_TOO_SHORT) or generate: true (8 ' +
+            'random characters, answered ONCE in generatedPassword); both = 400 ' +
+            'USER_RESET_PASSWORD_CHOICE. Sets usrMustChangePassword: the next login answers ' +
+            'mustChangePassword: true. 404 USER_NOT_FOUND (no live user), 403 USER_ROLE_RESERVED ' +
+            '(a SUPER ADMIN user, caller not one). The lock and the failed-login count are left as ' +
+            'they are (POST /unlock). The audit row names the administrator, never the password.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: user_administration_response_dto_1.UserAdminSuccessResetPasswordDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [save_user_administration_dto_1.ResetUserPasswordDto]),
+    __metadata("design:returntype", Promise)
+], UserAdministrationController.prototype, "resetPassword", null);
+__decorate([
+    (0, common_1.Post)('unlock'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Unlock a user: clear the lock and the failed-login count',
+        description: 'Menu 58 Edit right (403 USER_RIGHT_EDIT). Clears usrIsLocked, usrLockedOn, usrLockedBy ' +
+            'and usrFailedLoginCount; one audit row. Nothing to clear = changed: false, no row. ' +
+            '404 USER_NOT_FOUND (no live user), 403 USER_ROLE_RESERVED (a SUPER ADMIN user).',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'usrId', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiOkResponse)({ type: user_administration_response_dto_1.UserAdminSuccessUnlockDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
+    __param(0, (0, common_1.Query)('usrId', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UserAdministrationController.prototype, "unlock", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a deleted user (it comes back inactive, with the rights the delete removed)',
+        description: 'Menu 58 Delete right (403 USER_RIGHT_DELETE). The user comes back INACTIVE, with the ' +
+            'menu rights its delete removed (menuCount; rights an earlier save removed, and rows of a ' +
+            'menu no longer active, stay removed). 404 USER_NOT_FOUND, 409 ' +
+            'USER_NOT_DELETED, 409 USER_RESTORE_LOGIN_TAKEN (a live user now has the login name; ' +
+            'detail loginName), 403 USER_ROLE_RESERVED (a SUPER ADMIN user). One audit row.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'usrId', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiOkResponse)({ type: user_administration_response_dto_1.UserAdminSuccessRestoreDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: user_administration_response_dto_1.UserAdminErrorResponseDto }),
+    __param(0, (0, common_1.Query)('usrId', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UserAdministrationController.prototype, "restore", null);
 exports.UserAdministrationController = UserAdministrationController = __decorate([
     (0, swagger_1.ApiTags)('User Administration'),
     (0, swagger_1.ApiBearerAuth)('access-token'),
     (0, swagger_1.ApiForbiddenResponse)({
         type: user_administration_response_dto_1.UserAdminErrorResponseDto,
-        description: 'USER_ROLE_RESERVED — only a SUPER ADMIN makes a user SUPER ADMIN, or changes / deletes one',
+        description: 'USER_RIGHT_CREATE / USER_RIGHT_EDIT / USER_RIGHT_DELETE / USER_RIGHT_VIEW (field userId) — the ' +
+            'caller lacks that right on Users & Rights (menu 58). ' +
+            'USER_ROLE_RESERVED — only a SUPER ADMIN makes a user SUPER ADMIN, or changes / deletes one',
     }),
     (0, cache_manager_1.CacheTTL)(1),
     (0, common_1.Controller)('user-administration'),

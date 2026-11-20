@@ -31,6 +31,7 @@ const sale_order_tx_options_1 = require("./sale-order-tx.options");
 const sale_order_api_types_1 = require("./types/sale-order-api.types");
 const ORDER_STATUS = { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' };
 const SO_VOUCHER_TYPE = 4;
+const PHONE_CONFIRM_REMARK = 'Confirmed from the phone';
 const RESERVING_STATUSES = [ORDER_STATUS.CONFIRMED, 'PARTIAL'];
 let SaleOrderLifecycleService = class SaleOrderLifecycleService {
     prisma;
@@ -180,7 +181,8 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
         }
         return { held, warnings };
     }
-    async postInTx(tx, dto, now) {
+    async postInTx(tx, dto, now, options = {}) {
+        const fromPhone = options.origin === 'PHONE';
         const order = await this.lock(tx, dto);
         if (RESERVING_STATUSES.includes(order.soStatus)) {
             return { soStatus: order.soStatus, warnings: [] };
@@ -190,7 +192,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
             (0, sales_errors_1.throwSalesLocked)(`This order is ${order.soStatus}`, posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId');
         }
         const ctx = await this.salesContext.resolve({ companyId: order.soCompanyId, branchId: order.soBranchId }, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER, tx);
-        if (!ctx.rights.post) {
+        if (!ctx.rights.post && options.skipPostRight !== true) {
             (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
         }
         await (0, sales_guards_1.assertAccYearWritable)(tx, order.soCompanyId, order.soAccYear, 'soAccYear');
@@ -225,7 +227,10 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                 ...this.orders.orderAmountsOf(lines),
             },
         });
-        await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.POSTED, order.soStatus, ORDER_STATUS.CONFIRMED, ctx.actor, now, warnings.length ? `${warnings.length} line(s) short on reservation` : null);
+        const shortNote = warnings.length ? `${warnings.length} line(s) short on reservation` : null;
+        await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.POSTED, order.soStatus, ORDER_STATUS.CONFIRMED, ctx.actor, now, fromPhone
+            ? [PHONE_CONFIRM_REMARK, shortNote].filter((s) => s !== null).join('; ')
+            : shortNote);
         await this.audit.logEntityChange({
             action: 'approve',
             tableName: 'sale_order',
@@ -239,7 +244,7 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
                 reservations: [...reserved.values()],
             },
             userId: ctx.actor,
-            notes: 'Order confirmed',
+            notes: fromPhone ? 'Order confirmed from the phone' : 'Order confirmed',
         }, tx);
         return { soStatus: ORDER_STATUS.CONFIRMED, warnings, confirmedNow: true };
     }

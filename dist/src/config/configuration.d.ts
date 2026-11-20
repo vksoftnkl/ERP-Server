@@ -14,7 +14,7 @@ declare const _default: () => {
             keyPath: string;
             passphrase: string;
         };
-        mobileHttpPort: number;
+        phoneHttpEnabled: boolean;
     };
     database: {
         url: string;

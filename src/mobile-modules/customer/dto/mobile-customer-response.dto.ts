@@ -39,6 +39,28 @@ export class MobileCustomerListItemDto {
 
   @ApiProperty({ enum: BALANCE_STATUSES, nullable: true })
   balanceStatus!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: '12350.00',
+    description:
+      "What the customer's unpaid bills still owe today, two decimals, never negative: the Party " +
+      'Outstanding report\'s "owed" (Receivable side, login company, all branches). Unlike the ' +
+      'balance, credits the customer holds do not lower it. null when the balance is null.',
+  })
+  outstanding!: string | null;
+
+  @ApiProperty({ nullable: true, type: Number, example: 3, description: 'Unpaid DR bills' })
+  outstandingBills!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'date',
+    description: 'Bill date of the oldest unpaid bill; null when none',
+  })
+  oldestBillDate!: string | null;
 }
 
 export class MobileCustomerCountsDto {
@@ -61,6 +83,13 @@ export class MobileCustomerListPayloadDto {
   @ApiProperty() hasMore!: boolean;
   @ApiProperty({ nullable: true, type: String, format: 'date' }) balanceAsOn!: string | null;
   @ApiProperty({ nullable: true, type: String, example: '2026-2027' }) accYear!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'uuid',
+    description: 'The company the balances and outstanding are read in (the login company)',
+  })
+  companyId!: string | null;
 }
 
 export class MobileCustomerListSuccessDto {
@@ -75,6 +104,28 @@ export class MobileCustomerDetailDto extends CustomerPayloadDto {
 
   @ApiProperty({ enum: BALANCE_STATUSES, nullable: true })
   balanceStatus!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: '12350.00',
+    description:
+      "What the customer's unpaid bills still owe today, two decimals, never negative: the Party " +
+      'Outstanding report\'s "owed" (Receivable side, login company, all branches). Unlike the ' +
+      'balance, credits the customer holds do not lower it. null when the balance is null.',
+  })
+  outstanding!: string | null;
+
+  @ApiProperty({ nullable: true, type: Number, example: 3, description: 'Unpaid DR bills' })
+  outstandingBills!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'date',
+    description: 'Bill date of the oldest unpaid bill; null when none',
+  })
+  oldestBillDate!: string | null;
 }
 
 export class MobileCustomerDetailSuccessDto {
@@ -89,6 +140,13 @@ class MobileOptionDto {
 }
 
 class MobileAreaOptionDto extends MobileOptionDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      "area_master.arm_city_id (since 2026-11-19): the phone's offer engine matches CITY " +
+      "scheme rows through the customer's beat",
+  })
+  cityId!: string;
   @ApiPropertyOptional({ nullable: true, type: String }) cityName!: string | null;
 }
 

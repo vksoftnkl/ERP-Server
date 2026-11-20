@@ -20,5 +20,8 @@ var BranchMasterErrorCode;
     BranchMasterErrorCode["GSTIN_INVALID"] = "BRANCH_GSTIN_INVALID";
     BranchMasterErrorCode["GSTIN_STATE_MISMATCH"] = "BRANCH_GSTIN_STATE_MISMATCH";
     BranchMasterErrorCode["PAN_GSTIN_MISMATCH"] = "BRANCH_PAN_GSTIN_MISMATCH";
+    BranchMasterErrorCode["ADDRESS_REQUIRED"] = "BRANCH_ADDRESS_REQUIRED";
+    BranchMasterErrorCode["PIN_INVALID"] = "BRANCH_PIN_INVALID";
+    BranchMasterErrorCode["BILL_PREFIX_INVALID"] = "BRANCH_BILL_PREFIX_INVALID";
 })(BranchMasterErrorCode || (exports.BranchMasterErrorCode = BranchMasterErrorCode = {}));
 //# sourceMappingURL=branch-master-error-codes.js.map

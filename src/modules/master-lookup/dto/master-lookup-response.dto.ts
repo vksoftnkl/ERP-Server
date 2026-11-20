@@ -208,10 +208,25 @@ export class CustomerDetailDto {
   state_code!: string;
   @ApiProperty({ example: 'Tamil Nadu' })
   state_name!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      "cus_group_id: the customer's group, for CUSTOMER_GROUP promotion rules (since 2026-11-19)",
+  })
+  cust_group_id!: string;
   @ApiProperty({ format: 'uuid' })
   area_id!: string;
   @ApiProperty({ nullable: true, example: 'Gandhipuram' })
   area_name!: string | null;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The area's arm_city_id, for CITY promotion rules (since 2026-11-19); a customer has no " +
+      'city of its own',
+  })
+  city_id!: string | null;
   @ApiProperty({ nullable: true, example: 12 })
   distance_km!: number | null;
   @ApiProperty({ nullable: true })

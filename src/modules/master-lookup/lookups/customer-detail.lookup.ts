@@ -36,6 +36,10 @@ import { lastBilledOf } from '../../../common/party/party-billed';
  *    columns (debit_days → cus_credit_days, debit_limit → cus_credit_amt_limit,
  *    debit_allowed → cus_credit_allowed).
  *  - loyalty points (legacy LOYCRD.cust_points) are not modelled yet → null.
+ *  - cust_group_id (cus_group_id) and city_id (the area's arm_city_id) are not
+ *    legacy fields: added 2026-11-19 (plan-item-schemes-offers D2) so the
+ *    desktop's promotion context can match CUSTOMER_GROUP and CITY party rules.
+ *    A customer carries no city of its own; the rules reach it through the area.
  *  - the legacy `cust_pan` literal is derived from PAN presence.
  */
 export class CustomerDetailLookup {
@@ -46,7 +50,7 @@ export class CustomerDetailLookup {
     // Customer + its area (legacy INNER JOIN area_master for distance_km).
     const customer = await this.prisma.customer.findFirst({
       where: { cusId: cus_id, cusIsDeleted: false },
-      include: { area: { select: { armName: true, armDistanceKm: true } } },
+      include: { area: { select: { armName: true, armDistanceKm: true, armCityId: true } } },
     });
     if (!customer) {
       throwMasterNotFound<MasterErrorDetail>(
@@ -111,8 +115,10 @@ export class CustomerDetailLookup {
       gst_type: customer.cusGstType,
       state_code: customer.cusStateCode,
       state_name: customer.cusStateName,
+      cust_group_id: customer.cusGroupId,
       area_id: customer.cusAreaId,
       area_name: customer.area?.armName ?? null,
+      city_id: customer.area?.armCityId ?? null,
       distance_km: customer.area?.armDistanceKm ?? null,
       cust_phone1: customer.cusPhone1,
       // Legacy debit_* credit-control fields → current cus_credit_* columns.

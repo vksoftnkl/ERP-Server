@@ -12,7 +12,8 @@ import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder
 import { ItemMasterUpdateService } from './item-master-update.service';
 import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
 import { assertNoLiveReferences, type LiveReference } from '../utils/master-tree.helper';
-import { refuseBaseUnitChange } from '../utils/item-base-unit.helper';
+import { baseRowRePick, refuseBaseUnitChange } from '../utils/item-base-unit.helper';
+import { rowUnitLock, unitRowsInUse } from '../utils/item-unit-in-use.helper';
 import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import type { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
@@ -220,7 +221,10 @@ export class ItemsMasterService {
   async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
     return this.prisma.$transaction(async (tx) => {
       const saved = dto.item_id
-        ? await this.updateItem(dto, tx, { childrenFollow: true })
+        ? await this.updateItem(dto, tx, {
+            childrenFollow: true,
+            unitConversions: dto.unit_conversions,
+          })
         : { payload: await this.createItem(dto, tx), before: null };
       const itemId = saved.payload.item_id;
       const children = await this.itemMasterUpdateService.syncChildren(itemId, dto, tx);
@@ -268,14 +272,16 @@ export class ItemsMasterService {
    */
   async getComposite(itemId: string): Promise<ItemCompositePayload> {
     const item = await this.getById(itemId);
-    const [unit_conversions, prices, scheduled_prices, ean_codes, reorders] = await Promise.all([
-      this.itemUnitConversionService.findByItemId(itemId),
-      this.itemsPriceMasterService.findByItemId(itemId),
-      this.itemsPriceMasterService.findScheduledByItemId(itemId),
-      this.itemsEanCodeMasterService.findByItemId(itemId),
-      this.itemsReorderMasterService.findByItemId(itemId),
-    ]);
-    return this.resolveCompositeNames({
+    const [unit_conversions, prices, scheduled_prices, ean_codes, reorders, inUse] =
+      await Promise.all([
+        this.itemUnitConversionService.findByItemId(itemId),
+        this.itemsPriceMasterService.findByItemId(itemId),
+        this.itemsPriceMasterService.findScheduledByItemId(itemId),
+        this.itemsEanCodeMasterService.findByItemId(itemId),
+        this.itemsReorderMasterService.findByItemId(itemId),
+        unitRowsInUse(this.prisma, itemId),
+      ]);
+    const named = await this.resolveCompositeNames({
       item,
       unit_conversions,
       prices,
@@ -283,6 +289,17 @@ export class ItemsMasterService {
       ean_codes,
       reorders,
     });
+    // Item master review 11-20 Q2 — what the card may still re-pick: the base
+    // row's unit only while nothing of the item is used, any other row's while
+    // that row is unused (ItemMasterUpdateService.refuseUsedUnitRePicks).
+    return {
+      ...named,
+      item: { ...named.item, item_units_in_use: inUse.itemUsed },
+      unit_conversions: named.unit_conversions.map((row) => {
+        const lock = rowUnitLock(inUse, row);
+        return { ...row, iuc_in_use: lock.locked, iuc_used_by: [...lock.usedBy] };
+      }),
+    };
   }
   /**
    * Enriches the composite payload with human-readable names for every
@@ -1102,7 +1119,11 @@ export class ItemsMasterService {
   private async updateItem(
     saveItemDto: SaveItemDto,
     tx?: Prisma.TransactionClient,
-    options: { childrenFollow: boolean } = { childrenFollow: false },
+    options: {
+      childrenFollow: boolean;
+      /** The composite save's rows, synced right after the item (saveComposite). */
+      unitConversions?: SaveItemCompositeDto['unit_conversions'];
+    } = { childrenFollow: false },
   ): Promise<{ payload: ItemPayload; before: ItemMaster }> {
     const itemId = saveItemDto.item_id!;
     const itemNameEn = saveItemDto.item_name_en?.trim();
@@ -1171,14 +1192,21 @@ export class ItemsMasterService {
       );
       if (base) {
         const sent = saveItemDto.item_base_unit_id;
-        if (sent && sent !== base.iuc_unit_id) {
+        // Item master review 11-20 Q2: the composite save may re-pick the base
+        // row's unit on the same row; the header follows it. Whether the item
+        // is unused enough for that is decided by the unit sync right after
+        // (409 ITEM_UNIT_IN_USE), in this same transaction.
+        const rePicked = options.childrenFollow
+          ? baseRowRePick(base, options.unitConversions)
+          : null;
+        if (sent && sent !== base.iuc_unit_id && sent !== rePicked) {
           refuseBaseUnitChange(
             ItemErrorCode.BASE_UNIT_LOCKED,
             'item_base_unit_id',
             `item_base_unit_id stays ${base.iuc_unit_id}, the unit of the item's base row.`,
           );
         }
-        data.itemBaseUnitId = base.iuc_unit_id;
+        data.itemBaseUnitId = rePicked ?? base.iuc_unit_id;
       } else if (saveItemDto.item_base_unit_id !== undefined) {
         data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;
       }
@@ -1229,6 +1257,10 @@ export class ItemsMasterService {
           userId:
             payload.item_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Item updated',
+          // Item master review 11-20 (Q12 step 1): a card save that changed only
+          // unit / price / barcode / reorder rows wrote an empty "Item updated"
+          // row each time; those rows have their own history lines.
+          skipWhenUnchanged: true,
         },
         client,
       );

@@ -42,6 +42,9 @@ class MobileCustomerListItemDto {
     cusCreditAmtLimit;
     balance;
     balanceStatus;
+    outstanding;
+    outstandingBills;
+    oldestBillDate;
 }
 exports.MobileCustomerListItemDto = MobileCustomerListItemDto;
 __decorate([
@@ -105,6 +108,30 @@ __decorate([
     (0, swagger_1.ApiProperty)({ enum: BALANCE_STATUSES, nullable: true }),
     __metadata("design:type", Object)
 ], MobileCustomerListItemDto.prototype, "balanceStatus", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        type: String,
+        example: '12350.00',
+        description: "What the customer's unpaid bills still owe today, two decimals, never negative: the Party " +
+            'Outstanding report\'s "owed" (Receivable side, login company, all branches). Unlike the ' +
+            'balance, credits the customer holds do not lower it. null when the balance is null.',
+    }),
+    __metadata("design:type", Object)
+], MobileCustomerListItemDto.prototype, "outstanding", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, type: Number, example: 3, description: 'Unpaid DR bills' }),
+    __metadata("design:type", Object)
+], MobileCustomerListItemDto.prototype, "outstandingBills", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        type: String,
+        format: 'date',
+        description: 'Bill date of the oldest unpaid bill; null when none',
+    }),
+    __metadata("design:type", Object)
+], MobileCustomerListItemDto.prototype, "oldestBillDate", void 0);
 class MobileCustomerCountsDto {
     all;
     outstanding;
@@ -137,6 +164,7 @@ class MobileCustomerListPayloadDto {
     hasMore;
     balanceAsOn;
     accYear;
+    companyId;
 }
 exports.MobileCustomerListPayloadDto = MobileCustomerListPayloadDto;
 __decorate([
@@ -174,6 +202,15 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, type: String, example: '2026-2027' }),
     __metadata("design:type", Object)
 ], MobileCustomerListPayloadDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        type: String,
+        format: 'uuid',
+        description: 'The company the balances and outstanding are read in (the login company)',
+    }),
+    __metadata("design:type", Object)
+], MobileCustomerListPayloadDto.prototype, "companyId", void 0);
 class MobileCustomerListSuccessDto {
     success;
     message;
@@ -195,6 +232,9 @@ __decorate([
 class MobileCustomerDetailDto extends customer_response_dto_1.CustomerPayloadDto {
     balance;
     balanceStatus;
+    outstanding;
+    outstandingBills;
+    oldestBillDate;
 }
 exports.MobileCustomerDetailDto = MobileCustomerDetailDto;
 __decorate([
@@ -205,6 +245,30 @@ __decorate([
     (0, swagger_1.ApiProperty)({ enum: BALANCE_STATUSES, nullable: true }),
     __metadata("design:type", Object)
 ], MobileCustomerDetailDto.prototype, "balanceStatus", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        type: String,
+        example: '12350.00',
+        description: "What the customer's unpaid bills still owe today, two decimals, never negative: the Party " +
+            'Outstanding report\'s "owed" (Receivable side, login company, all branches). Unlike the ' +
+            'balance, credits the customer holds do not lower it. null when the balance is null.',
+    }),
+    __metadata("design:type", Object)
+], MobileCustomerDetailDto.prototype, "outstanding", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, type: Number, example: 3, description: 'Unpaid DR bills' }),
+    __metadata("design:type", Object)
+], MobileCustomerDetailDto.prototype, "outstandingBills", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        type: String,
+        format: 'date',
+        description: 'Bill date of the oldest unpaid bill; null when none',
+    }),
+    __metadata("design:type", Object)
+], MobileCustomerDetailDto.prototype, "oldestBillDate", void 0);
 class MobileCustomerDetailSuccessDto {
     success;
     message;
@@ -236,8 +300,17 @@ __decorate([
     __metadata("design:type", String)
 ], MobileOptionDto.prototype, "name", void 0);
 class MobileAreaOptionDto extends MobileOptionDto {
+    cityId;
     cityName;
 }
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: "area_master.arm_city_id (since 2026-11-19): the phone's offer engine matches CITY " +
+            "scheme rows through the customer's beat",
+    }),
+    __metadata("design:type", String)
+], MobileAreaOptionDto.prototype, "cityId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: String }),
     __metadata("design:type", Object)

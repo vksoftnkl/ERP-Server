@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveUserAdministrationDto = exports.SaveUserMenuDto = void 0;
+exports.ResetUserPasswordDto = exports.SaveUserAdministrationDto = exports.SaveUserMenuDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -147,6 +147,7 @@ class SaveUserAdministrationDto {
     usrEditDate;
     usrEditEntry;
     usrEditRate;
+    usrMaxDiscPerc;
     usrDesktopLogin;
     usrWebLogin;
     usrMobileLogin;
@@ -231,7 +232,10 @@ __decorate([
 ], SaveUserAdministrationDto.prototype, "usrLanguage", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: 'Plain-text password. Required on create; optional on update (omit to keep existing).',
+        description: 'Plain-text password, at least 4 characters (spaces at either end not counted; ' +
+            '400 USER_PASSWORD_TOO_SHORT). Required on create; optional on update (omit to keep ' +
+            'the existing one). On an update it is an administrator reset (review step 6, U8): the ' +
+            'user must change it at the next login unless usrMustChangePassword: false is sent.',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
@@ -280,10 +284,26 @@ __decorate([
     __metadata("design:type", Boolean)
 ], SaveUserAdministrationDto.prototype, "usrEditEntry", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Screen label "Allow rate / discount change" (review step 6). Off: on a Sale Bill this ' +
+            'user may not change a line rate from the one the item gives, nor give any discount. ' +
+            'On: may, up to usrMaxDiscPerc.',
+    }),
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveUserAdministrationDto.prototype, "usrEditRate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        example: '12.50',
+        description: 'Max discount % on a Sale Bill (each line, and the bill discount): 0 to 100, at most 2 ' +
+            'decimals kept. null or "" = no limit. Omit the key to keep the stored value. ' +
+            'A string or a number. 400 USER_MAX_DISC_INVALID otherwise.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Object)
+], SaveUserAdministrationDto.prototype, "usrMaxDiscPerc", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, dtoDecorators_1.OptionalBoolean)(),
@@ -321,4 +341,34 @@ __decorate([
     (0, class_transformer_1.Type)(() => SaveUserMenuDto),
     __metadata("design:type", Array)
 ], SaveUserAdministrationDto.prototype, "menus", void 0);
+class ResetUserPasswordDto {
+    usrId;
+    newPassword;
+    generate;
+}
+exports.ResetUserPasswordDto = ResetUserPasswordDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The user whose password is reset' }),
+    (0, class_validator_1.IsUUID)('all'),
+    __metadata("design:type", String)
+], ResetUserPasswordDto.prototype, "usrId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'The password the administrator typed: at least 4 characters, spaces at either end not ' +
+            'counted (400 USER_PASSWORD_TOO_SHORT). Leave it out (or null / "") with generate: true.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", Object)
+], ResetUserPasswordDto.prototype, "newPassword", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'true = the server makes a random 8-character password and answers it ONCE, in ' +
+            'generatedPassword. Sent together with a newPassword: 400 USER_RESET_PASSWORD_CHOICE.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], ResetUserPasswordDto.prototype, "generate", void 0);
 //# sourceMappingURL=save-user-administration.dto.js.map

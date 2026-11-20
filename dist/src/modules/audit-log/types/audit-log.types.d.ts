@@ -47,4 +47,5 @@ export type LogEntityChangeInput = {
     userId?: string | number | null;
     branchId?: string | null;
     notes?: string | null;
+    skipWhenUnchanged?: boolean;
 };

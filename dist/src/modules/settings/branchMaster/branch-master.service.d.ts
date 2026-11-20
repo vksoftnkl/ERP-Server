@@ -8,6 +8,33 @@ import { RequestContextService } from '../../../common/request-context/request-c
 import { GodownsMasterService } from "../../Inventory/godowns-master/godowns-master.service";
 export declare const MAIN_BRANCH_NAME = "Main Branch";
 export declare const MAIN_BRANCH_TYPE = "HEAD OFFICE";
+declare function companyBranchFields(company: Company): {
+    brAddr1: string | null;
+    brAddr2: string | null;
+    brAddr3: string | null;
+    brCity: string | null;
+    brDistrict: string | null;
+    brState: string | null;
+    brStateCode: string;
+    brPin: number | null;
+    brCountry: string;
+    brRegionAddr1: string | null;
+    brRegionAddr2: string | null;
+    brRegionAddr3: string | null;
+    brRegionCity: string | null;
+    brRegionDistrict: string | null;
+    brRegionState: string | null;
+    brRegionCountry: string | null;
+    brTel: string | null;
+    brPhone: string | null;
+    brMail: string | null;
+    brGstinNo: string | null;
+    brGstRegType: string | null;
+    brPanNo: string | null;
+};
+type CompanyBranchFields = ReturnType<typeof companyBranchFields>;
+type CompanyBranchField = keyof CompanyBranchFields;
+export declare function companyChangesToCopy(before: Company, after: Company): CompanyBranchField[];
 type BranchMasterWriteClient = SettingsWriteClient;
 export declare class BranchMasterService {
     private readonly prisma;
@@ -26,11 +53,14 @@ export declare class BranchMasterService {
         deleted: false;
     }>;
     seedMainBranch(tx: BranchMasterWriteClient, company: Company, actor: string, now: Date): Promise<SeededMainBranch>;
+    syncOnlyBranch(tx: BranchMasterWriteClient, before: Company, after: Company, actor: string, now: Date): Promise<string | null>;
+    private nextMainBranchCode;
     private createBranch;
     private updateBranch;
     private resolveRelatedNames;
     private ensureCompanyExists;
     private ensureNameIsUnique;
+    private lockCodeSeriesFor;
     private ensureCodeIsUnique;
     private clearDefaultBranch;
     private applyOptionalFields;
@@ -41,6 +71,7 @@ export declare class BranchMasterService {
     private assertDeletable;
     private assertMayChangeCompany;
     private inUse;
+    private assertRegistrationRules;
     private assertGstin;
     private throwNotFound;
     private throwBadRequest;

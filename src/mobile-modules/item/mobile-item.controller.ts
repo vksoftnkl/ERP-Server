@@ -47,9 +47,12 @@ export class MobileItemController {
   @Get('options')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Pick lists for the order screen: companies, item groups, brands, price levels',
+    summary:
+      'Pick lists for the order screen: companies, their branches, item groups, brands, price levels',
     description:
-      'Active, live rows only. Price levels leave out Cost (7): the phone carries no cost price.',
+      'Active, live rows only. branches = the active branches of the listed companies, per ' +
+      'company in that order, then by name (for the phone, which reaches only /mobile/* over ' +
+      'plain HTTP). Price levels leave out Cost (7): the phone carries no cost price.',
   })
   @ApiOkResponse({ type: MobileItemOptionsSuccessDto })
   async options(): Promise<MobileSuccess<MobileItemOptions>> {

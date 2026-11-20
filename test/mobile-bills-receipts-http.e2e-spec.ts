@@ -304,12 +304,17 @@ describe('/mobile bills and receipts (e2e, live DB)', () => {
       .get(`${API}/mobile/receipts/options`)
       .query({ companyId: COMPANY, deviceUid: HARNESS_UID });
     expect(res.status).toBe(200);
-    const codes = res.body.data.tenders.map((t: { typeCode: string }) => t.typeCode);
-    expect(codes.length).toBeGreaterThan(0);
-    for (const code of codes) {
-      expect(['CASH', 'CARD', 'UPI', 'WALLET', 'CHEQUE', 'BANK']).toContain(code);
+    const tenders = res.body.data.tenders as { typeCode: string; requiresBank: boolean }[];
+    expect(tenders.length).toBeGreaterThan(0);
+    // The desktop Receipt screen's exclusions (never a credit, loyalty, temp-credit or adjust tender).
+    for (const t of tenders) {
+      expect(['CREDIT', 'LOYALTY', 'TEMP_CR', 'RRN', 'ADJUST']).not.toContain(t.typeCode);
+      expect(t.requiresBank).toBe(t.typeCode === 'CHEQUE');
     }
     expect(res.body.data.branchId).toBe(BRANCH);
+    expect(Object.keys(res.body.data.settings).sort()).toEqual(
+      ['pdcPostingMode', 'ppdEnabled', 'receiptBillSort', 'salesmanMandatory'].sort(),
+    );
   });
 
   // ── bills ───────────────────────────────────────────────────────────────
@@ -476,8 +481,14 @@ describe('/mobile bills and receipts (e2e, live DB)', () => {
         'dueDate',
         'partyId',
         'pendingAmount',
+        'kind',
+        'paidAmount',
+        'pdcHeld',
+        'ppdSchedule',
       ].sort(),
     );
+    // Without withCredits the list is bills only, as older phones read it.
+    expect(new Set(all.map((b) => b.kind))).toEqual(new Set(['BILL']));
     // Customers only: every party is a live sales.customers row, and the
     // company's open receivables of other parties are left out of total.
     const parties = [...new Set(all.map((b) => b.partyId as string))];
@@ -630,6 +641,127 @@ describe('/mobile bills and receipts (e2e, live DB)', () => {
     expect(Number(adv.amt)).toBe(46);
   }, 90_000);
 
+  it("the phone's own settlement: a bill paid since Sync is dropped and reported, the money moves on; resend, status, credits, me", async () => {
+    const bank = tenderOf('BANK');
+    // A third bill, open; billSoon was settled by an earlier receipt.
+    const fresh = await authed(
+      'mobile/bills/create',
+      billBody(randomUUID(), { qty: 1, dueInDays: 40, usrRefno: `A1B2/2627/${tag}-3` }),
+    );
+    if (fresh.status !== 201) throw new Error(JSON.stringify(fresh.body));
+    keepBill(fresh.body.data);
+    const ablOf = async (sbId: string) =>
+      (
+        await prisma.$queryRaw<{ id: string; year: string }[]>`
+          SELECT abl_id::text AS id, btrim(abl_acc_year::text) AS year FROM accounts.acc_bill_balance
+           WHERE abl_src_doc_id = ${sbId}::uuid AND abl_is_deleted = false`
+      )[0];
+    const soon = await ablOf(billSoon.sbId);
+    const third = await ablOf(fresh.body.data.sbId);
+    const uuid = randomUUID();
+    // The phone, from an older Sync: billSoon 118 and the third bill 118.
+    const body = receiptBody(
+      uuid,
+      [
+        {
+          tdTenderId: bank.tenderId,
+          tdTenderTypeId: bank.typeId,
+          tdAmount: 236,
+          tdRefNo: `ZTP${tag}`,
+        },
+      ],
+      {
+        allocations: [
+          { billId: soon.id, billAccYear: soon.year, amount: 118 },
+          { billId: third.id, billAccYear: third.year, amount: 118 },
+        ],
+        onAccount: 0,
+        avhDocRefno: `ZT-SHOP-${tag}`,
+      },
+    );
+    const res = await authed('mobile/receipts/create', body);
+    if (res.status !== 201) throw new Error(JSON.stringify(res.body));
+    const d = res.body.data;
+    keepReceipt(d);
+    expect(d.allocations).toEqual([
+      expect.objectContaining({
+        billId: third.id,
+        amount: '118.00',
+        discount: '0.00',
+        roundoff: '0.00',
+        pendingAmount: '0.00',
+      }),
+    ]);
+    expect(d.onAccount).toBe('118.00');
+    expect(d.adjusted).toEqual([
+      {
+        billId: soon.id,
+        billAccYear: soon.year,
+        docRefno: billSoon.sbBillRefno,
+        planned: '118.00',
+        applied: '0.00',
+        reason: 'BILL_SETTLED',
+      },
+    ]);
+    expect(d).toEqual(expect.objectContaining({ creditsApplied: [], pdcVouchers: [] }));
+    // The resend answers the same, read back from the database.
+    const again = await authed('mobile/receipts/create', body);
+    expect(again.status).toBe(201);
+    expect(again.body.data).toEqual({ ...d, duplicate: true });
+    // The shop's number is taken now.
+    const dup = await authed('mobile/receipts/create', { ...body, avhClientUuid: randomUUID() });
+    expect(dup.status).toBe(409);
+    expect(codesOf(dup)).toEqual(['VCH_DUP_DOC_REFNO']);
+
+    // The held credits come with withCredits.
+    const credits: Record<string, any>[] = [];
+    for (let page = 1; ; page += 1) {
+      const r = await http()
+        .get(`${API}/mobile/receipts/open-bills`)
+        .query({ companyId: COMPANY, page, pageSize: 500, withCredits: 'true' })
+        .set('Authorization', BEARER);
+      expect(r.status).toBe(200);
+      credits.push(
+        ...r.body.data.items.filter((b: { partyId: string }) => b.partyId === customerId),
+      );
+      if (!r.body.data.hasMore) break;
+    }
+    expect(credits.map((c) => [c.kind, c.pendingAmount])).toEqual(
+      expect.arrayContaining([['ADVANCE', '118.00']]),
+    );
+
+    // This phone's receipts, changed since a moment ago.
+    const status = await http()
+      .get(`${API}/mobile/receipts/status`)
+      .query({
+        companyId: COMPANY,
+        deviceUid: HARNESS_UID,
+        since: new Date(Date.now() - 600_000).toISOString(),
+      })
+      .set('Authorization', BEARER);
+    expect(status.status).toBe(200);
+    expect(status.body.data.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          avhClientUuid: uuid,
+          avhVoucherId: d.avhVoucherId,
+          avhVoucherStatus: 'POSTED',
+          cancelledOn: null,
+          pdc: [],
+        }),
+      ]),
+    );
+    expect(typeof status.body.data.asOf).toBe('string');
+
+    const me = await http().get(`${API}/mobile/me`).set('Authorization', BEARER);
+    expect(me.status).toBe(200);
+    expect(me.body.data.userId).toBe(ACTOR);
+    expect(Object.keys(me.body.data.rights).sort()).toEqual(['11', '12', '99']);
+    expect(me.body.data.rights['99']).toEqual(
+      expect.objectContaining({ view: expect.any(Boolean), post: true }),
+    );
+  }, 120_000);
+
   it('refusals: no Post right on menu 99, server-owned keys, no token', async () => {
     const bank = tenderOf('BANK');
     const body = receiptBody(
@@ -656,9 +788,11 @@ describe('/mobile bills and receipts (e2e, live DB)', () => {
 
     const whitelist = await authed('mobile/receipts/create', {
       ...body,
-      onAccount: 0,
       post: true,
-      allocations: [],
+      otherLines: [],
+      allocations: [
+        { billId: billLate.sbId, billAccYear: billLate.sbAccYear, amount: 1, writeoff: 1 },
+      ],
     });
     expect(whitelist.status).toBe(400);
     expect(codesOf(whitelist)).toEqual([

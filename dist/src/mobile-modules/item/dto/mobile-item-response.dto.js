@@ -28,6 +28,28 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, type: String, description: 'comp_city' }),
     __metadata("design:type", Object)
 ], MobileCompanyOptionDto.prototype, "place", void 0);
+class MobileBranchOptionDto {
+    id;
+    name;
+    companyId;
+    isDefault;
+}
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: "br_id: what an order's soBranchId takes" }),
+    __metadata("design:type", String)
+], MobileBranchOptionDto.prototype, "id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Head Office' }),
+    __metadata("design:type", String)
+], MobileBranchOptionDto.prototype, "name", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'br_comp_id: one of the ids in companies' }),
+    __metadata("design:type", String)
+], MobileBranchOptionDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: "br_is_default: the company's default branch" }),
+    __metadata("design:type", Boolean)
+], MobileBranchOptionDto.prototype, "isDefault", void 0);
 class MobileSortedOptionDto {
     id;
     name;
@@ -63,6 +85,7 @@ __decorate([
 ], MobileItemPriceLevelOptionDto.prototype, "name", void 0);
 class MobileItemOptionsDto {
     companies;
+    branches;
     itemGroups;
     brands;
     priceLevels;
@@ -72,6 +95,16 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: [MobileCompanyOptionDto] }),
     __metadata("design:type", Array)
 ], MobileItemOptionsDto.prototype, "companies", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: [MobileBranchOptionDto],
+        description: 'The active, not deleted branches of the companies listed in companies (since ' +
+            '2026-11-18), for the phone to pick a branch over plain HTTP. Per company in the order ' +
+            'of companies, then by name and id, the rows and order of ' +
+            'GET /master-lookups/branches/by-company/{companyId}. A company with no branch has no row.',
+    }),
+    __metadata("design:type", Array)
+], MobileItemOptionsDto.prototype, "branches", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ type: [MobileSortedOptionDto] }),
     __metadata("design:type", Array)
@@ -218,6 +251,8 @@ class MobileItemDto {
     itemGroupName;
     itemBrandId;
     itemBrandName;
+    categoryId;
+    sectionId;
     allowLoading;
     allowFreight;
     allowPromo;
@@ -261,6 +296,26 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, type: String }),
     __metadata("design:type", Object)
 ], MobileItemDto.prototype, "itemBrandName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        type: String,
+        format: 'uuid',
+        description: "item_category_id (since 2026-11-19): the phone's offer engine matches ITEM_CATEGORY " +
+            'scheme rows by it',
+    }),
+    __metadata("design:type", Object)
+], MobileItemDto.prototype, "categoryId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        type: String,
+        format: 'uuid',
+        description: "item_section_id (since 2026-11-19): the phone's offer engine matches ITEM_SECTION " +
+            'scheme rows by it',
+    }),
+    __metadata("design:type", Object)
+], MobileItemDto.prototype, "sectionId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)

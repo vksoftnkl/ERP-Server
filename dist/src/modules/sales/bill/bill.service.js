@@ -42,6 +42,8 @@ const posting_types_1 = require("../posting/types/posting.types");
 const sale_bill_error_codes_1 = require("./types/sale-bill-error-codes");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_read_service_1 = require("./bill-read.service");
+const bill_rate_discount_lock_1 = require("./bill-rate-discount-lock");
+const qty_slab_rules_1 = require("../../Inventory/items-qty-price-master/qty-slab.rules");
 const bill_adjustment_helper_1 = require("../../../common/posting/bill-adjustment.helper");
 const bill_temp_credit_1 = require("./bill-temp-credit");
 const bill_cheque_details_1 = require("./bill-cheque-details");
@@ -316,6 +318,7 @@ const EMPTY_LINE_CONTEXT = {
     godownById: new Map(),
     companyAllowsNegStock: null,
 };
+const DEFAULT_PRICE_LEVEL_SETTING_KEY = 'sales.default_price_level';
 let BillService = class BillService {
     prisma;
     auditLogService;
@@ -589,6 +592,7 @@ let BillService = class BillService {
         const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
         await this.fillChargeTypes(tx, saveBillDto.charges);
         const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, createdBy, bill_api_types_1.BILL_CHARGE_AUDIT);
+        await this.assertRateDiscountLock(tx, await this.rateLockUserOf(tx), created, items, null);
         const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
         const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
         await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
@@ -675,9 +679,16 @@ let BillService = class BillService {
         const priorItems = await tx.saleBillItem.findMany({
             where: { sbiBillId: existing.sbId, sbiIsDeleted: false },
         });
+        const lockUser = await this.rateLockUserOf(tx);
+        const priorCharges = lockUser ? await this.storedCharges(tx, existing.sbId) : [];
         const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
         await this.fillChargeTypes(tx, saveBillDto.charges);
         const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
+        await this.assertRateDiscountLock(tx, lockUser, updated, items, {
+            items: priorItems,
+            charges: priorCharges,
+            header: existing,
+        });
         const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
         const draftCheques = await this.saveDraftCheques(tx, updated, saveBillDto.tenders, tenders);
         await this.validateDraftAdjustments(tx, updated, saveBillDto.adjustments);
@@ -711,6 +722,104 @@ let BillService = class BillService {
             notes: opts.notes ?? 'Bill updated',
         }, tx);
         return { updated: { ...updated, sbDraftCheques: draftCheques }, items };
+    }
+    async rateLockUserOf(tx) {
+        const user = await (0, bill_rate_discount_lock_1.readRateLockUser)(tx, this.requestContextService.getUserId());
+        return (0, bill_rate_discount_lock_1.isLockExempt)(user) ? null : user;
+    }
+    storedCharges(tx, sbId) {
+        return tx.transactionChargeDetail.findMany({
+            where: {
+                cdDocType: bill_api_types_1.BILL_CHARGE_DOC_TYPE,
+                cdDocId: sbId,
+                cdIsDeleted: false,
+                cdIsActive: true,
+            },
+        });
+    }
+    async assertRateDiscountLock(tx, user, bill, items, prior) {
+        if (!user) {
+            return;
+        }
+        const charges = await this.storedCharges(tx, bill.sbId);
+        const header = (0, bill_rate_discount_lock_1.lockHeaderOf)(bill);
+        const refusals = await (0, bill_rate_discount_lock_1.rateDiscountRefusalsFor)(tx, user, {
+            header,
+            lines: items.map(bill_rate_discount_lock_1.lockLineOfStored),
+            charges: charges.map(bill_rate_discount_lock_1.lockChargeOf),
+            priorLines: (prior?.items ?? []).map(bill_rate_discount_lock_1.lockLineOfStored),
+            priorCharges: (prior?.charges ?? []).map(bill_rate_discount_lock_1.lockChargeOf),
+            priorHeaderDisc: prior ? (0, bill_rate_discount_lock_1.lockHeaderOf)(prior.header).headerDisc : new client_1.Prisma.Decimal(0),
+            priorHeaderLevel: prior ? prior.header.sbPriceLevel : null,
+        }, this.lockOptions());
+        (0, bill_rate_discount_lock_1.throwRateDiscountRefusals)(refusals);
+    }
+    async rateDiscountDryRun(tx, dto, chargeTypes) {
+        const user = await this.rateLockUserOf(tx);
+        if (!user) {
+            return [];
+        }
+        const existing = dto.sbId
+            ? await tx.saleBill.findFirst({ where: { sbId: dto.sbId, sbIsDeleted: false } })
+            : null;
+        const priorItems = existing
+            ? await tx.saleBillItem.findMany({ where: { sbiBillId: existing.sbId, sbiIsDeleted: false } })
+            : [];
+        const priorCharges = existing ? await this.storedCharges(tx, existing.sbId) : [];
+        const headerLevel = dto.sbPriceLevel ?? existing?.sbPriceLevel ?? 1;
+        const header = (0, bill_rate_discount_lock_1.lockHeaderOf)({
+            sbCompanyId: dto.sbCompanyId,
+            sbBranchId: dto.sbBranchId,
+            sbDeviceId: dto.sbDeviceId ?? existing?.sbDeviceId ?? null,
+            sbPriceLevel: headerLevel,
+            sbCustId: dto.sbCustId !== undefined ? dto.sbCustId : (existing?.sbCustId ?? null),
+            sbBillDate: dto.sbBillDate ?? existing?.sbBillDate ?? null,
+            sbDiscAlterBase: dto.sbDiscAlterBase !== undefined
+                ? dto.sbDiscAlterBase
+                : (existing?.sbDiscAlterBase ?? null),
+            sbAddlDisc1: dto.sbAddlDisc1 !== undefined ? dto.sbAddlDisc1 : existing?.sbAddlDisc1,
+            sbAddlDisc2: dto.sbAddlDisc2 !== undefined ? dto.sbAddlDisc2 : existing?.sbAddlDisc2,
+            sbCashDisc: dto.sbCashDisc !== undefined ? dto.sbCashDisc : existing?.sbCashDisc,
+        });
+        const refusals = await (0, bill_rate_discount_lock_1.rateDiscountRefusalsFor)(tx, user, {
+            header,
+            lines: dto.items !== undefined
+                ? dto.items.map((line, index) => (0, bill_rate_discount_lock_1.lockLineOfDto)(line, index, headerLevel))
+                : priorItems.map(bill_rate_discount_lock_1.lockLineOfStored),
+            charges: dto.charges !== undefined
+                ? dto.charges.map((c) => (0, bill_rate_discount_lock_1.lockChargeOf)({
+                    ...c,
+                    cdType: c.cdType ?? (c.cdChgId ? chargeTypes.get(c.cdChgId) : undefined) ?? 'ADD',
+                }))
+                : priorCharges.map(bill_rate_discount_lock_1.lockChargeOf),
+            priorLines: priorItems.map(bill_rate_discount_lock_1.lockLineOfStored),
+            priorCharges: priorCharges.map(bill_rate_discount_lock_1.lockChargeOf),
+            priorHeaderDisc: existing ? (0, bill_rate_discount_lock_1.lockHeaderOf)(existing).headerDisc : new client_1.Prisma.Decimal(0),
+            priorHeaderLevel: existing ? existing.sbPriceLevel : null,
+        }, this.lockOptions());
+        return (0, bill_rate_discount_lock_1.asSalesRefusals)(refusals);
+    }
+    lockOptions() {
+        return {
+            qtyPriceSetting: this.qtyPriceSetting(),
+            defaultPriceLevel: async (header) => {
+                const values = await this.salesContext.values(header.companyId, header.branchId, header.deviceId, [DEFAULT_PRICE_LEVEL_SETTING_KEY]);
+                const level = Number(values[DEFAULT_PRICE_LEVEL_SETTING_KEY]);
+                return Number.isInteger(level) && level > 0 ? level : null;
+            },
+        };
+    }
+    qtyPriceSetting() {
+        return {
+            resolveEffective: async (scope) => scope.companyId && scope.branchId
+                ? [
+                    {
+                        asdKey: qty_slab_rules_1.APPLY_QTY_PRICES_SETTING_KEY,
+                        value: await this.salesContext.setting(scope.companyId, scope.branchId, qty_slab_rules_1.APPLY_QTY_PRICES_SETTING_KEY),
+                    },
+                ]
+                : [],
+        };
     }
     async applyCustomerSnapshot(tx, data, dto, walkInCustomerId) {
         const custId = dto.sbCustId;

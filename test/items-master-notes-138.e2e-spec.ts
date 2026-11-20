@@ -234,16 +234,8 @@ describe('Item master, notes 138 (e2e — one rolled-back transaction)', () => {
         }),
       ),
     ).toBe('409 ITEM_BASE_UNIT_LOCKED @unit_conversions');
-    expect(
-      await refused(() =>
-        update(itemId, name, {
-          unit_conversions: [
-            { iuc_id: baseId, iuc_unit_id: fixture.unitC, iuc_is_base_unit: true },
-            { iuc_unit_id: fixture.unitB, iuc_to_base_factor: 10, iuc_unit_slno: 1 },
-          ],
-        }),
-      ),
-    ).toBe('409 ITEM_BASE_UNIT_LOCKED @unit_conversions.0.iuc_unit_id');
+    // The base row re-picked BY ITS OWN id is no longer refused here on an item never
+    // used (item master review 11-20 Q2) — see the Q2 case below.
     expect(await refused(() => update(itemId, name, { item_base_unit_id: fixture.unitB }))).toBe(
       '409 ITEM_BASE_UNIT_LOCKED @item_base_unit_id',
     );
@@ -253,6 +245,46 @@ describe('Item master, notes 138 (e2e — one rolled-back transaction)', () => {
     expect(after.unit_conversions.filter((row) => row.iuc_is_base_unit)).toEqual([
       expect.objectContaining({ iuc_id: baseId, iuc_unit_id: fixture.unitA }),
     ]);
+  });
+
+  it('Q2 (review 11-20). an item never used re-picks its base unit on the same row; the rest follow', async () => {
+    const created = await create('N138 repick');
+    const itemId = created.item.item_id;
+    const baseId = created.unit_conversions.find((row) => row.iuc_is_base_unit)!.iuc_id;
+    const name = 'N138 repick';
+    await attempt(() =>
+      update(itemId, name, {
+        item_base_unit_id: fixture.unitC,
+        unit_conversions: [
+          // As the card sends them: both factors on every row (B = 10 of the base).
+          { iuc_unit_id: fixture.unitB, iuc_unit_factor: 1, iuc_to_base_factor: 10, iuc_unit_slno: 1 },
+          {
+            iuc_id: baseId,
+            iuc_unit_id: fixture.unitC,
+            iuc_is_base_unit: true,
+            iuc_unit_factor: 10,
+            iuc_to_base_factor: 1,
+            iuc_unit_slno: 2,
+          },
+        ],
+      }),
+    );
+    const after = await service.getComposite(itemId);
+    expect(after.item.item_base_unit_id).toBe(fixture.unitC);
+    expect(after.item.item_units_in_use).toBe(false);
+    expect(after.unit_conversions.filter((row) => row.iuc_is_base_unit)).toEqual([
+      expect.objectContaining({ iuc_id: baseId, iuc_unit_id: fixture.unitC, iuc_to_base_factor: 1 }),
+    ]);
+    expect(after.unit_conversions.map((row) => row.iuc_base_unit_id)).toEqual([
+      fixture.unitC,
+      fixture.unitC,
+    ]);
+    // The plain /item-unit-conversions route still refuses it (composite save only).
+    expect(
+      await refused(() =>
+        iuc.save({ iuc_id: baseId, iuc_item_id: itemId, iuc_unit_id: fixture.unitA }),
+      ),
+    ).toBe('409 ITEM_BASE_UNIT_LOCKED @iuc_unit_id');
   });
 
   it('A1. /item-unit-conversions refuses the same, and will not delete the base row', async () => {

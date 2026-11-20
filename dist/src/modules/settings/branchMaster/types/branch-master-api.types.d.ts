@@ -5,6 +5,7 @@ export type BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>, TSty
 export interface SeededMainBranch {
     brId: string;
     brName: string;
+    brCode: string | null;
     gdlId: string;
     gdlName: string;
 }

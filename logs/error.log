@@ -22161,3 +22161,163 @@ Foreign key constraint violated on the constraint: `fk_sbi_price_level`
 2026-11-18T04:36:38.289Z ERROR [HttpError] 503 POST /api/v1/whatsapp/connection/activate code=WA_RELAY_BUSY platform=- build=- version=- device=- company=- user=VKPOS
 2026-11-18T04:40:34.218Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
 2026-11-18T04:42:51.452Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T07:52:44.785Z ERROR [Bootstrap] Phone port 3012 not opened: listen EADDRINUSE: address already in use 0.0.0.0:3012
+2026-11-18T12:15:03.341Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/branches/by-company/not-a-uuid
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.branchMaster.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:109:49
+
+  106 }
+  107 // ─── Scoped lookups ─────────────────────────────────────────────────────────
+  108 async getBranchesByCompany(companyId: string): Promise<NameIdOption[]> {
+→ 109   const rows = await this.prisma.branchMaster.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:109:18)
+    at async MasterLookupController.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:130:18)
+2026-11-18T12:15:03.341Z ERROR [HttpError] 500 GET /api/v1/master-lookups/branches/by-company/not-a-uuid code=INTERNAL_ERROR platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T12:34:29.964Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=- user=VKPOS
+2026-11-18T12:39:50.615Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=- company=- user=VKPOS
+2026-11-18T12:40:18.551Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=- user=VKPOS
+2026-11-18T13:17:56.361Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleOrder.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2549:40
+
+  2546 if (saveOrderDto.soAdvanceBalanceAmt === undefined) {
+  2547   data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, undefined);
+  2548 }
+→ 2549 const created = await tx.saleOrder.create(
+Foreign key constraint violated on the constraint: `fk_so_device`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleOrderService.createOrderInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2549:21)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:149:19)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderLifecycleService.saveAndPost (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:137:7)
+    at async SaleOrderController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:100:20)
+2026-11-18T13:17:56.361Z ERROR [HttpError] 500 POST /api/v1/sale-orders/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=019cc7fc-3547-74a6-b65b-179b9db989a6 user=VIJAY
+2026-11-18T13:18:14.378Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleOrder.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2549:40
+
+  2546 if (saveOrderDto.soAdvanceBalanceAmt === undefined) {
+  2547   data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, undefined);
+  2548 }
+→ 2549 const created = await tx.saleOrder.create(
+Foreign key constraint violated on the constraint: `fk_so_device`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleOrderService.createOrderInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2549:21)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:149:19)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderLifecycleService.saveAndPost (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:137:7)
+    at async SaleOrderController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:100:20)
+2026-11-18T13:18:14.379Z ERROR [HttpError] 500 POST /api/v1/sale-orders/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=019cc7fc-3547-74a6-b65b-179b9db989a6 user=VIJAY
+2026-11-18T13:26:55.873Z ERROR [HttpError] 502 GET /api/v1/gst/search code=GSTIN_LOOKUP_UPSTREAM_ERROR platform=- build=- version=- device=019e4e4c-9f08-7211-afe0-409b88a62180 company=019cc7fc-3547-74a6-b65b-179b9db989a6 user=VKPOS
+2026-11-19T04:27:41.220Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': till.day.header prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-11-19T04:27:41.221Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': till.day.sessions prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-11-19T04:27:41.221Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': till.day.tenders prints one document and the render named none. Send docId — it is what :doc_id binds to.
+2026-11-19T04:28:27.433Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.434Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.438Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.446Z ERROR [DatasetRunnerService] Provider 'till.movement.lines' failed for dataset 'lines': Till movement 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.446Z ERROR [DatasetRunnerService] Provider 'till.movement.header' failed for dataset 'header': Till movement 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.456Z ERROR [DatasetRunnerService] Provider 'till.session.movements' failed for dataset 'movements': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.456Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.456Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.464Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.465Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.465Z ERROR [DatasetRunnerService] Provider 'till.session.movements' failed for dataset 'movements': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.472Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.472Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.479Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.479Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.479Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.493Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.493Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.500Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.501Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.501Z ERROR [DatasetRunnerService] Provider 'till.session.movements' failed for dataset 'movements': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.507Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.509Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.514Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.515Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:27.515Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.808Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.808Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.808Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.815Z ERROR [DatasetRunnerService] Provider 'till.movement.lines' failed for dataset 'lines': Till movement 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.816Z ERROR [DatasetRunnerService] Provider 'till.movement.header' failed for dataset 'header': Till movement 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.823Z ERROR [DatasetRunnerService] Provider 'till.session.movements' failed for dataset 'movements': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.823Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.825Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.832Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.832Z ERROR [DatasetRunnerService] Provider 'till.session.movements' failed for dataset 'movements': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.834Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.840Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.840Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.846Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.847Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.847Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.859Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.859Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.867Z ERROR [DatasetRunnerService] Provider 'till.session.movements' failed for dataset 'movements': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.867Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.867Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.873Z ERROR [DatasetRunnerService] Provider 'till.session.header' failed for dataset 'header': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.874Z ERROR [DatasetRunnerService] Provider 'till.session.tenders' failed for dataset 'tenders': Till session 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.881Z ERROR [DatasetRunnerService] Provider 'till.day.tenders' failed for dataset 'tenders': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.882Z ERROR [DatasetRunnerService] Provider 'till.day.header' failed for dataset 'header': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T04:28:31.882Z ERROR [DatasetRunnerService] Provider 'till.day.sessions' failed for dataset 'sessions': Business day 019c8ea6-19e9-78a8-b15f-749e1cde7292 was not found
+2026-11-19T05:06:33.152Z ERROR [HttpError] 502 GET /api/v1/gst/search code=GSTIN_LOOKUP_UPSTREAM_ERROR platform=- build=- version=- device=019f27d5-9175-7064-8360-6fc07dedab17 company=019cc7fc-3547-74a6-b65b-179b9db989a6 user=VKPOS
+2026-11-19T11:20:00.928Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-11-19T12:26:17.129Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleOrder.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2737:40
+
+  2734 ) {
+  2735   data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
+  2736 }
+→ 2737 const updated = await tx.saleOrder.update(
+Foreign key constraint violated on the constraint: `fk_so_device`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleOrderService.updateOrderInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2737:21)
+    at async SaleOrderLifecycleService.saveOverInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:244:20)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderLifecycleService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:208:14)
+    at async SaleOrderController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:111:18)
+2026-11-19T12:26:17.130Z ERROR [HttpError] 500 POST /api/v1/sale-orders/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=019cc7fc-3547-74a6-b65b-179b9db989a6 user=VIJAY
+2026-11-19T12:26:26.666Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleOrder.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2737:40
+
+  2734 ) {
+  2735   data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
+  2736 }
+→ 2737 const updated = await tx.saleOrder.update(
+Foreign key constraint violated on the constraint: `fk_so_device`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async SaleOrderService.updateOrderInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:2737:21)
+    at async SaleOrderLifecycleService.saveOverInTx (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:244:20)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderLifecycleService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order-lifecycle.service.ts:208:14)
+    at async SaleOrderController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:111:18)
+2026-11-19T12:26:26.666Z ERROR [HttpError] 500 POST /api/v1/sale-orders/create code=INTERNAL_ERROR platform=- build=- version=- device=- company=019cc7fc-3547-74a6-b65b-179b9db989a6 user=VIJAY
+2026-11-20T06:13:28.933Z ERROR [HttpError] 503 GET /api/v1/gst/search code=GSTIN_LOOKUP_COMPANY_GSTIN_MISSING platform=- build=- version=- device=019f27d5-9175-7064-8360-6fc07dedab17 company=- user=VKPOS

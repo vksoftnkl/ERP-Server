@@ -14,7 +14,7 @@ const common_1 = require("@nestjs/common");
 const module_exception_filter_utils_1 = require("../../common/utils/module-exception-filter.utils");
 let MobileExceptionFilter = class MobileExceptionFilter extends module_exception_filter_utils_1.SalesExceptionFilter {
     constructor() {
-        super(/\b(cv[A-Z][A-Za-z0-9]*|companyId|deviceUid|clientUuid|page|pageSize)\b/);
+        super(/\b(cv[A-Z][A-Za-z0-9]*|companyId|branchId|deviceUid|clientUuid|page|pageSize|since|withCredits)\b/);
     }
 };
 exports.MobileExceptionFilter = MobileExceptionFilter;

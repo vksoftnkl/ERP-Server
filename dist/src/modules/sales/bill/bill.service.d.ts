@@ -14,6 +14,7 @@ import { RequestContextService } from '../../../common/request-context/request-c
 import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { TransportBandService, type TransportBandInput } from '../posting/transport-band.service';
+import { type SalesRefusal } from '../posting/types/posting.types';
 import { BillReadService } from './bill-read.service';
 export declare function lineLevelOf(level: number | null | undefined, billLevel: number): number;
 export declare class BillService {
@@ -61,6 +62,12 @@ export declare class BillService {
         updated: SaleBill;
         items: SaleBillItem[];
     }>;
+    private rateLockUserOf;
+    private storedCharges;
+    private assertRateDiscountLock;
+    rateDiscountDryRun(tx: Prisma.TransactionClient, dto: SaveBillDto, chargeTypes: ReadonlyMap<string, string>): Promise<SalesRefusal[]>;
+    private lockOptions;
+    private qtyPriceSetting;
     private applyCustomerSnapshot;
     private writeTransportBand;
     private validateDraftAdjustments;

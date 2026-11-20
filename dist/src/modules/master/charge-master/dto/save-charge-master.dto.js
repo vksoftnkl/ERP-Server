@@ -169,7 +169,9 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'Audit user who created the charge; defaults to the authenticated user when omitted',
+        deprecated: true,
+        description: 'IGNORED. The server always records the signed-in user as the creator. Accepted only so ' +
+            'older clients that still send it keep working; do not send it.',
     }),
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
@@ -178,7 +180,9 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'Audit user who last modified the charge; defaults to the authenticated user when omitted',
+        deprecated: true,
+        description: 'IGNORED. The server always records the signed-in user as the last modifier (nothing on ' +
+            'create). Accepted only so older clients that still send it keep working; do not send it.',
     }),
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)

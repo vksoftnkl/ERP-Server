@@ -138,9 +138,10 @@ let VehicleService = class VehicleService {
             SELECT emp_id FROM public.employee_master
              WHERE emp_id = ${driverId}::uuid
                AND emp_is_deleted = false AND emp_is_active = true
+               AND upper(btrim(COALESCE(emp_status, ''))) <> 'RESIGNED'
                AND emp_company_id = ${company}::uuid`;
                 if (!emp) {
-                    this.refuse(vehicle_error_codes_1.VehicleErrorCode.DRIVER_INVALID, 'driverId', `Employee ${driverId} is not a live, active employee of this company`);
+                    this.refuse(vehicle_error_codes_1.VehicleErrorCode.DRIVER_INVALID, 'driverId', `Employee ${driverId} is not a live, active, working employee of this company`);
                 }
             }
             const branchId = dto.branchId ?? null;

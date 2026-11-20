@@ -3,6 +3,12 @@ declare class MobileCompanyOptionDto {
     name: string;
     place: string | null;
 }
+declare class MobileBranchOptionDto {
+    id: string;
+    name: string;
+    companyId: string;
+    isDefault: boolean;
+}
 declare class MobileSortedOptionDto {
     id: string;
     name: string;
@@ -14,6 +20,7 @@ declare class MobileItemPriceLevelOptionDto {
 }
 export declare class MobileItemOptionsDto {
     companies: MobileCompanyOptionDto[];
+    branches: MobileBranchOptionDto[];
     itemGroups: MobileSortedOptionDto[];
     brands: MobileSortedOptionDto[];
     priceLevels: MobileItemPriceLevelOptionDto[];
@@ -53,6 +60,8 @@ export declare class MobileItemDto {
     itemGroupName: string | null;
     itemBrandId: string | null;
     itemBrandName: string | null;
+    categoryId: string | null;
+    sectionId: string | null;
     allowLoading: boolean;
     allowFreight: boolean;
     allowPromo: boolean;

@@ -28,5 +28,7 @@ export interface ItemUnitConversionPayload {
     iuc_updated_by: string | null;
     iuc_unit_name?: string | null;
     iuc_base_unit_name?: string | null;
+    iuc_in_use?: boolean;
+    iuc_used_by?: string[];
 }
 export type ItemUnitConversionListItem = ItemUnitConversionPayload | Record<string, unknown>;

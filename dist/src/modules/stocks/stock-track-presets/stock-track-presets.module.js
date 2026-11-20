@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockTrackPresetsModule = void 0;
 const common_1 = require("@nestjs/common");
+const audit_log_module_1 = require("../../audit-log/audit-log.module");
 const stock_track_presets_controller_1 = require("./stock-track-presets.controller");
 const stock_track_presets_service_1 = require("./stock-track-presets.service");
 let StockTrackPresetsModule = class StockTrackPresetsModule {
@@ -15,6 +16,7 @@ let StockTrackPresetsModule = class StockTrackPresetsModule {
 exports.StockTrackPresetsModule = StockTrackPresetsModule;
 exports.StockTrackPresetsModule = StockTrackPresetsModule = __decorate([
     (0, common_1.Module)({
+        imports: [audit_log_module_1.AuditLogModule],
         controllers: [stock_track_presets_controller_1.StockTrackPresetsController],
         providers: [stock_track_presets_service_1.StockTrackPresetsService],
         exports: [stock_track_presets_service_1.StockTrackPresetsService],

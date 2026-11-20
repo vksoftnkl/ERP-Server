@@ -99,7 +99,7 @@ let ReceiptPostingService = class ReceiptPostingService {
             avhBranchId: dto.avhBranchId,
             avhAccYear: dto.avhAccYear,
             allocations: settlement.allocations,
-            creditsApplied: dto.creditsApplied ?? [],
+            creditsApplied: settlement.creditsApplied ?? dto.creditsApplied ?? [],
             otherLineBills: otherLineBills ?? [],
             onAccount: settlement.onAccount,
         }, postActor);

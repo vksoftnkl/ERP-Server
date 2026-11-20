@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockAdjustmentModule = void 0;
 const common_1 = require("@nestjs/common");
 const app_settings_module_1 = require("../../settings/appSettings/app-settings.module");
+const audit_log_module_1 = require("../../audit-log/audit-log.module");
 const stock_voucher_module_1 = require("../stock-voucher/stock-voucher.module");
 const stock_adjustment_controller_1 = require("./stock-adjustment.controller");
 const stock_adjustment_service_1 = require("./stock-adjustment.service");
@@ -19,7 +20,7 @@ let StockAdjustmentModule = class StockAdjustmentModule {
 exports.StockAdjustmentModule = StockAdjustmentModule;
 exports.StockAdjustmentModule = StockAdjustmentModule = __decorate([
     (0, common_1.Module)({
-        imports: [stock_voucher_module_1.StockVoucherModule, app_settings_module_1.AppSettingsModule],
+        imports: [stock_voucher_module_1.StockVoucherModule, app_settings_module_1.AppSettingsModule, audit_log_module_1.AuditLogModule],
         controllers: [stock_adjustment_controller_1.StockAdjustmentController, stock_reasons_controller_1.StockReasonsController],
         providers: [stock_adjustment_service_1.StockAdjustmentService, stock_reasons_service_1.StockReasonsService],
         exports: [stock_adjustment_service_1.StockAdjustmentService, stock_reasons_service_1.StockReasonsService],

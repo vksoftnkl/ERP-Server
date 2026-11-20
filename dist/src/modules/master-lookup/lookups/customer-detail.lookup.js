@@ -15,7 +15,7 @@ class CustomerDetailLookup {
         const regional = query.regional ?? false;
         const customer = await this.prisma.customer.findFirst({
             where: { cusId: cus_id, cusIsDeleted: false },
-            include: { area: { select: { armName: true, armDistanceKm: true } } },
+            include: { area: { select: { armName: true, armDistanceKm: true, armCityId: true } } },
         });
         if (!customer) {
             (0, module_service_utils_1.throwMasterNotFound)('Customer not found', 'cus_id', `No active customer found for id ${cus_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.CUSTOMER_NOT_FOUND);
@@ -64,8 +64,10 @@ class CustomerDetailLookup {
             gst_type: customer.cusGstType,
             state_code: customer.cusStateCode,
             state_name: customer.cusStateName,
+            cust_group_id: customer.cusGroupId,
             area_id: customer.cusAreaId,
             area_name: customer.area?.armName ?? null,
+            city_id: customer.area?.armCityId ?? null,
             distance_km: customer.area?.armDistanceKm ?? null,
             cust_phone1: customer.cusPhone1,
             debit_days: customer.cusCreditDays,

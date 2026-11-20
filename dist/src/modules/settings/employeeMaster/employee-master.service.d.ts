@@ -21,6 +21,9 @@ export declare class EmployeeMasterService {
     private provisionStaffAdvanceLedger;
     private createEmployee;
     private updateEmployee;
+    private statusOf;
+    private ensureCodeIsUnique;
+    private nextEmployeeCode;
     private ensureCompanyExists;
     private ensureDesignationExists;
     private ensureDepartmentExists;

@@ -20,8 +20,9 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const device_code_helper_1 = require("./device-code.helper");
-const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
-const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
+const device_audit_helper_1 = require("./device-audit.helper");
+const DEVICE_LIST_MASTER_TABLE_NAME = device_audit_helper_1.DEVICE_AUDIT_TABLE_NAME;
+const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = device_audit_helper_1.DEVICE_AUDIT_SCREEN_NAME;
 const DEVICE_TYPE_VALUES = Object.values(device_list_master_enum_1.DeviceType);
 const DEVICE_PLATFORM_VALUES = Object.values(device_list_master_enum_1.DevicePlatform);
 const DEVICE_LIST_MASTER_OPTIONAL_FIELDS = [
@@ -228,13 +229,11 @@ let DeviceListMasterService = class DeviceListMasterService {
             if (result.count === 0) {
                 (0, module_service_utils_1.throwFixedNotFound)('Device not found', 'devId', `No active device found with id ${devId}`, device_list_master_enum_1.DeviceListMasterErrorCode.NOT_FOUND);
             }
-            const originalRecord = this.toPayload(existing);
-            const modifiedRecord = this.toPayload({
+            const originalRecord = (0, device_audit_helper_1.toDeviceAuditRecord)(existing);
+            const modifiedRecord = (0, device_audit_helper_1.toDeviceAuditRecord)({
                 ...existing,
                 devIsDeleted: true,
                 devIsActive: false,
-                devModifiedOn: modifiedOn,
-                devModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
             });
             await this.auditLogService.logEntityChange({
                 action: 'cancel',
@@ -242,7 +241,7 @@ let DeviceListMasterService = class DeviceListMasterService {
                 screenName: DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME,
                 screenType: 'master',
                 pk: devId,
-                displayName: existing.devDeviceUid,
+                displayName: (0, device_audit_helper_1.deviceAuditDisplayName)(existing),
                 originalRecord,
                 modifiedRecord,
                 userId: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
@@ -280,9 +279,9 @@ let DeviceListMasterService = class DeviceListMasterService {
                     screenName: DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME,
                     screenType: 'master',
                     pk: payload.devId,
-                    displayName: payload.devDeviceUid,
+                    displayName: (0, device_audit_helper_1.deviceAuditDisplayName)(created),
                     originalRecord: null,
-                    modifiedRecord: payload,
+                    modifiedRecord: (0, device_audit_helper_1.toDeviceAuditRecord)(created),
                     userId: createdBy,
                     notes: 'Device created',
                 }, tx);
@@ -338,11 +337,11 @@ let DeviceListMasterService = class DeviceListMasterService {
                     screenName: DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME,
                     screenType: 'master',
                     pk: devId,
-                    displayName: payload.devDeviceUid,
-                    originalRecord: this.toPayload(existing),
-                    modifiedRecord: payload,
+                    displayName: (0, device_audit_helper_1.deviceAuditDisplayName)(updated),
+                    originalRecord: (0, device_audit_helper_1.toDeviceAuditRecord)(existing),
+                    modifiedRecord: (0, device_audit_helper_1.toDeviceAuditRecord)(updated),
                     userId: (0, module_service_utils_1.resolveActor)(saveDeviceListMasterDto.devEntryBy, this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR),
-                    notes: 'Device updated',
+                    notes: (0, device_audit_helper_1.deviceSaveNotes)('Device updated', existing, updated),
                 }, tx);
                 return payload;
             });

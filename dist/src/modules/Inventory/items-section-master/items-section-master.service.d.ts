@@ -22,6 +22,7 @@ export declare class ItemsSectionMasterService {
     private setDeleted;
     private createItemSection;
     private updateItemSection;
+    private shortFromName;
     private ensureParentExists;
     private applyOptionalFields;
     private getAncestorIds;

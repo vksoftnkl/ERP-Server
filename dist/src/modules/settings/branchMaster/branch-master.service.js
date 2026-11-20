@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BranchMasterService = exports.MAIN_BRANCH_TYPE = exports.MAIN_BRANCH_NAME = void 0;
+exports.companyChangesToCopy = companyChangesToCopy;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -17,6 +18,8 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const master_tree_helper_1 = require("../../Inventory/utils/master-tree.helper");
 const gst_registration_1 = require("../shared/gst-registration");
+const code_series_lock_1 = require("../shared/code-series-lock");
+const registered_address_1 = require("../shared/registered-address");
 const branch_master_error_codes_1 = require("./types/branch-master-error-codes");
 const godowns_master_service_1 = require("../../Inventory/godowns-master/godowns-master.service");
 const BRANCH_MASTER_TABLE_NAME = 'branch master';
@@ -124,6 +127,76 @@ const BRANCH_IN_USE_REFERENCES = [
     },
 ];
 const describeUse = (used) => used.map((ref) => `${ref.count} ${ref.label}`).join(', ');
+const BRANCH_ADDRESS_KEYS = ['brAddr1', 'brCity', 'brStateCode', 'brPin'];
+const BILL_PREFIX_PATTERN = /^[A-Z0-9]{1,4}$/;
+const BRANCH_CODE_MAX_LENGTH = 20;
+function companyBranchFields(company) {
+    return {
+        brAddr1: company.compAddr1,
+        brAddr2: company.compAddr2,
+        brAddr3: company.compAddr3,
+        brCity: company.compCity,
+        brDistrict: company.compDistrict,
+        brState: company.compState,
+        brStateCode: company.compStateCode,
+        brPin: company.compPin,
+        brCountry: company.compCountry,
+        brRegionAddr1: company.compRegionAddr1,
+        brRegionAddr2: company.compRegionAddr2,
+        brRegionAddr3: company.compRegionAddr3,
+        brRegionCity: company.compRegionCity,
+        brRegionDistrict: company.compRegionDistrict,
+        brRegionState: company.compRegionState,
+        brRegionCountry: company.compRegionCountry,
+        brTel: company.compTel,
+        brPhone: company.compPhone,
+        brMail: company.compMail,
+        brGstinNo: company.compGstinNo,
+        brGstRegType: company.compGstRegType,
+        brPanNo: company.compPanNo,
+    };
+}
+const BRANCH_COPY_TAX_GROUP = [
+    'brGstinNo',
+    'brGstRegType',
+    'brPanNo',
+    'brStateCode',
+    'brState',
+];
+const BRANCH_COPY_ADDRESS_GROUP = [
+    'brAddr1',
+    'brAddr2',
+    'brAddr3',
+    'brCity',
+    'brDistrict',
+    'brPin',
+    'brStateCode',
+    'brState',
+    'brCountry',
+    'brRegionAddr1',
+    'brRegionAddr2',
+    'brRegionAddr3',
+    'brRegionCity',
+    'brRegionDistrict',
+    'brRegionState',
+    'brRegionCountry',
+];
+const BRANCH_COPY_CONTACT_FIELDS = ['brTel', 'brPhone', 'brMail'];
+function companyChangesToCopy(before, after) {
+    const was = companyBranchFields(before);
+    const now = companyBranchFields(after);
+    const changed = (key) => was[key] !== now[key];
+    const keys = new Set();
+    const taxChanged = BRANCH_COPY_TAX_GROUP.some(changed);
+    if (taxChanged) {
+        BRANCH_COPY_TAX_GROUP.forEach((key) => keys.add(key));
+    }
+    if (taxChanged || BRANCH_COPY_ADDRESS_GROUP.some(changed)) {
+        BRANCH_COPY_ADDRESS_GROUP.forEach((key) => keys.add(key));
+    }
+    BRANCH_COPY_CONTACT_FIELDS.filter(changed).forEach((key) => keys.add(key));
+    return [...keys];
+}
 let BranchMasterService = class BranchMasterService {
     prisma;
     auditLogService;
@@ -281,6 +354,7 @@ let BranchMasterService = class BranchMasterService {
         });
     }
     async seedMainBranch(tx, company, actor, now) {
+        const brCode = company.compCode ? await this.nextMainBranchCode(tx, company.compCode) : null;
         const created = await tx.branchMaster.create({
             data: {
                 brCompId: company.compId,
@@ -288,28 +362,8 @@ let BranchMasterService = class BranchMasterService {
                 brType: exports.MAIN_BRANCH_TYPE,
                 brIsDefault: true,
                 brIsActive: true,
-                brAddr1: company.compAddr1,
-                brAddr2: company.compAddr2,
-                brAddr3: company.compAddr3,
-                brCity: company.compCity,
-                brDistrict: company.compDistrict,
-                brState: company.compState,
-                brStateCode: company.compStateCode,
-                brPin: company.compPin,
-                brCountry: company.compCountry,
-                brRegionAddr1: company.compRegionAddr1,
-                brRegionAddr2: company.compRegionAddr2,
-                brRegionAddr3: company.compRegionAddr3,
-                brRegionCity: company.compRegionCity,
-                brRegionDistrict: company.compRegionDistrict,
-                brRegionState: company.compRegionState,
-                brRegionCountry: company.compRegionCountry,
-                brTel: company.compTel,
-                brPhone: company.compPhone,
-                brMail: company.compMail,
-                brGstinNo: company.compGstinNo,
-                brGstRegType: company.compGstRegType,
-                brPanNo: company.compPanNo,
+                ...(brCode ? { brCode } : {}),
+                ...companyBranchFields(company),
                 brCreatedOn: now,
                 brCreatedBy: actor,
                 brModifiedOn: now,
@@ -337,18 +391,71 @@ let BranchMasterService = class BranchMasterService {
         return {
             brId: branch.brId,
             brName: branch.brName,
+            brCode: branch.brCode,
             gdlId: godown.gdl_id,
             gdlName: godown.gdl_name,
         };
+    }
+    async syncOnlyBranch(tx, before, after, actor, now) {
+        const keys = companyChangesToCopy(before, after);
+        if (!keys.length) {
+            return null;
+        }
+        const live = await tx.branchMaster.findMany({
+            where: { brCompId: after.compId, brIsDeleted: false },
+            take: 2,
+        });
+        if (live.length !== 1) {
+            return null;
+        }
+        const [existing] = live;
+        const fields = companyBranchFields(after);
+        if (keys.every((key) => existing[key] === fields[key])) {
+            return null;
+        }
+        const copy = Object.fromEntries(keys.map((key) => [key, fields[key]]));
+        const updated = await tx.branchMaster.update({
+            where: { brId: existing.brId },
+            data: { ...copy, brModifiedOn: now, brModifiedBy: actor },
+        });
+        await this.auditLogService.logEntityChange({
+            action: 'update',
+            tableName: BRANCH_MASTER_TABLE_NAME,
+            screenName: BRANCH_MASTER_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: String(updated.brId),
+            displayName: updated.brName,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: this.toPayload(updated),
+            userId: actor,
+            notes: 'Copied from its company (the company’s only branch)',
+        }, tx);
+        return updated.brId;
+    }
+    async nextMainBranchCode(tx, compCode) {
+        const base = compCode.trim().slice(0, BRANCH_CODE_MAX_LENGTH - 2);
+        const rows = await tx.branchMaster.findMany({
+            where: { brCode: { startsWith: base, mode: 'insensitive' } },
+            select: { brCode: true },
+        });
+        const taken = new Set(rows.map((row) => (row.brCode ?? '').toUpperCase()));
+        let n = 1;
+        const codeOf = (k) => `${base}${String(k).padStart(2, '0')}`;
+        while (taken.has(codeOf(n).toUpperCase())) {
+            n++;
+        }
+        return codeOf(n);
     }
     async createBranch(saveBranchMasterDto) {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
+                this.assertRegistrationRules(saveBranchMasterDto, null);
                 const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
                 const panFromGstin = this.assertGstin(saveBranchMasterDto.brGstinNo ?? null, stateCode, saveBranchMasterDto.brPanNo ?? null);
                 await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
                 await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName);
+                await this.lockCodeSeriesFor(tx, saveBranchMasterDto.brCode);
                 await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null);
                 if (saveBranchMasterDto.brIsDefault === true) {
                     await this.clearDefaultBranch(tx, saveBranchMasterDto.brCompId);
@@ -401,6 +508,7 @@ let BranchMasterService = class BranchMasterService {
                     this.throwNotFound(brId);
                 }
                 const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
+                this.assertRegistrationRules(saveBranchMasterDto, existing);
                 const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
                 const panFromGstin = this.assertGstin(saveBranchMasterDto.brGstinNo !== undefined
                     ? saveBranchMasterDto.brGstinNo
@@ -421,6 +529,7 @@ let BranchMasterService = class BranchMasterService {
                 }
                 await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
                 await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName, brId);
+                await this.lockCodeSeriesFor(tx, saveBranchMasterDto.brCode);
                 await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null, brId);
                 if (saveBranchMasterDto.brIsDefault === true) {
                     await this.clearDefaultBranch(tx, saveBranchMasterDto.brCompId, brId);
@@ -539,6 +648,11 @@ let BranchMasterService = class BranchMasterService {
                     code: branch_master_error_codes_1.BranchMasterErrorCode.NAME_DUPLICATE,
                 },
             ]);
+        }
+    }
+    async lockCodeSeriesFor(tx, brCode) {
+        if (brCode) {
+            await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.COMPANY_CODE_SERIES);
         }
     }
     async ensureCodeIsUnique(tx, brCode, excludeBrId) {
@@ -731,6 +845,41 @@ let BranchMasterService = class BranchMasterService {
     }
     async inUse(tx, brId) {
         return (await (0, master_tree_helper_1.countLiveReferences)(tx, BRANCH_IN_USE_REFERENCES, brId)).filter((ref) => ref.count > 0);
+    }
+    assertRegistrationRules(dto, existing) {
+        const sent = dto;
+        const stored = existing;
+        const after = (key) => sent[key] !== undefined ? sent[key] : stored ? stored[key] : null;
+        const errors = [];
+        const regType = after('brGstRegType');
+        if ((0, registered_address_1.isGstRegistered)(regType)) {
+            for (const key of BRANCH_ADDRESS_KEYS) {
+                if ((0, registered_address_1.isBlank)(after(key))) {
+                    errors.push({
+                        field: key,
+                        message: `${key} is required for a ${regType} branch (the e-invoice / e-way seller address)`,
+                        code: branch_master_error_codes_1.BranchMasterErrorCode.ADDRESS_REQUIRED,
+                    });
+                }
+            }
+        }
+        if (typeof dto.brPin === 'number' && !(0, registered_address_1.isValidPin)(dto.brPin)) {
+            errors.push({
+                field: 'brPin',
+                message: `brPin must be 6 digits, ${registered_address_1.PIN_MIN} to ${registered_address_1.PIN_MAX}; it is ${dto.brPin}`,
+                code: branch_master_error_codes_1.BranchMasterErrorCode.PIN_INVALID,
+            });
+        }
+        if (typeof dto.brBillPrefix === 'string' && !BILL_PREFIX_PATTERN.test(dto.brBillPrefix)) {
+            errors.push({
+                field: 'brBillPrefix',
+                message: 'brBillPrefix must be 1 to 4 letters or digits',
+                code: branch_master_error_codes_1.BranchMasterErrorCode.BILL_PREFIX_INVALID,
+            });
+        }
+        if (errors.length) {
+            this.throwBadRequest('Validation failed', errors);
+        }
     }
     assertGstin(gstin, stateCode, pan) {
         const fields = { gstin: 'brGstinNo', stateCode: 'brStateCode', pan: 'brPanNo' };

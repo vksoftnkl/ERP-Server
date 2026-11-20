@@ -211,6 +211,15 @@ export class ItemPayloadDto {
     description: 'Name of the linked default tax (resolved on the composite get endpoint)',
   })
   item_default_tax_name?: string | null;
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Composite get only (item master review 11-20 Q2): true once any unit row of the item, ' +
+      'live or removed, is on a document line or a stock row. While false the base row\'s unit ' +
+      'may still be re-picked on the same row (iuc_id kept); once true that save is a 409 ' +
+      'ITEM_UNIT_IN_USE.',
+  })
+  item_units_in_use?: boolean;
 }
 export class ItemDeleteResultDto {
   @ApiProperty({ format: 'uuid' })

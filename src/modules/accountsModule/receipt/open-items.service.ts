@@ -104,6 +104,43 @@ export function openReceivableWhere(
   };
 }
 
+/**
+ * The ONE definition of a held credit: a live, active bill of a credit type
+ * (ADVANCE, SALES_RETURN, OPENING, JOURNAL) on `side` with something still
+ * pending. One party's (loadCredits), or the whole company's
+ * (listCompanyOpenCredits). CR is what the company holds for the party (a
+ * receipt spends it); DR is the payment's mirror.
+ */
+export function openCreditWhere(
+  companyId: string,
+  partyId?: string,
+  side: 'CR' | 'DR' = 'CR',
+): Prisma.AccBillBalanceWhereInput {
+  return {
+    ablCompanyId: companyId,
+    ...(partyId !== undefined ? { ablPartyId: partyId } : {}),
+    ablIsDeleted: false,
+    ablIsActive: true,
+    ablDrCr: side,
+    ablBillType: { in: [...CREDIT_BILL_TYPES] },
+    ablPendingAmount: { gt: 0 },
+  };
+}
+
+/** One row of `listCompanyOpenCredits`. */
+export interface CompanyOpenCredit {
+  ablId: string;
+  ablAccYear: string;
+  ablPartyId: string;
+  ablBillType: string;
+  ablDocRefno: string;
+  ablDocDate: Date;
+  ablDueDate: Date | null;
+  ablBillAmount: Prisma.Decimal;
+  /** Generated; what is still held (> 0 on every row the filter admits). */
+  ablPendingAmount: Prisma.Decimal | null;
+}
+
 /** What a bill is ordered by: its two dates and its number. */
 export interface OpenBillOrderKey {
   ablDueDate: Date | null;
@@ -361,6 +398,37 @@ export class OpenItemsService {
   }
 
   /**
+   * Every held credit of a company, every party's: the rows `loadCredits`
+   * gives one party's /receipts/open-items (`openCreditWhere`, CR side), by
+   * party, then oldest first as loadCredits orders them (date, then number),
+   * then by id. Bare rows, for GET /mobile/receipts/open-bills.
+   */
+  async listCompanyOpenCredits(companyId: string): Promise<CompanyOpenCredit[]> {
+    const credits = await this.prisma.accBillBalance.findMany({
+      where: openCreditWhere(companyId),
+      select: {
+        ablId: true,
+        ablAccYear: true,
+        ablPartyId: true,
+        ablBillType: true,
+        ablDocRefno: true,
+        ablDocDate: true,
+        ablDueDate: true,
+        ablBillAmount: true,
+        ablPendingAmount: true,
+      },
+    });
+    return credits.sort(
+      (left, right) =>
+        left.ablPartyId.localeCompare(right.ablPartyId) ||
+        left.ablDocDate.getTime() - right.ablDocDate.getTime() ||
+        left.ablDocRefno.localeCompare(right.ablDocRefno) ||
+        left.ablId.localeCompare(right.ablId) ||
+        left.ablAccYear.localeCompare(right.ablAccYear),
+    );
+  }
+
+  /**
    * Post-dated money already promised against these bills, per bill.
    *
    * The same predicate `BillBalanceRecomputeService` excludes from the cached
@@ -368,8 +436,10 @@ export class OpenItemsService {
    * this is what the bill's pending amount will FALL BY when the cheque
    * matures, so if they disagreed the screen would promise a settlement that
    * never arrives.
+   *
+   * Public for GET /mobile/receipts/open-bills (`pdcHeld` per bill of a page).
    */
-  private async loadPostDatedHeld(
+  async loadPostDatedHeld(
     bills: readonly { billId: string; accYear: string }[],
     onDate: Date,
   ): Promise<Map<string, Prisma.Decimal>> {
@@ -622,15 +692,7 @@ export class OpenItemsService {
     side: 'CR' | 'DR' = 'CR',
   ): Promise<OpenCredit[]> {
     const credits = await this.prisma.accBillBalance.findMany({
-      where: {
-        ablCompanyId: companyId,
-        ablPartyId: partyId,
-        ablIsDeleted: false,
-        ablIsActive: true,
-        ablDrCr: side,
-        ablBillType: { in: [...CREDIT_BILL_TYPES] },
-        ablPendingAmount: { gt: 0 },
-      },
+      where: openCreditWhere(companyId, partyId, side),
       select: {
         ablId: true,
         ablAccYear: true,

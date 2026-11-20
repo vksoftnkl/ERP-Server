@@ -16,6 +16,8 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const code_series_lock_1 = require("../../settings/shared/code-series-lock");
+const short_from_name_1 = require("../utils/short-from-name");
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_CATEGORY_TABLE_NAME = 'item category master';
 const ITEM_CATEGORY_AUDIT_SCREEN_NAME = 'Category Master';
@@ -167,6 +169,9 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
                     categoryCreatedBy: createdBy,
                 };
                 this.applyOptionalFields(data, saveItemCategoryDto);
+                if (!saveItemCategoryDto.category_short?.trim()) {
+                    data.categoryShort = await this.shortFromName(tx, data.categoryName, null);
+                }
                 const created = await tx.categoryMaster.create({ data });
                 await this.ensureSelfInPath(tx, created.categoryId);
                 if (saveItemCategoryDto.category_parent_id) {
@@ -251,6 +256,9 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
                     categoryModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveItemCategoryDto);
+                if ((0, short_from_name_1.isEmptyShortName)(saveItemCategoryDto.category_short)) {
+                    data.categoryShort = await this.shortFromName(tx, saveItemCategoryDto.category_name.trim(), categoryId);
+                }
                 const updated = await tx.categoryMaster.update({
                     where: {
                         categoryId,
@@ -290,6 +298,19 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    shortFromName(tx, name, exceptId) {
+        return (0, short_from_name_1.shortNameFromName)(tx, code_series_lock_1.ITEM_CATEGORY_SHORT_SERIES, name, async (base) => {
+            const rows = await tx.categoryMaster.findMany({
+                where: {
+                    categoryIsDeleted: false,
+                    categoryShort: { startsWith: base, mode: 'insensitive' },
+                    ...(exceptId ? { NOT: { categoryId: exceptId } } : {}),
+                },
+                select: { categoryShort: true },
+            });
+            return rows.map((row) => row.categoryShort);
+        });
     }
     async ensureParentExists(parentId, tx) {
         const parent = await tx.categoryMaster.findFirst({

@@ -4,6 +4,7 @@ exports.assertMobileCompany = assertMobileCompany;
 exports.resolveMobileDevice = resolveMobileDevice;
 exports.findMobileBranch = findMobileBranch;
 exports.requireMobileBranch = requireMobileBranch;
+exports.requireMobileBranchOfCompany = requireMobileBranchOfCompany;
 exports.databaseToday = databaseToday;
 exports.requireMobileAccYear = requireMobileAccYear;
 exports.lockMobileClientUuid = lockMobileClientUuid;
@@ -103,6 +104,26 @@ async function requireMobileBranch(client, companyId, preferredBranchId) {
         ]);
     }
     return branchId;
+}
+async function requireMobileBranchOfCompany(client, companyId, branchId, field) {
+    const [row] = await client.$queryRaw `
+    SELECT b.br_id AS "brId"
+      FROM public.branch_master b
+     WHERE b.br_id = ${branchId}::uuid
+       AND b.br_comp_id = ${companyId}::uuid
+       AND b.br_is_deleted = false
+       AND b.br_is_active = true`;
+    if (!row) {
+        (0, module_shared_utils_1.throwUnprocessable)('Branch not of this company', [
+            {
+                field,
+                message: `Branch ${branchId} is not an active branch of company ${companyId}. Pick one of ` +
+                    "the company's branches and send it again.",
+                code: mobile_error_codes_1.MobileErrorCode.BRANCH_NOT_OF_COMPANY,
+            },
+        ]);
+    }
+    return row.brId;
 }
 async function databaseToday(client) {
     const [row] = await client.$queryRaw `SELECT CURRENT_DATE::text AS today`;

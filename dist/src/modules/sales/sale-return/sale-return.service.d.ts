@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
@@ -10,16 +11,36 @@ import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { type DocKeys, type DocSpec } from '../posting/sales-doc-store';
 import { TillSessionService } from '../../till/services/till-session.service';
-import { TillApprovalService } from '../../till/services/till-approval.service';
+import { TillApprovalService, type GateAsk, type TillApprovalRuleRow } from '../../till/services/till-approval.service';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
+import { type SalesGuardContext } from '../posting/types/posting.types';
 import { DeliveryPendingService } from '../delivery/core/delivery-pending.service';
 import { DeliveryStatusService } from '../delivery/core/delivery-status.service';
+import { type AdjustReplanner } from './sale-return-settlement';
 import { type SaveSaleReturnDto } from './dto/save-sale-return.dto';
 import type { AmendSaleReturnDto, CancelSaleReturnDto, PostSaleReturnDto, SaleReturnBillLinesQueryDto, SaleReturnKeysDto, SaleReturnTransportDto, ValidateSaleReturnDto } from './dto/sale-return-lifecycle.dto';
 export declare const SR_SPEC: DocSpec;
+export interface SaleReturnSaveOptions {
+    skipSaveRight?: boolean;
+    origin?: 'PHONE';
+}
+export interface SaleReturnRefusedGate {
+    ask: GateAsk;
+    rule: TillApprovalRuleRow;
+}
+export interface SaleReturnPostOptions {
+    replanAdjust?: AdjustReplanner | null;
+    onWarnings?: (warnings: SalesGuardContext['warnings']) => void;
+    onGateRefused?: (refused: SaleReturnRefusedGate) => void;
+}
+export type SaleReturnPostFire = {
+    gdrId: string | null;
+    einvoice: boolean;
+    ewaybill: boolean;
+} | null;
 export declare class SaleReturnService {
     private readonly prisma;
     private readonly salesContext;
@@ -54,6 +75,7 @@ export declare class SaleReturnService {
     private storedChargeIds;
     private saveBody;
     save(dto: SaveSaleReturnDto): Promise<Record<string, unknown>>;
+    saveInTx(tx: Prisma.TransactionClient, dto: SaveSaleReturnDto, opts?: SaleReturnSaveOptions): Promise<DocKeys>;
     get(keys: DocKeys): Promise<Record<string, unknown>>;
     private documentOf;
     private writeRevision;
@@ -61,9 +83,15 @@ export declare class SaleReturnService {
         srId: string;
         deleted: true;
     }>;
+    deleteInTx(tx: Prisma.TransactionClient, keys: DocKeys, opts?: {
+        withdrawPendingNote?: string;
+    }): Promise<void>;
     billLines(q: SaleReturnBillLinesQueryDto): Promise<Record<string, unknown>>;
     validate(dto: ValidateSaleReturnDto): Promise<Record<string, unknown>>;
     post(dto: PostSaleReturnDto): Promise<Record<string, unknown>>;
+    postInTx(tx: Prisma.TransactionClient, dto: PostSaleReturnDto, opts?: SaleReturnPostOptions): Promise<SaleReturnPostFire>;
+    afterPostCommit(fire: SaleReturnPostFire): void;
+    fileGateRequestsInTx(tx: Prisma.TransactionClient, refused: readonly SaleReturnRefusedGate[], note: string): Promise<string[]>;
     private postPipeline;
     private lockAndWorkOut;
     private gateAsks;

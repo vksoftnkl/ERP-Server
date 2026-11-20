@@ -9,19 +9,51 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockTrackPresetsService = void 0;
+exports.StockTrackPresetsService = exports.PRESET_AUDIT_SCREEN_NAME = void 0;
+exports.presetAuditRecord = presetAuditRecord;
 exports.valuationFor = valuationFor;
 exports.presetRuleErrors = presetRuleErrors;
 exports.lockedFieldErrors = lockedFieldErrors;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_shared_utils_1 = require("../../../common/utils/module-shared.utils");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_error_codes_1 = require("../types/stock-error-codes");
 const save_stock_track_preset_dto_1 = require("./dto/save-stock-track-preset.dto");
 const preset_merge_1 = require("./preset-merge");
 const NO_USAGE = { items: 0, groups: 0, activeItems: 0, activeGroups: 0 };
+exports.PRESET_AUDIT_SCREEN_NAME = 'Stock Track Preset';
+const PRESET_AUDIT_TABLE_NAME = 'stock track preset';
+function presetAuditRecord(record) {
+    return {
+        spt_id: record.sptId,
+        spt_company_id: record.sptCompanyId,
+        spt_code: record.sptCode,
+        spt_name: record.sptName,
+        spt_description: record.sptDescription,
+        spt_sort_order: record.sptSortOrder,
+        spt_track_batch: record.sptTrackBatch,
+        spt_track_expiry: record.sptTrackExpiry,
+        spt_track_mrp: record.sptTrackMrp,
+        spt_track_sale_price: record.sptTrackSalePrice,
+        spt_track_serial: record.sptTrackSerial,
+        spt_track_supplier: record.sptTrackSupplier,
+        spt_valuation_method: record.sptValuationMethod,
+        spt_issue_strategy: record.sptIssueStrategy,
+        spt_allow_negative: record.sptAllowNegative,
+        spt_shelf_life_days: record.sptShelfLifeDays,
+        spt_near_expiry_days: record.sptNearExpiryDays,
+        spt_ageing_basis: record.sptAgeingBasis,
+        spt_block_expired_sale: record.sptBlockExpiredSale,
+        spt_remarks: record.sptRemarks,
+        spt_is_active: record.sptIsActive,
+        spt_is_deleted: record.sptIsDeleted,
+        spt_created_on: record.sptCreatedOn ? record.sptCreatedOn.toISOString() : null,
+        spt_created_by: record.sptCreatedBy,
+    };
+}
 const TRACK_COLUMN = {
     trackBatch: 'sptTrackBatch',
     trackMrp: 'sptTrackMrp',
@@ -110,9 +142,11 @@ function usedByWords(items, groups, adjective = '') {
 let StockTrackPresetsService = class StockTrackPresetsService {
     prisma;
     requestContextService;
-    constructor(prisma, requestContextService) {
+    auditLogService;
+    constructor(prisma, requestContextService, auditLogService) {
         this.prisma = prisma;
         this.requestContextService = requestContextService;
+        this.auditLogService = auditLogService;
     }
     async get(queryDto) {
         const companyId = queryDto.company_id ?? this.requestContextService.getCompanyId();
@@ -226,14 +260,18 @@ let StockTrackPresetsService = class StockTrackPresetsService {
         };
         let saved;
         try {
-            saved = existing
-                ? await this.prisma.stockTrackPreset.update({
-                    where: { sptId: existing.sptId },
-                    data: { ...data, sptModifiedOn: now, sptModifiedBy: author },
-                })
-                : await this.prisma.stockTrackPreset.create({
-                    data: { ...data, sptCompanyId: dto.companyId, sptCreatedOn: now, sptCreatedBy: author },
-                });
+            saved = await this.prisma.$transaction(async (tx) => {
+                const written = existing
+                    ? await tx.stockTrackPreset.update({
+                        where: { sptId: existing.sptId },
+                        data: { ...data, sptModifiedOn: now, sptModifiedBy: author },
+                    })
+                    : await tx.stockTrackPreset.create({
+                        data: { ...data, sptCompanyId: dto.companyId, sptCreatedOn: now, sptCreatedBy: author },
+                    });
+                await this.audit(tx, existing ? 'update' : 'insert', existing, written, existing ? 'Stock track preset updated' : 'Stock track preset created');
+                return written;
+            });
         }
         catch (error) {
             if ((0, module_service_utils_1.isUniqueConstraintError)(error)) {
@@ -255,11 +293,29 @@ let StockTrackPresetsService = class StockTrackPresetsService {
                 },
             ]);
         }
-        const saved = await this.prisma.stockTrackPreset.update({
-            where: { sptId: existing.sptId },
-            data: { sptIsActive: dto.reactivate === true, sptModifiedOn: new Date(), sptModifiedBy: this.author() },
+        const saved = await this.prisma.$transaction(async (tx) => {
+            const written = await tx.stockTrackPreset.update({
+                where: { sptId: existing.sptId },
+                data: { sptIsActive: dto.reactivate === true, sptModifiedOn: new Date(), sptModifiedBy: this.author() },
+            });
+            await this.audit(tx, 'update', existing, written, dto.reactivate ? 'Stock track preset reactivated' : 'Stock track preset deactivated');
+            return written;
         });
         return this.toPayload(saved, true, usage);
+    }
+    async audit(tx, action, before, after, notes) {
+        await this.auditLogService.logEntityChange({
+            action,
+            tableName: PRESET_AUDIT_TABLE_NAME,
+            screenName: exports.PRESET_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: after.sptId,
+            displayName: after.sptName,
+            originalRecord: before ? presetAuditRecord(before) : null,
+            modifiedRecord: presetAuditRecord(after),
+            userId: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
+            notes,
+        }, tx);
     }
     async ownPreset(companyId, sptId, verb) {
         const record = await this.prisma.stockTrackPreset.findUnique({ where: { sptId } });
@@ -361,6 +417,7 @@ exports.StockTrackPresetsService = StockTrackPresetsService;
 exports.StockTrackPresetsService = StockTrackPresetsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        audit_log_service_1.AuditLogService])
 ], StockTrackPresetsService);
 //# sourceMappingURL=stock-track-presets.service.js.map

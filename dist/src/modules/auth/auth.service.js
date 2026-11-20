@@ -10,21 +10,28 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuthService = exports.LEGACY_LOGIN_APP_VERSION_FIELD = void 0;
+exports.AuthService = exports.MIN_NEW_PASSWORD_LENGTH = exports.LEGACY_LOGIN_APP_VERSION_FIELD = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const node_crypto_1 = require("node:crypto");
 const node_util_1 = require("node:util");
 const request_context_service_1 = require("../../common/request-context/request-context.service");
+const secret_hash_utils_1 = require("../../common/utils/secret-hash.utils");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
 const auth_epoch_service_1 = require("../app-version/services/auth-epoch.service");
 const build_policy_service_1 = require("../app-version/services/build-policy.service");
 const client_tracking_service_1 = require("../app-version/services/client-tracking.service");
+const audit_log_service_1 = require("../audit-log/audit-log.service");
+const device_audit_helper_1 = require("../fixed/device-list-master/device-audit.helper");
 const auth_session_service_1 = require("./auth-session.service");
 const token_service_1 = require("./token.service");
 const auth_error_codes_1 = require("./types/auth-error-codes");
 const scryptAsync = (0, node_util_1.promisify)(node_crypto_1.scrypt);
 const SESSION_TOKEN_MAX_LENGTH = 200;
 exports.LEGACY_LOGIN_APP_VERSION_FIELD = 'auth.login.app_version';
+exports.MIN_NEW_PASSWORD_LENGTH = 4;
+const PASSWORD_AUDIT_SCREEN_NAME = 'User Administration';
+const PASSWORD_AUDIT_TABLE_NAME = 'user_master';
 let AuthService = AuthService_1 = class AuthService {
     tokenService;
     authSessionService;
@@ -33,8 +40,9 @@ let AuthService = AuthService_1 = class AuthService {
     clientTracking;
     buildPolicy;
     authEpoch;
+    auditLogService;
     logger = new common_1.Logger(AuthService_1.name);
-    constructor(tokenService, authSessionService, prisma, requestContextService, clientTracking, buildPolicy, authEpoch) {
+    constructor(tokenService, authSessionService, prisma, requestContextService, clientTracking, buildPolicy, authEpoch, auditLogService) {
         this.tokenService = tokenService;
         this.authSessionService = authSessionService;
         this.prisma = prisma;
@@ -42,26 +50,35 @@ let AuthService = AuthService_1 = class AuthService {
         this.clientTracking = clientTracking;
         this.buildPolicy = buildPolicy;
         this.authEpoch = authEpoch;
+        this.auditLogService = auditLogService;
     }
     async login(loginAuthDto, requestMetadata = { userAgent: null, appVersion: null }) {
         const client = requestMetadata.client ?? null;
         const platform = client?.platform ?? this.resolveLoginChannel(loginAuthDto.device_type);
         this.buildPolicy.assertClientBuild(platform, client?.build ?? null);
-        const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
+        const user = await this.findLoginUser(loginAuthDto.usrLoginName);
         if (!user) {
             await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
             throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('Invalid credentials', 'credentials', auth_error_codes_1.AuthErrorCode.INVALID_CREDENTIALS));
         }
+        const blocked = this.loginBlock(user, loginAuthDto.device_type);
         const isPasswordValid = await this.verifyPassword(loginAuthDto.usrPassword, user.usrPasswordHash);
         if (!isPasswordValid) {
-            this.logger.warn(`Login rejected for '${user.usrLoginName}' (${user.usrId}): password mismatch.`);
-            try {
-                await this.incrementFailedLogin(user.usrId);
-            }
-            catch (error) {
-                this.logger.warn(`Skipping failed login count update for user ${user.usrId}: ${this.describeError(error)}`);
+            this.logger.warn(`Login rejected for '${user.usrLoginName}' (${user.usrId}): password mismatch` +
+                (blocked ? ` (and ${blocked.reason}).` : '.'));
+            if (!blocked) {
+                try {
+                    await this.incrementFailedLogin(user.usrId);
+                }
+                catch (error) {
+                    this.logger.warn(`Skipping failed login count update for user ${user.usrId}: ${this.describeError(error)}`);
+                }
             }
             throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('Invalid credentials', 'credentials', auth_error_codes_1.AuthErrorCode.INVALID_CREDENTIALS));
+        }
+        if (blocked) {
+            this.logger.warn(`Login refused for '${user.usrLoginName}' (${user.usrId}): password right, ${blocked.reason}.`);
+            throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)(blocked.message, 'credentials', blocked.code, blocked.extra));
         }
         const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
         let device = null;
@@ -80,6 +97,7 @@ let AuthService = AuthService_1 = class AuthService {
             device_id: device?.devId ?? null,
             ep: this.authEpoch.current(),
             platform,
+            ...(user.usrMustChangePassword ? { pwc: true } : {}),
         };
         const issuedAccessToken = this.tokenService.signAccessToken({
             sub: user.usrId,
@@ -123,6 +141,8 @@ let AuthService = AuthService_1 = class AuthService {
             dev_branch_id: device?.devBranchId ?? null,
             dev_user_id: device?.devUserId ?? null,
             device_type: device?.devDeviceType ?? null,
+            mustChangePassword: user.usrMustChangePassword === true,
+            ...rateLockOf(user),
         };
         if (loginAuthDto.app_version !== undefined && loginAuthDto.app_version !== null) {
             this.clientTracking.legacyField(exports.LEGACY_LOGIN_APP_VERSION_FIELD, requestMetadata.client);
@@ -149,11 +169,18 @@ let AuthService = AuthService_1 = class AuthService {
                 usrIsActive: true,
                 usrIsLocked: false,
             },
-            select: { usrType: true, usrCompanyId: true },
+            select: {
+                usrType: true,
+                usrCompanyId: true,
+                usrMustChangePassword: true,
+                usrEditRate: true,
+                usrMaxDiscPerc: true,
+            },
         });
         if (!user) {
             throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('User is no longer active', 'refresh_token', auth_error_codes_1.AuthErrorCode.USER_INACTIVE));
         }
+        const mustChangePassword = refreshPayload.pwc === true && user.usrMustChangePassword === true;
         const issuedAccessToken = this.tokenService.signAccessToken({
             sub: refreshPayload.sub,
             user_name: refreshPayload.user_name,
@@ -164,6 +191,7 @@ let AuthService = AuthService_1 = class AuthService {
             device_id: refreshPayload.device_id,
             ep: refreshPayload.ep ?? 0,
             platform: refreshPayload.platform ?? null,
+            ...(mustChangePassword ? { pwc: true } : {}),
         });
         await this.authSessionService.storeTokenSession(issuedAccessToken.token, issuedAccessToken.payload, refreshToken);
         await this.clientTracking.onRefresh({
@@ -187,36 +215,133 @@ let AuthService = AuthService_1 = class AuthService {
             dev_branch_id: null,
             dev_user_id: null,
             device_type: null,
+            mustChangePassword,
+            ...rateLockOf(user),
         };
     }
-    async findLoginUser(userName, deviceType) {
+    async changePassword(dto) {
+        const usrId = this.requestContextService.getUserId();
+        if (!usrId) {
+            throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('Missing or invalid Authorization header', 'authorization', auth_error_codes_1.AuthErrorCode.AUTHORIZATION_MISSING));
+        }
+        const user = await this.prisma.userMaster.findFirst({
+            where: { usrId, usrIsDeleted: false, usrIsActive: true, usrIsLocked: false },
+            select: {
+                usrId: true,
+                usrLoginName: true,
+                usrDisplayName: true,
+                usrPasswordHash: true,
+                usrPasswordChangedOn: true,
+                usrMustChangePassword: true,
+            },
+        });
+        if (!user) {
+            throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('User is no longer active', 'authorization', auth_error_codes_1.AuthErrorCode.USER_INACTIVE));
+        }
+        if (!(await this.verifyPassword(dto.currentPassword, user.usrPasswordHash))) {
+            this.noteWrongCurrentPassword(user);
+            throw new common_1.BadRequestException((0, auth_error_codes_1.authErrorBody)('The current password is wrong', 'currentPassword', auth_error_codes_1.AuthErrorCode.CURRENT_PASSWORD_WRONG));
+        }
+        if (dto.newPassword.trim().length < exports.MIN_NEW_PASSWORD_LENGTH) {
+            throw new common_1.BadRequestException((0, auth_error_codes_1.authErrorBody)(`The new password needs at least ${exports.MIN_NEW_PASSWORD_LENGTH} characters`, 'newPassword', auth_error_codes_1.AuthErrorCode.NEW_PASSWORD_TOO_SHORT));
+        }
+        if (await this.verifyPassword(dto.newPassword, user.usrPasswordHash)) {
+            throw new common_1.BadRequestException((0, auth_error_codes_1.authErrorBody)('The new password is the same as the current one', 'newPassword', auth_error_codes_1.AuthErrorCode.NEW_PASSWORD_SAME));
+        }
+        const newHash = await (0, secret_hash_utils_1.hashSecret)(dto.newPassword);
+        const now = new Date();
+        await this.prisma.$transaction(async (tx) => {
+            const written = await tx.userMaster.updateMany({
+                where: { usrId, usrIsDeleted: false, usrPasswordHash: user.usrPasswordHash },
+                data: {
+                    usrPasswordHash: newHash,
+                    usrPasswordChangedOn: now,
+                    usrMustChangePassword: false,
+                    usrModifiedOn: now,
+                    usrModifiedBy: usrId,
+                },
+            });
+            if (written.count === 0) {
+                throw new common_1.BadRequestException((0, auth_error_codes_1.authErrorBody)('The current password is wrong', 'currentPassword', auth_error_codes_1.AuthErrorCode.CURRENT_PASSWORD_WRONG));
+            }
+            await this.auditLogService.logEntityChange({
+                action: 'update',
+                tableName: PASSWORD_AUDIT_TABLE_NAME,
+                screenName: PASSWORD_AUDIT_SCREEN_NAME,
+                screenType: 'master',
+                pk: usrId,
+                displayName: user.usrDisplayName?.trim() || user.usrLoginName,
+                originalRecord: {
+                    usrPasswordChangedOn: user.usrPasswordChangedOn?.toISOString() ?? null,
+                    usrMustChangePassword: user.usrMustChangePassword,
+                },
+                modifiedRecord: {
+                    usrPasswordChangedOn: now.toISOString(),
+                    usrMustChangePassword: false,
+                },
+                userId: usrId,
+                notes: 'Password changed by the user (current password checked)',
+            }, tx);
+        });
+        return {
+            usrId,
+            usrPasswordChangedOn: now.toISOString(),
+            usrMustChangePassword: false,
+        };
+    }
+    noteWrongCurrentPassword(user) {
+        this.logger.warn(`Change password refused for '${user.usrLoginName}' (${user.usrId}): current password mismatch.`);
+    }
+    async findLoginUser(userName) {
         const normalizedUserName = userName.trim();
         if (!normalizedUserName) {
             return null;
         }
         return this.prisma.userMaster.findFirst({
-            where: {
-                usrLoginName: { equals: normalizedUserName, mode: 'insensitive' },
-                usrIsDeleted: false,
-                usrIsActive: true,
-                usrIsLocked: false,
-                ...this.buildLoginChannelFilter(deviceType),
-            },
+            where: { usrLoginName: { equals: normalizedUserName, mode: 'insensitive' } },
+            orderBy: [
+                { usrIsDeleted: 'asc' },
+                { usrModifiedOn: { sort: 'desc', nulls: 'last' } },
+                { usrCreatedOn: 'desc' },
+            ],
         });
     }
-    buildLoginChannelFilter(deviceType) {
-        switch (this.resolveLoginChannel(deviceType)) {
-            case 'web':
-                return { usrWebLogin: true };
-            case 'mobile':
-                return { usrMobileLogin: true };
-            case 'desktop':
-                return { usrDesktopLogin: true };
-            default:
-                return {
-                    OR: [{ usrWebLogin: true }, { usrDesktopLogin: true }, { usrMobileLogin: true }],
-                };
+    loginBlock(user, deviceType) {
+        if (user.usrIsDeleted || !user.usrIsActive) {
+            return {
+                code: auth_error_codes_1.AuthErrorCode.USER_INACTIVE,
+                message: 'This account is not active',
+                reason: user.usrIsDeleted ? 'user is deleted' : 'user is inactive',
+                extra: {},
+            };
         }
+        if (user.usrIsLocked) {
+            return {
+                code: auth_error_codes_1.AuthErrorCode.USER_LOCKED,
+                message: 'This account is locked',
+                reason: 'user is locked',
+                extra: {},
+            };
+        }
+        const channel = this.resolveLoginChannel(deviceType);
+        const open = channel === 'web'
+            ? user.usrWebLogin
+            : channel === 'mobile'
+                ? user.usrMobileLogin
+                : channel === 'desktop'
+                    ? user.usrDesktopLogin
+                    : user.usrWebLogin || user.usrDesktopLogin || user.usrMobileLogin;
+        if (open) {
+            return null;
+        }
+        return {
+            code: auth_error_codes_1.AuthErrorCode.CHANNEL_DISABLED,
+            message: channel
+                ? `${channel[0].toUpperCase()}${channel.slice(1)} login is not allowed for this account`
+                : 'This account may not log in from any kind of device',
+            reason: channel ? `${channel} login is disabled` : 'all login channels are disabled',
+            extra: channel ? { channel } : {},
+        };
     }
     resolveLoginChannel(deviceType) {
         const normalized = deviceType?.trim().toLowerCase();
@@ -341,7 +466,7 @@ let AuthService = AuthService_1 = class AuthService {
                 throw new common_1.UnauthorizedException((0, auth_error_codes_1.authErrorBody)('Device is not available. Please contact administrator.', 'device_id', auth_error_codes_1.AuthErrorCode.DEVICE_UNAVAILABLE));
             }
         }
-        return this.prisma.deviceMaster.update({
+        const updated = await this.prisma.deviceMaster.update({
             where: { devDeviceUid: lookupUid },
             data: {
                 devUserId: user.usrId,
@@ -354,6 +479,34 @@ let AuthService = AuthService_1 = class AuthService {
                 ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
             },
         });
+        await this.auditDeviceMovedByLogin(existing, updated, user);
+        return updated;
+    }
+    async auditDeviceMovedByLogin(before, after, user) {
+        const moved = before.devCompanyId !== after.devCompanyId ||
+            before.devBranchId !== after.devBranchId ||
+            before.devDeviceType !== after.devDeviceType;
+        if (!moved) {
+            return;
+        }
+        try {
+            await this.auditLogService.logEntityChange({
+                action: 'update',
+                tableName: device_audit_helper_1.DEVICE_AUDIT_TABLE_NAME,
+                screenName: device_audit_helper_1.DEVICE_AUDIT_SCREEN_NAME,
+                screenType: 'master',
+                pk: after.devId,
+                displayName: (0, device_audit_helper_1.deviceAuditDisplayName)(after),
+                originalRecord: (0, device_audit_helper_1.toDeviceAuditRecord)(before),
+                modifiedRecord: (0, device_audit_helper_1.toDeviceAuditRecord)(after),
+                userId: user.usrId,
+                ...(after.devBranchId ? { branchId: after.devBranchId } : {}),
+                notes: `Device moved by the login of ${user.usrLoginName}`,
+            });
+        }
+        catch (error) {
+            this.logger.warn(`Device ${after.devDeviceUid} moved by the login of ${user.usrLoginName}; the audit row was not written: ${this.describeError(error)}`);
+        }
     }
     describeBlockedDevice(device) {
         const reason = device.devBlockReason?.trim();
@@ -445,6 +598,15 @@ exports.AuthService = AuthService = AuthService_1 = __decorate([
         request_context_service_1.RequestContextService,
         client_tracking_service_1.ClientTrackingService,
         build_policy_service_1.BuildPolicyService,
-        auth_epoch_service_1.AuthEpochService])
+        auth_epoch_service_1.AuthEpochService,
+        audit_log_service_1.AuditLogService])
 ], AuthService);
+function rateLockOf(user) {
+    return {
+        usrEditRate: user.usrEditRate === true,
+        usrMaxDiscPerc: user.usrMaxDiscPerc === null || user.usrMaxDiscPerc === undefined
+            ? null
+            : new client_1.Prisma.Decimal(user.usrMaxDiscPerc).toFixed(2),
+    };
+}
 //# sourceMappingURL=auth.service.js.map

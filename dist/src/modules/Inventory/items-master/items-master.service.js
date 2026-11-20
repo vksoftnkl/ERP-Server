@@ -20,6 +20,7 @@ const item_master_update_service_1 = require("./item-master-update.service");
 const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const item_base_unit_helper_1 = require("../utils/item-base-unit.helper");
+const item_unit_in_use_helper_1 = require("../utils/item-unit-in-use.helper");
 const price_bucket_service_1 = require("../items-price-master/price-bucket.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -167,7 +168,10 @@ let ItemsMasterService = class ItemsMasterService {
     async saveComposite(dto) {
         return this.prisma.$transaction(async (tx) => {
             const saved = dto.item_id
-                ? await this.updateItem(dto, tx, { childrenFollow: true })
+                ? await this.updateItem(dto, tx, {
+                    childrenFollow: true,
+                    unitConversions: dto.unit_conversions,
+                })
                 : { payload: await this.createItem(dto, tx), before: null };
             const itemId = saved.payload.item_id;
             const children = await this.itemMasterUpdateService.syncChildren(itemId, dto, tx);
@@ -197,14 +201,15 @@ let ItemsMasterService = class ItemsMasterService {
     }
     async getComposite(itemId) {
         const item = await this.getById(itemId);
-        const [unit_conversions, prices, scheduled_prices, ean_codes, reorders] = await Promise.all([
+        const [unit_conversions, prices, scheduled_prices, ean_codes, reorders, inUse] = await Promise.all([
             this.itemUnitConversionService.findByItemId(itemId),
             this.itemsPriceMasterService.findByItemId(itemId),
             this.itemsPriceMasterService.findScheduledByItemId(itemId),
             this.itemsEanCodeMasterService.findByItemId(itemId),
             this.itemsReorderMasterService.findByItemId(itemId),
+            (0, item_unit_in_use_helper_1.unitRowsInUse)(this.prisma, itemId),
         ]);
-        return this.resolveCompositeNames({
+        const named = await this.resolveCompositeNames({
             item,
             unit_conversions,
             prices,
@@ -212,6 +217,14 @@ let ItemsMasterService = class ItemsMasterService {
             ean_codes,
             reorders,
         });
+        return {
+            ...named,
+            item: { ...named.item, item_units_in_use: inUse.itemUsed },
+            unit_conversions: named.unit_conversions.map((row) => {
+                const lock = (0, item_unit_in_use_helper_1.rowUnitLock)(inUse, row);
+                return { ...row, iuc_in_use: lock.locked, iuc_used_by: [...lock.usedBy] };
+            }),
+        };
     }
     async resolveCompositeNames(composite) {
         const { item, unit_conversions, ean_codes, reorders } = composite;
@@ -855,10 +868,13 @@ let ItemsMasterService = class ItemsMasterService {
             const base = (await this.itemUnitConversionService.findByItemId(itemId, client)).find((row) => row.iuc_is_base_unit);
             if (base) {
                 const sent = saveItemDto.item_base_unit_id;
-                if (sent && sent !== base.iuc_unit_id) {
+                const rePicked = options.childrenFollow
+                    ? (0, item_base_unit_helper_1.baseRowRePick)(base, options.unitConversions)
+                    : null;
+                if (sent && sent !== base.iuc_unit_id && sent !== rePicked) {
                     (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, 'item_base_unit_id', `item_base_unit_id stays ${base.iuc_unit_id}, the unit of the item's base row.`);
                 }
-                data.itemBaseUnitId = base.iuc_unit_id;
+                data.itemBaseUnitId = rePicked ?? base.iuc_unit_id;
             }
             else if (saveItemDto.item_base_unit_id !== undefined) {
                 data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;
@@ -897,6 +913,7 @@ let ItemsMasterService = class ItemsMasterService {
                 modifiedRecord: payload,
                 userId: payload.item_modified_by ?? this.requestContextService.getUserId() ?? module_service_utils_2.DEFAULT_ACTOR,
                 notes: 'Item updated',
+                skipWhenUnchanged: true,
             }, client);
             return { payload, before: existing };
         };

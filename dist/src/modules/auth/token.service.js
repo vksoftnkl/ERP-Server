@@ -127,6 +127,7 @@ let TokenService = class TokenService {
         const deviceId = payload.device_id;
         const epoch = payload.ep;
         const platform = payload.platform;
+        const passwordChange = payload.pwc;
         if (typeof sub !== 'string' || sub.length === 0) {
             throw this.invalidToken(expectedType);
         }
@@ -167,6 +168,9 @@ let TokenService = class TokenService {
         if (platform !== undefined && platform !== null && typeof platform !== 'string') {
             throw this.invalidToken(expectedType);
         }
+        if (passwordChange !== undefined && typeof passwordChange !== 'boolean') {
+            throw this.invalidToken(expectedType);
+        }
         const normalizedPayload = {
             sub,
             user_name: userName,
@@ -177,6 +181,7 @@ let TokenService = class TokenService {
             device_id: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : null,
             ep: typeof epoch === 'number' ? epoch : 0,
             platform: typeof platform === 'string' ? (0, client_info_1.parsePlatform)(platform) : null,
+            ...(passwordChange === true ? { pwc: true } : {}),
             iat: issuedAt,
             exp: expiresAt,
             typ: expectedType,

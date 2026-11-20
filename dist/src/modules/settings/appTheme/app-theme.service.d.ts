@@ -1,5 +1,6 @@
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
+import { stylesheetDigest } from "../../audit-log/audit-text-digest";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveAppThemeDto } from './dto/save-app-theme.dto';
 import { SaveAppThemeTemplateDto } from './dto/save-app-theme-template.dto';
@@ -38,3 +39,4 @@ export declare class AppThemeService {
     private throwNotFound;
     private handleWriteError;
 }
+export declare const templateTextDigest: typeof stylesheetDigest;

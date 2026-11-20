@@ -7,7 +7,12 @@ export interface MobileCustomerBalance {
     balance: SidedAmount | null;
     balanceStatus: MobileCustomerBalanceStatus | null;
 }
-export interface MobileCustomerListItem extends MobileCustomerBalance {
+export interface MobileCustomerOutstanding {
+    outstanding: string | null;
+    outstandingBills: number | null;
+    oldestBillDate: string | null;
+}
+export interface MobileCustomerListItem extends MobileCustomerBalance, MobileCustomerOutstanding {
     cusId: string;
     cusName: string | null;
     cusShort: string | null;
@@ -36,14 +41,16 @@ export interface MobileCustomerListPayload {
     hasMore: boolean;
     balanceAsOn: string | null;
     accYear: string | null;
+    companyId: string | null;
 }
-export type MobileCustomerDetail = CustomerPayload & MobileCustomerBalance;
+export type MobileCustomerDetail = CustomerPayload & MobileCustomerBalance & MobileCustomerOutstanding;
 export interface MobileCustomerOption {
     id: string;
     name: string;
 }
 export interface MobileCustomerFormOptions {
     areas: Array<MobileCustomerOption & {
+        cityId: string;
         cityName: string | null;
     }>;
     groups: MobileCustomerOption[];

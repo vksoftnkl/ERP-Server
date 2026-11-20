@@ -320,6 +320,18 @@ export interface AdjustLine {
   amount: Dec;
 }
 
+/**
+ * The phone upload's Adjust (D6, POST /mobile/returns/create): handed the
+ * customer's open, writable bills as /post reads them under the lock (this
+ * bill first, then the Receipt's order) and what the note can adjust, it
+ * answers the split to post. buildSettlement still checks it (checkAdjust).
+ */
+export type AdjustReplanner = (input: {
+  bills: readonly OpenBillFacts[];
+  adjustable: Dec;
+  thisSbId: string | null;
+}) => AdjustAsk[];
+
 /** The server's split: fill each bill in order, this bill first, until the note is used. */
 export function proposeAdjust(
   bills: readonly OpenBillFacts[],
@@ -577,6 +589,13 @@ export interface SettlementInput {
   tenders: readonly RefundTender[];
   /** The operator's Adjust split; null = the server proposes one. */
   adjustments: readonly AdjustAsk[] | null;
+  /**
+   * The phone upload's split (POST /mobile/returns/create, D6): worked out
+   * against the bills as they stand now, under the lock, instead of refusing a
+   * row that went stale since the phone's Sync. When given it replaces
+   * `adjustments`; the split it answers is still checked by checkAdjust.
+   */
+  replan?: AdjustReplanner | null;
   billSort: string | null;
   /** Lock the bills Adjust touches (at /post). */
   lock: boolean;
@@ -695,8 +714,11 @@ export async function buildSettlement(
     const bills = all.filter((b) => !shut.has(b.ablAccYear));
     const closed = new Map(all.filter((b) => shut.has(b.ablAccYear)).map((b) => [b.ablId, b]));
     let lines: AdjustLine[];
-    if (input.adjustments) {
-      const checked = checkAdjust(input.adjustments, bills, afterShares, bill.sbId, closed);
+    const asks = input.replan
+      ? input.replan({ bills, adjustable: afterShares, thisSbId: bill.sbId })
+      : input.adjustments;
+    if (asks) {
+      const checked = checkAdjust(asks, bills, afterShares, bill.sbId, closed);
       issues.push(...checked.issues);
       const named = new Map(checked.lines.map((l) => [l.bill.ablId, l]));
       lines = bills.map(
@@ -711,7 +733,7 @@ export async function buildSettlement(
       adjustable: afterShares,
       adjusted,
       leftAsCredit: max0(afterShares.minus(adjusted)),
-      proposed: !input.adjustments,
+      proposed: !asks,
     };
   }
   if (!zeroNote && mode === 'CASH') {

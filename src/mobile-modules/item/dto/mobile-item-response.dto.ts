@@ -6,6 +6,16 @@ class MobileCompanyOptionDto {
   @ApiProperty({ nullable: true, type: String, description: 'comp_city' }) place!: string | null;
 }
 
+class MobileBranchOptionDto {
+  @ApiProperty({ format: 'uuid', description: "br_id: what an order's soBranchId takes" })
+  id!: string;
+  @ApiProperty({ example: 'Head Office' }) name!: string;
+  @ApiProperty({ format: 'uuid', description: 'br_comp_id: one of the ids in companies' })
+  companyId!: string;
+  @ApiProperty({ description: "br_is_default: the company's default branch" })
+  isDefault!: boolean;
+}
+
 class MobileSortedOptionDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty() name!: string;
@@ -24,6 +34,15 @@ class MobileItemPriceLevelOptionDto {
 
 export class MobileItemOptionsDto {
   @ApiProperty({ type: [MobileCompanyOptionDto] }) companies!: MobileCompanyOptionDto[];
+  @ApiProperty({
+    type: [MobileBranchOptionDto],
+    description:
+      'The active, not deleted branches of the companies listed in companies (since ' +
+      '2026-11-18), for the phone to pick a branch over plain HTTP. Per company in the order ' +
+      'of companies, then by name and id, the rows and order of ' +
+      'GET /master-lookups/branches/by-company/{companyId}. A company with no branch has no row.',
+  })
+  branches!: MobileBranchOptionDto[];
   @ApiProperty({ type: [MobileSortedOptionDto] }) itemGroups!: MobileSortedOptionDto[];
   @ApiProperty({ type: [MobileSortedOptionDto] }) brands!: MobileSortedOptionDto[];
   @ApiProperty({
@@ -82,6 +101,24 @@ export class MobileItemDto {
   @ApiProperty({ nullable: true, type: String }) itemGroupName!: string | null;
   @ApiProperty({ nullable: true, type: String, format: 'uuid' }) itemBrandId!: string | null;
   @ApiProperty({ nullable: true, type: String }) itemBrandName!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'uuid',
+    description:
+      "item_category_id (since 2026-11-19): the phone's offer engine matches ITEM_CATEGORY " +
+      'scheme rows by it',
+  })
+  categoryId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'uuid',
+    description:
+      "item_section_id (since 2026-11-19): the phone's offer engine matches ITEM_SECTION " +
+      'scheme rows by it',
+  })
+  sectionId!: string | null;
   @ApiProperty() allowLoading!: boolean;
   @ApiProperty() allowFreight!: boolean;
   @ApiProperty() allowPromo!: boolean;

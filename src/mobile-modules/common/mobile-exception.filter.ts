@@ -18,6 +18,8 @@ export class MobileExceptionFilter extends SalesExceptionFilter<
   ModuleErrorResponse<ModuleErrorDetail>
 > {
   constructor() {
-    super(/\b(cv[A-Z][A-Za-z0-9]*|companyId|deviceUid|clientUuid|page|pageSize)\b/);
+    super(
+      /\b(cv[A-Z][A-Za-z0-9]*|companyId|branchId|deviceUid|clientUuid|page|pageSize|since|withCredits)\b/,
+    );
   }
 }

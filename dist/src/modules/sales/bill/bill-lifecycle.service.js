@@ -125,6 +125,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         await this.prisma.$transaction(async (tx) => {
             guard.refusals.push(...(await (0, bill_voucher_type_helper_1.billTypeRefusals)(tx, (companyId, branchId, deviceId, keys) => this.salesContext.values(companyId, branchId, deviceId, keys), dto, { offlineSite: (0, offline_site_1.isOfflineSite)(this.config) })));
             await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
+            guard.refusals.push(...(await this.bills.rateDiscountDryRun(tx, dto, chargeTypes)));
             await this.oldPendingDeliveryWarning(tx, dto, guard);
         });
         const proposals = await this.proposals(snap, ctx);

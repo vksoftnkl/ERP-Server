@@ -34,6 +34,10 @@ import {
 } from 'src/common/utils/module-list.utils';
 import { assertChildDeletable, assertItemsLive } from '../utils/item-child.helper';
 import { baseUnitChange, refuseBaseUnitChange } from '../utils/item-base-unit.helper';
+/** What only the item card's composite save may ask of `save` (item master review 11-20 Q2). */
+export type ItemUnitConversionSaveOptions = {
+  baseRePick?: { iucId: string; unitId: string };
+};
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_UNIT_CONVERSION_TABLE_NAME = 'item_unit_conversion';
 const ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME = 'Item Unit Conversion Master';
@@ -58,23 +62,31 @@ export class ItemUnitConversionService {
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
     tx?: Prisma.TransactionClient,
+    options?: ItemUnitConversionSaveOptions,
   ): Promise<ItemUnitConversionPayload>;
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto[],
     tx?: Prisma.TransactionClient,
+    options?: ItemUnitConversionSaveOptions,
   ): Promise<ItemUnitConversionPayload[]>;
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[],
     tx?: Prisma.TransactionClient,
+    options?: ItemUnitConversionSaveOptions,
   ): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]>;
   /**
    * @param tx When supplied, the batch runs inside the caller's transaction
    * instead of opening its own, so a later failure rolls these rows back too
    * (see ItemsMasterService.saveComposite).
+   * @param options.baseRePick The item card's composite save only, once it has
+   * found the item never used (item master review 11-20 Q2): the base row
+   * `iucId` may take `unitId`. This route never passes it, so a base change sent
+   * here is refused as before.
    */
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[],
     tx?: Prisma.TransactionClient,
+    options?: ItemUnitConversionSaveOptions,
   ): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]> {
     const saveItems = Array.isArray(saveItemUnitConversionDto)
       ? saveItemUnitConversionDto
@@ -85,7 +97,12 @@ export class ItemUnitConversionService {
         saveItems.map((item) => item.iuc_item_id),
         { field: 'iuc_item_id', code: ItemUnitConversionErrorCode.ITEM_NOT_LIVE },
       );
-      await this.assertBaseUnitsKept(client, saveItems, Array.isArray(saveItemUnitConversionDto));
+      await this.assertBaseUnitsKept(
+        client,
+        saveItems,
+        Array.isArray(saveItemUnitConversionDto),
+        options?.baseRePick,
+      );
       const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(
         client,
         saveItems,
@@ -121,14 +138,23 @@ export class ItemUnitConversionService {
     client: Prisma.TransactionClient,
     saveItems: SaveItemUnitConversionDto[],
     indexed: boolean,
+    baseRePick?: ItemUnitConversionSaveOptions['baseRePick'],
   ): Promise<void> {
     const itemIds = Array.from(new Set(saveItems.map((saveItem) => saveItem.iuc_item_id)));
     const baseRows = await client.itemUnitConversion.findMany({
       where: { iucItemId: { in: itemIds }, iucIsBaseUnit: true, iucIsDeleted: false },
       select: { iucId: true, iucItemId: true, iucUnitId: true },
     });
+    // An allowed re-pick moves the lock to the base row's new unit; the row,
+    // and every other rule, stay.
     const baseByItemId = new Map(
-      baseRows.map((row) => [row.iucItemId, { iuc_id: row.iucId, iuc_unit_id: row.iucUnitId }]),
+      baseRows.map((row) => [
+        row.iucItemId,
+        {
+          iuc_id: row.iucId,
+          iuc_unit_id: baseRePick?.iucId === row.iucId ? baseRePick.unitId : row.iucUnitId,
+        },
+      ]),
     );
     saveItems.forEach((saveItem, index) => {
       const base = baseByItemId.get(saveItem.iuc_item_id);

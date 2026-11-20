@@ -93,6 +93,8 @@ describe('settlementOf', () => {
     docRefno: 'bil00001',
     pendingAmount: 80,
     amount: 100,
+    adjType: 'ALLOCATION',
+    drCr: 'CR',
     againstBillId: null,
     isReversed: false,
     reversalOfId: null,
@@ -104,30 +106,81 @@ describe('settlementOf', () => {
         row({ amount: 60 }),
         row({ amount: 40 }), // the PDC part of the same bill
         row({ billId: 'b', docRefno: 'bil00002', pendingAmount: 0, amount: 20 }),
-        row({ billId: 'c', amount: 5, againstBillId: 'x' }), // a credit pair's mirror
+        row({ billId: 'c', amount: 5, againstBillId: 'x' }), // not a plain row: ignored here
         row({ billId: 'd', amount: 9, isReversed: true }),
         row({ billId: 'e', amount: -9, reversalOfId: 'r' }),
       ],
+      creditsApplied: [],
       advanceBills: [{ billAmount: 12.5 }, { billAmount: 7.5 }],
     } as never);
-    expect(out).toEqual({
+    expect(out.allocations).toEqual([
+      {
+        billId: 'a',
+        billAccYear: '2026-2027',
+        docRefno: 'bil00001',
+        amount: '100.00',
+        discount: '0.00',
+        roundoff: '0.00',
+        pendingAmount: '80.00',
+      },
+      {
+        billId: 'b',
+        billAccYear: '2026-2027',
+        docRefno: 'bil00002',
+        amount: '20.00',
+        discount: '0.00',
+        roundoff: '0.00',
+        pendingAmount: '0.00',
+      },
+    ]);
+    expect(out.onAccount).toBe('20.00');
+    expect(out.creditsApplied).toEqual([]);
+    expect(out.pdcVouchers).toEqual([]);
+  });
+
+  it('splits the discount and the round-off out; a credit pair adds to the bill and names the credit', () => {
+    const out = settlementOf({
       allocations: [
-        {
-          billId: 'a',
-          billAccYear: '2026-2027',
-          docRefno: 'bil00001',
-          amount: '100.00',
-          pendingAmount: '80.00',
-        },
-        {
-          billId: 'b',
-          billAccYear: '2026-2027',
-          docRefno: 'bil00002',
-          amount: '20.00',
-          pendingAmount: '0.00',
-        },
+        row({ amount: 50 }),
+        row({ amount: 2, adjType: 'DISCOUNT' }),
+        row({ amount: 0.4, adjType: 'ROUND_OFF' }),
+        row({ amount: 7, adjType: 'WRITEOFF' }), // a desktop write-off is not money
       ],
-      onAccount: '20.00',
-    });
+      creditsApplied: [
+        // the bill side (CR on the receivable) and the mirror (DR on the credit)
+        row({ amount: 30, adjType: 'ADVANCE_ADJUST', againstBillId: 'adv' }),
+        row({
+          billId: 'adv',
+          docRefno: 'rct00009',
+          pendingAmount: 70,
+          amount: 30,
+          adjType: 'ADVANCE_ADJUST',
+          drCr: 'DR',
+          againstBillId: 'a',
+        }),
+        row({ billId: 'adv', amount: 5, drCr: 'DR', againstBillId: 'a', isReversed: true }),
+      ],
+      pdcVouchers: [
+        { voucherId: 'v2', voucherRefno: 'rct00010', voucherDate: '2026-11-30', docAmount: 1500 },
+      ],
+      advanceBills: [],
+    } as never);
+    expect(out.allocations).toEqual([
+      expect.objectContaining({ billId: 'a', amount: '80.00', discount: '2.00', roundoff: '0.40' }),
+    ]);
+    expect(out.creditsApplied).toEqual([
+      {
+        billId: 'adv',
+        billAccYear: '2026-2027',
+        docRefno: 'rct00009',
+        amount: '30.00',
+        pendingAmount: '70.00',
+      },
+    ]);
+    expect(out.pdcVouchers).toEqual([
+      { voucherId: 'v2', voucherRefno: 'rct00010', chequeDate: '2026-11-30', amount: '1500.00' },
+    ]);
+    expect(out.figures.bills.get('a|2026-2027')?.amount.toFixed(2)).toBe('80.00');
+    expect(out.figures.credits.get('adv|2026-2027')?.toFixed(2)).toBe('30.00');
   });
 });

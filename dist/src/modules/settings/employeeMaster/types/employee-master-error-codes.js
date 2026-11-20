@@ -10,6 +10,7 @@ var EmployeeMasterErrorCode;
     EmployeeMasterErrorCode["NAME_REQUIRED"] = "EMPLOYEE_NAME_REQUIRED";
     EmployeeMasterErrorCode["SALARY_TYPE_REQUIRED"] = "EMPLOYEE_SALARY_TYPE_REQUIRED";
     EmployeeMasterErrorCode["PHOTO_INVALID"] = "EMPLOYEE_PHOTO_INVALID";
+    EmployeeMasterErrorCode["CODE_DUPLICATE"] = "EMPLOYEE_CODE_DUPLICATE";
     EmployeeMasterErrorCode["DUPLICATE"] = "EMPLOYEE_DUPLICATE";
     EmployeeMasterErrorCode["RELATION_NOT_FOUND"] = "EMPLOYEE_RELATION_NOT_FOUND";
     EmployeeMasterErrorCode["LEDGER_HAS_BALANCE"] = "EMP_LEDGER_HAS_BALANCE";

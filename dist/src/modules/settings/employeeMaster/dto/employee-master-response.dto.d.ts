@@ -10,7 +10,7 @@ export declare class EmployeeMasterErrorResponseDto {
 }
 export declare class EmployeeMasterPayloadDto {
     empId: string;
-    empCompanyId: number;
+    empCompanyId: string | null;
     empCompanyName?: string | null;
     empBranchId: string | null;
     empBranchName?: string | null;
@@ -47,7 +47,7 @@ export declare class EmployeeMasterPayloadDto {
     empOvertimeAllowed: boolean;
     empHasCommission: boolean;
     empCommissionType: string | null;
-    empCommissionValue: number | null;
+    empCommissionValue: string | null;
     empSalaryType: string;
     empSalaryAmount: number;
     empBataAmount: number;
@@ -56,6 +56,12 @@ export declare class EmployeeMasterPayloadDto {
     empAadharNo: string | null;
     empPfNo: string | null;
     empEsiNo: string | null;
+    empUanNo: string | null;
+    empBankName: string | null;
+    empBankAccountNo: string | null;
+    empBankIfsc: string | null;
+    empEmergencyContactName: string | null;
+    empEmergencyContactPhone: string | null;
     empLoanLedgerId: string | null;
     empLoanLedgerName?: string | null;
     empPhotoUrl: string | null;

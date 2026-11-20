@@ -39,12 +39,22 @@ __decorate([
     __metadata("design:type", String)
 ], SaveEmployeeDesignationMasterDto.prototype, "edName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 50, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 50,
+        nullable: true,
+        description: 'Blank on create: made from the name (whole name, upper case, letters and digits, at most ' +
+            '20; DRIVER2 … when taken). Unique among live designations in any case (409 ' +
+            'DESIGNATION_CODE_DUPLICATE). An edit never makes one; blank clears it.',
+    }),
     (0, dtoDecorators_1.NullableString)(50),
     __metadata("design:type", Object)
 ], SaveEmployeeDesignationMasterDto.prototype, "edCode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({
+        deprecated: true,
+        description: 'IGNORED since HR review step 5 (20/11/2026): Default Designation was removed. Still ' +
+            'accepted so an older client is not refused; nothing is written.',
+    }),
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveEmployeeDesignationMasterDto.prototype, "edIsDefault", void 0);

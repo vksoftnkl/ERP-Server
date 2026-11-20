@@ -18,7 +18,7 @@ export declare class EmployeeDesignationMasterService {
     private updateDesignation;
     private ensureNameIsUnique;
     private ensureCodeIsUnique;
-    private clearDefaultDesignation;
+    private nextDesignationCode;
     private normalizeRequiredName;
     private toPayload;
     private handleWriteError;

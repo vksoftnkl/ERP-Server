@@ -250,8 +250,8 @@ let SalesStockService = class SalesStockService {
         ${l.godownId}::uuid, ${l.lotId ?? null}::uuid, ${l.bucket ?? 'SALEABLE'},
         ${l.batchNo ?? null}, ${l.batchDate ?? null}::date, ${l.expiryDate ?? null}::date,
         ${l.mrp ?? null}::numeric, ${l.rate ?? null}::numeric, ${l.serialNo ?? null},
-        ${qty}::numeric, ${decQty(qty.times(factor))}::numeric,
-        ${free}::numeric, ${decQty(free.times(factor))}::numeric,
+        ${qty}::numeric, ${decBase(qty.times(factor))}::numeric,
+        ${free}::numeric, ${decBase(free.times(factor))}::numeric,
         ${l.weightQty ?? 0}::numeric,
         ${l.costRate ?? 0}::numeric, ${costRateWot(l)}::numeric, ${l.taxPerc ?? 0}::numeric,
         ${now}, ${actor === '00000000-0000-0000-0000-000000000000' ? null : actor}
@@ -308,6 +308,12 @@ function decQty(v) {
     }
     return d.isFinite()
         ? d.toDecimalPlaces(QTY_SCALE, client_1.Prisma.Decimal.ROUND_HALF_UP)
+        : new client_1.Prisma.Decimal(0);
+}
+const BASE_QTY_SCALE = 6;
+function decBase(v) {
+    return v.isFinite()
+        ? v.toDecimalPlaces(BASE_QTY_SCALE, client_1.Prisma.Decimal.ROUND_HALF_UP)
         : new client_1.Prisma.Decimal(0);
 }
 function totalQtyOf(lines) {

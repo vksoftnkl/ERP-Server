@@ -16,6 +16,8 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const code_series_lock_1 = require("../../settings/shared/code-series-lock");
+const short_from_name_1 = require("../utils/short-from-name");
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_BRAND_TABLE_NAME = 'item brand master';
 const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
@@ -167,6 +169,9 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
                     brand_created_by: createdBy,
                 };
                 this.applyOptionalFields(data, saveItemBrandDto);
+                if (!saveItemBrandDto.brand_short?.trim()) {
+                    data.brand_short = await this.shortFromName(tx, data.brand_name, null);
+                }
                 const created = await tx.itemBrandMaster.create({ data });
                 await this.ensureSelfInPath(tx, created.brand_id);
                 if (saveItemBrandDto.brand_parent_id) {
@@ -249,6 +254,9 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
                     brand_modified_by: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveItemBrandDto);
+                if ((0, short_from_name_1.isEmptyShortName)(saveItemBrandDto.brand_short)) {
+                    data.brand_short = await this.shortFromName(tx, saveItemBrandDto.brand_name.trim(), brandId);
+                }
                 const updated = await tx.itemBrandMaster.update({
                     where: {
                         brand_id: brandId,
@@ -288,6 +296,19 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    shortFromName(tx, name, exceptId) {
+        return (0, short_from_name_1.shortNameFromName)(tx, code_series_lock_1.ITEM_BRAND_SHORT_SERIES, name, async (base) => {
+            const rows = await tx.itemBrandMaster.findMany({
+                where: {
+                    brand_is_deleted: false,
+                    brand_short: { startsWith: base, mode: 'insensitive' },
+                    ...(exceptId ? { NOT: { brand_id: exceptId } } : {}),
+                },
+                select: { brand_short: true },
+            });
+            return rows.map((row) => row.brand_short);
+        });
     }
     async ensureParentExists(parentId, tx) {
         const parent = await tx.itemBrandMaster.findFirst({

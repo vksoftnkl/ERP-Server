@@ -10,6 +10,7 @@ export type AccessTokenClaims = {
     device_id: string | null;
     ep?: number;
     platform?: ClientPlatform | null;
+    pwc?: boolean;
 };
 export type AccessTokenPayload = AccessTokenClaims & {
     iat: number;

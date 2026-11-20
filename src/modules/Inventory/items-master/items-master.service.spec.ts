@@ -638,15 +638,154 @@ describe('ItemsMasterService composite endpoints', () => {
       expect(unitConversionService.save).not.toHaveBeenCalled();
     });
 
-    it("refuses the base row's unit re-picked by its id", async () => {
+    /**
+     * Item master review 11-20 Q2 — the unit-usage query (item-unit-in-use.helper)
+     * answers `rows`; every other raw statement of the save answers nothing.
+     */
+    const usage = (rows: Array<{ iuc_id: string; used_by: string }>) => {
+      prisma.itemUnitConversion.findMany.mockResolvedValue([
+        { iucId: IUC_ID },
+        { iucId: OTHER_IUC_ID },
+      ]);
+      prisma.$queryRaw.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sqlOf = (v: unknown) =>
+          v !== null && typeof v === 'object' && 'sql' in v ? String(v.sql) : '';
+        const sql = [...strings, ...values.map(sqlOf)].join(' ');
+        return Promise.resolve(sql.includes('sml_uom_id') ? rows : []);
+      });
+    };
+
+    it("refuses the base row's unit re-picked once the item is used (409 ITEM_UNIT_IN_USE)", async () => {
+      usage([{ iuc_id: OTHER_IUC_ID, used_by: 'sale bill' }]);
       await expect(
         service.saveComposite(
-          update({ unit_conversions: [{ iuc_id: IUC_ID, iuc_unit_id: OTHER_UNIT_ID }] }),
+          update({
+            item_base_unit_id: OTHER_UNIT_ID,
+            unit_conversions: [{ iuc_id: IUC_ID, iuc_unit_id: OTHER_UNIT_ID }],
+          }),
         ),
       ).rejects.toMatchObject({
+        status: 409,
         response: {
-          errors: [{ field: 'unit_conversions.0.iuc_unit_id', code: 'ITEM_BASE_UNIT_LOCKED' }],
+          errors: [{ field: 'unit_conversions.0.iuc_unit_id', code: 'ITEM_UNIT_IN_USE' }],
         },
+      });
+      expect(unitConversionService.save).not.toHaveBeenCalled();
+    });
+
+    it("re-picks the base row's unit on the same row while the item was never used", async () => {
+      usage([]);
+      unitConversionService.findByItemId.mockResolvedValue([
+        ...storedRows(),
+        {
+          iuc_id: OTHER_IUC_ID,
+          iuc_unit_id: BASE_UNIT_ID,
+          iuc_base_unit_id: UNIT_ID,
+          iuc_is_base_unit: false,
+          iuc_unit_factor: 10,
+        },
+      ]);
+
+      await service.saveComposite(
+        update({
+          item_base_unit_id: OTHER_UNIT_ID,
+          unit_conversions: [
+            { iuc_id: OTHER_IUC_ID, iuc_unit_id: BASE_UNIT_ID, iuc_unit_factor: 10 },
+            { iuc_id: IUC_ID, iuc_unit_id: OTHER_UNIT_ID, iuc_is_base_unit: true },
+          ],
+        }),
+      );
+
+      // The header follows; the row id stays; every row names the new base unit.
+      expect(prisma.itemMaster.update.mock.calls[0][0].data.itemBaseUnitId).toBe(OTHER_UNIT_ID);
+      expect(savedRows(unitConversionService.save)).toEqual([
+        expect.objectContaining({ iuc_id: OTHER_IUC_ID, iuc_base_unit_id: OTHER_UNIT_ID }),
+        expect.objectContaining({
+          iuc_id: IUC_ID,
+          iuc_unit_id: OTHER_UNIT_ID,
+          iuc_base_unit_id: OTHER_UNIT_ID,
+        }),
+      ]);
+      expect(unitConversionService.save.mock.calls[0][2]).toEqual({
+        baseRePick: { iucId: IUC_ID, unitId: OTHER_UNIT_ID },
+      });
+      expect(unitConversionService.toggleDelete).not.toHaveBeenCalled();
+    });
+
+    it("still refuses the base row's unit re-picked when the header names a third unit", async () => {
+      usage([]);
+      await expect(
+        service.saveComposite(
+          update({
+            item_base_unit_id: BASE_UNIT_ID,
+            unit_conversions: [{ iuc_id: IUC_ID, iuc_unit_id: OTHER_UNIT_ID }],
+          }),
+        ),
+      ).rejects.toMatchObject({
+        response: { errors: [{ field: 'item_base_unit_id', code: 'ITEM_BASE_UNIT_LOCKED' }] },
+      });
+    });
+
+    describe('a non-base row re-picked to another unit', () => {
+      const NEW_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46ac03';
+      const stored = () => [
+        ...storedRows(),
+        {
+          iuc_id: OTHER_IUC_ID,
+          iuc_unit_id: OTHER_UNIT_ID,
+          iuc_base_unit_id: UNIT_ID,
+          iuc_is_base_unit: false,
+          iuc_unit_factor: 12,
+        },
+      ];
+      const rePick = () =>
+        update({
+          unit_conversions: [
+            { iuc_id: IUC_ID, iuc_unit_id: UNIT_ID, iuc_is_base_unit: true },
+            { iuc_id: OTHER_IUC_ID, iuc_unit_id: NEW_UNIT_ID, iuc_unit_factor: 12 },
+          ],
+          // A price row still naming the OLD unit: it is the same row's price.
+          prices: [
+            { ipm_company_id: COMPANY_ID, ipm_uc_unit_id: OTHER_UNIT_ID, ipm_profit_type: 'By %' },
+          ],
+        });
+
+      it('is refused while that row is used, naming what uses it', async () => {
+        unitConversionService.findByItemId.mockResolvedValue(stored());
+        usage([
+          { iuc_id: OTHER_IUC_ID, used_by: 'stock' },
+          { iuc_id: OTHER_IUC_ID, used_by: 'sale bill' },
+        ]);
+        const error = await service.saveComposite(rePick()).catch((caught: unknown) => caught);
+        expect(error).toMatchObject({
+          status: 409,
+          response: {
+            errors: [{ field: 'unit_conversions.1.iuc_unit_id', code: 'ITEM_UNIT_IN_USE' }],
+          },
+        });
+        expect(JSON.stringify(error)).toContain('(stock, sale bill)');
+        expect(unitConversionService.save).not.toHaveBeenCalled();
+      });
+
+      it('is saved on the same row while unused, its price kept on that row', async () => {
+        // updateItem and the sync read the stored rows; the sync's re-read sees the new unit.
+        unitConversionService.findByItemId
+          .mockResolvedValueOnce(stored())
+          .mockResolvedValueOnce(stored())
+          .mockResolvedValue([
+            storedRows()[0],
+            { ...stored()[1], iuc_unit_id: NEW_UNIT_ID },
+          ]);
+        // Another item's unit row being in use changes nothing here.
+        usage([{ iuc_id: IUC_ID, used_by: 'stock' }]);
+
+        await service.saveComposite(rePick());
+
+        expect(savedRows(unitConversionService.save)).toEqual([
+          expect.objectContaining({ iuc_id: OTHER_IUC_ID, iuc_unit_id: NEW_UNIT_ID }),
+        ]);
+        expect(unitConversionService.save.mock.calls[0][2]).toEqual({});
+        expect(savedRows(priceService.save)[0].ipm_uc_unit_id).toBe(OTHER_IUC_ID);
       });
     });
 
@@ -1019,6 +1158,51 @@ describe('ItemsMasterService composite endpoints', () => {
     // Reference tables are batch-loaded once each (no per-row N+1).
     expect(prisma.unit.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.godownLocation.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('getComposite says which unit rows can no longer be re-picked (review 11-20 Q2)', async () => {
+    const PC_IUC = '019c6f6c-be87-7a11-8905-36092c46ab02';
+    const BOX_IUC = '019c6f6c-be87-7a11-8905-36092c46ab03';
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+    unitConversionService.findByItemId.mockResolvedValue([
+      { iuc_id: BOX_IUC, iuc_unit_id: BASE_UNIT_ID, iuc_is_base_unit: false },
+      { iuc_id: IUC_ID, iuc_unit_id: UNIT_ID, iuc_is_base_unit: true },
+      { iuc_id: PC_IUC, iuc_unit_id: UNMAPPED_UNIT_ID, iuc_is_base_unit: false },
+    ]);
+    prisma.itemUnitConversion.findMany.mockResolvedValue([
+      { iucId: BOX_IUC },
+      { iucId: IUC_ID },
+      { iucId: PC_IUC },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      { iuc_id: PC_IUC, used_by: 'sale bill' },
+      { iuc_id: PC_IUC, used_by: 'stock' },
+    ]);
+
+    const result = await service.getComposite(ITEM_ID);
+
+    expect(result.item.item_units_in_use).toBe(true);
+    expect(
+      result.unit_conversions.map((row) => [row.iuc_id, row.iuc_in_use, row.iuc_used_by]),
+    ).toEqual([
+      [BOX_IUC, false, []],
+      // The base row: stock is counted in it, so any use of the item locks it.
+      [IUC_ID, true, ['stock', 'sale bill']],
+      [PC_IUC, true, ['stock', 'sale bill']],
+    ]);
+  });
+
+  it('getComposite leaves every unit open on an item never used', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+    unitConversionService.findByItemId.mockResolvedValue([
+      { iuc_id: IUC_ID, iuc_unit_id: UNIT_ID, iuc_is_base_unit: true },
+    ]);
+    prisma.itemUnitConversion.findMany.mockResolvedValue([{ iucId: IUC_ID }]);
+
+    const result = await service.getComposite(ITEM_ID);
+
+    expect(result.item.item_units_in_use).toBe(false);
+    expect(result.unit_conversions[0]).toMatchObject({ iuc_in_use: false, iuc_used_by: [] });
   });
 
   it('getComposite yields a null name when the referenced master row is missing', async () => {

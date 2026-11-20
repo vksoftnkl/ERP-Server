@@ -16,6 +16,9 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const employee_designation_master_error_codes_1 = require("./types/employee-designation-master-error-codes");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const code_from_name_1 = require("../shared/code-from-name");
+const code_series_lock_1 = require("../shared/code-series-lock");
+const unique_violation_1 = require("../shared/unique-violation");
 const EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME = 'employee designations';
 const EMPLOYEE_DESIGNATION_MASTER_AUDIT_SCREEN_NAME = 'Employee Designation Master';
 let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
@@ -80,7 +83,6 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
                 data: {
                     edIsDeleted: true,
                     edIsActive: false,
-                    edIsDefault: false,
                     edModifiedOn: modifiedOn,
                     edModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 },
@@ -93,7 +95,6 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
                 ...existing,
                 edIsDeleted: true,
                 edIsActive: false,
-                edIsDefault: false,
                 edModifiedOn: modifiedOn,
                 edModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
             });
@@ -117,26 +118,22 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
     }
     async createDesignation(saveEmployeeDesignationMasterDto) {
         try {
-            return this.prisma.$transaction(async (tx) => {
+            return await this.prisma.$transaction(async (tx) => {
                 const edName = this.normalizeRequiredName(saveEmployeeDesignationMasterDto.edName);
-                const edCode = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDesignationMasterDto.edCode);
+                const typedCode = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDesignationMasterDto.edCode);
                 const edRemarks = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDesignationMasterDto.edRemarks);
+                await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.DESIGNATION_CODE_SERIES);
                 await this.ensureNameIsUnique(tx, edName);
-                await this.ensureCodeIsUnique(tx, edCode);
-                if (saveEmployeeDesignationMasterDto.edIsDefault === true) {
-                    await this.clearDefaultDesignation(tx);
-                }
+                await this.ensureCodeIsUnique(tx, typedCode);
+                const edCode = typedCode ?? (await this.nextDesignationCode(tx, edName));
                 const now = new Date();
                 const data = {
                     edName,
                     edCreatedOn: now,
                     edCreatedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
-                if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDesignationMasterDto, 'edCode')) {
+                if (edCode !== null) {
                     data.edCode = edCode;
-                }
-                if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
-                    data.edIsDefault = saveEmployeeDesignationMasterDto.edIsDefault;
                 }
                 if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDesignationMasterDto, 'edRemarks')) {
                     data.edRemarks = edRemarks;
@@ -169,7 +166,7 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
     async updateDesignation(saveEmployeeDesignationMasterDto) {
         const edId = saveEmployeeDesignationMasterDto.edId;
         try {
-            return this.prisma.$transaction(async (tx) => {
+            return await this.prisma.$transaction(async (tx) => {
                 const existing = await tx.employeeDesignation.findFirst({
                     where: {
                         edId,
@@ -183,10 +180,10 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
                 const edCode = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDesignationMasterDto.edCode);
                 const edRemarks = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDesignationMasterDto.edRemarks);
                 await this.ensureNameIsUnique(tx, edName, edId);
-                await this.ensureCodeIsUnique(tx, edCode, edId);
-                if (saveEmployeeDesignationMasterDto.edIsDefault === true) {
-                    await this.clearDefaultDesignation(tx, edId);
+                if (edCode) {
+                    await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.DESIGNATION_CODE_SERIES);
                 }
+                await this.ensureCodeIsUnique(tx, edCode, edId);
                 const data = {
                     edName,
                     edModifiedOn: new Date(),
@@ -194,9 +191,6 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
                 };
                 if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDesignationMasterDto, 'edCode')) {
                     data.edCode = edCode;
-                }
-                if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
-                    data.edIsDefault = saveEmployeeDesignationMasterDto.edIsDefault;
                 }
                 if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDesignationMasterDto, 'edRemarks')) {
                     data.edRemarks = edRemarks;
@@ -294,24 +288,13 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
             ]);
         }
     }
-    async clearDefaultDesignation(tx, excludeEdId) {
-        await tx.employeeDesignation.updateMany({
-            where: {
-                edIsDeleted: false,
-                edIsDefault: true,
-                ...(excludeEdId
-                    ? {
-                        edId: {
-                            not: excludeEdId,
-                        },
-                    }
-                    : {}),
-            },
-            data: {
-                edIsDefault: false,
-                edModifiedOn: new Date(),
-                edModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
-            },
+    async nextDesignationCode(tx, edName) {
+        return (0, code_from_name_1.nextFreeCode)((0, code_from_name_1.wholeNameCode)(edName, code_from_name_1.DESIGNATION_CODE_MAX_LENGTH), async (base) => {
+            const rows = await tx.employeeDesignation.findMany({
+                where: { edIsDeleted: false, edCode: { startsWith: base, mode: 'insensitive' } },
+                select: { edCode: true },
+            });
+            return rows.map((row) => row.edCode);
         });
     }
     normalizeRequiredName(value) {
@@ -322,7 +305,6 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
             edId: record.edId,
             edName: record.edName,
             edCode: record.edCode,
-            edIsDefault: record.edIsDefault,
             edRemarks: record.edRemarks,
             edIsActive: record.edIsActive,
             edIsDeleted: record.edIsDeleted,
@@ -334,6 +316,15 @@ let EmployeeDesignationMasterService = class EmployeeDesignationMasterService {
         };
     }
     handleWriteError(error) {
+        if ((0, unique_violation_1.isUniqueViolationOf)(error, 'ux_ed_code', 'ed_code')) {
+            (0, module_service_utils_1.throwSettingsConflict)('Employee designation code already exists', [
+                {
+                    field: 'edCode',
+                    message: 'Another designation took this code at the same moment',
+                    code: employee_designation_master_error_codes_1.EmployeeDesignationMasterErrorCode.CODE_DUPLICATE,
+                },
+            ]);
+        }
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Employee designation already exists', [
             {
                 field: 'edName',

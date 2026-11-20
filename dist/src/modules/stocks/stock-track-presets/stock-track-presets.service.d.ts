@@ -1,6 +1,7 @@
 import { StockTrackPreset } from '@prisma/client';
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
 import { GetStockTrackPresetsQueryDto } from './dto/get-stock-track-presets-query.dto';
 import type { StockErrorDetail } from '../stock-voucher/types/stock-voucher.types';
 import { type DeactivateStockTrackPresetDto, type PresetTrackField, type SaveStockTrackPresetDto } from './dto/save-stock-track-preset.dto';
@@ -31,13 +32,16 @@ interface PresetUsage {
     activeItems: number;
     activeGroups: number;
 }
+export declare const PRESET_AUDIT_SCREEN_NAME = "Stock Track Preset";
+export declare function presetAuditRecord(record: StockTrackPreset): Record<string, unknown>;
 export declare function valuationFor(values: Pick<PresetValues, PresetTrackField>): 'LOT_ACTUAL' | 'WAVG';
 export declare function presetRuleErrors(values: PresetValues): StockErrorDetail[];
 export declare function lockedFieldErrors(existing: StockTrackPreset, next: PresetValues, usage: PresetUsage): StockErrorDetail[];
 export declare class StockTrackPresetsService {
     private readonly prisma;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, requestContextService: RequestContextService);
+    private readonly auditLogService;
+    constructor(prisma: PrismaService, requestContextService: RequestContextService, auditLogService: AuditLogService);
     get(queryDto: GetStockTrackPresetsQueryDto): Promise<{
         items: StockTrackPresetsPayload[];
         meta: StockTrackPresetsGetMeta;
@@ -45,6 +49,7 @@ export declare class StockTrackPresetsService {
     private toPayload;
     save(dto: SaveStockTrackPresetDto): Promise<StockTrackPresetsPayload>;
     deactivate(dto: DeactivateStockTrackPresetDto): Promise<StockTrackPresetsPayload>;
+    private audit;
     private ownPreset;
     private nextValues;
     private usageOf;

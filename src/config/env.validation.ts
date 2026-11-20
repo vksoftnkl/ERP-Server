@@ -21,10 +21,10 @@ export const envValidationSchema = Joi.object({
     otherwise: Joi.string().trim().allow('').default(''),
   }),
   HTTPS_PASSPHRASE: Joi.string().allow('').default(''),
-  // Second, plain-HTTP port for the VKSMAN phones on the office LAN (main.ts). The phones
-  // can't trust a self-made HTTPS certificate. Only the phone's routes answer there.
-  // Empty or 0 = off.
-  MOBILE_HTTP_PORT: Joi.number().port().empty('').default(0),
+  // VKSMAN phones on the office LAN can't trust a self-made HTTPS certificate. true = the
+  // HTTPS port (PORT) also answers plain HTTP, for the phone's routes only
+  // (src/common/phone-http). It replaced the separate MOBILE_HTTP_PORT (2026-11-18).
+  PHONE_HTTP_ENABLED: Joi.boolean().default(false),
   // Part B. This backend's build comes from build-info.json in the package
   // (Step 4, written by CI); APP_VERSION / APP_BUILD / APP_COMMIT override it
   // (the cloud). A start on a new build logs every user out, loads compat.json

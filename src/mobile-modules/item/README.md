@@ -10,7 +10,7 @@ Items for the React Native (Expo) salesman app's order screen. **Read-only, no d
 
 | Method | Path | What it does |
 | --- | --- | --- |
-| `GET` | `/options` | `companies` {id, name, place}, `itemGroups` / `brands` {id, name, position}, `priceLevels` {id, name} |
+| `GET` | `/options` | `companies` {id, name, place}, `branches` {id, name, companyId, isDefault}, `itemGroups` / `brands` {id, name, position}, `priceLevels` {id, name} |
 | `GET` | `/list?companyId=&deviceUid=&page=&pageSize=` | Paged items orderable for the company, with units, prices and stock |
 
 ## `GET /options`
@@ -18,6 +18,23 @@ Items for the React Native (Expo) salesman app's order screen. **Read-only, no d
 Active, live rows only. `place` is `comp_city`; `position` is `itg_sort` / `brand_sort` (null
 sorts last). Price levels: the active `item_price_levels` without 7 (Cost). Levels 1-4 price
 from `priceA`-`priceD`, 5 (MRP) from `mrp`, 6 (minimum) from `minPrice`.
+
+**`branches`** (since 2026-11-18): the branches VKSMAN's Switch company picks from, and what an
+order's `soBranchId` takes. The phone syncs over plain HTTP, where only `/mobile/*` is served
+(`src/common/phone-http/phone-http.ts`), so it cannot call
+`/master-lookups/branches/by-company/{companyId}`; this list carries the same rows in the same order.
+
+- Which: `branch_master` rows with `br_is_active = true` and `br_is_deleted = false`, of exactly
+  the companies in `companies`. A company with no branch adds no row.
+- Order: per company in the order of `companies` (`comp_name`, then `comp_id`), then `br_name`,
+  then `br_id`.
+- Keys: `id` (`br_id`), `name` (`br_name`), `companyId` (`br_comp_id`), `isDefault`
+  (`br_is_default`, the company's default branch).
+
+**Caching:** none on the server. The route has no `@CacheTTL`, so `HttpCacheInterceptor` never
+stores it in Redis (every answer is `X-Cache: MISS`). Express adds its default weak `ETag`, and
+answers 304 only when a client sends `If-None-Match` with the same tag. A changed body (such as
+the added `branches`) has a new tag, so no client is kept on an old body.
 
 ## `GET /list`
 
@@ -36,6 +53,10 @@ optional.
 - **Per item:** code, English and Tamil names, group and brand (id and name), the loading,
   freight and promo flags, plus `inclTax`, `hsnCode`, `taxId` and `taxPerc` (0 when the company
   is not GST applicable, as the lookup does).
+- **`categoryId` / `sectionId`** (since 2026-11-19): `item_category_id` / `item_section_id`, a
+  uuid or null. The phone's offer engine matches `ITEM_CATEGORY` / `ITEM_SECTION` rows of
+  `GET /mobile/schemes/active` by them (group and brand already come as `itemGroupId` /
+  `itemBrandId`). Additive keys: an older phone ignores them.
 - **Per unit** (`item_unit_conversion`, live and active, in `iuc_unit_slno` order):
   - `iucId`, which is what `soiItemUnitId` takes;
   - the unit name, `factor` (`iuc_to_base_factor`), `isDefaultUnit`, `isBaseUnit` and `weight`;
@@ -63,8 +84,8 @@ optional.
 
 ## Tests
 
-- Unit: [`mobile-item.service.spec.ts`](mobile-item.service.spec.ts) covers the price pick and
-  the formats.
+- Unit: [`mobile-item.service.spec.ts`](mobile-item.service.spec.ts) covers the price pick, the
+  formats, and the `branches` of `/options` (keys, filter, order, only listed companies).
 - HTTP, live dev DB: `test/mobile-items-orders-visits-http.e2e-spec.ts`. It compares a priced
   unit's level-1 price, MRP and minimum against `/master-lookups/item-price`, and the stock
   against an independent sum.

@@ -153,8 +153,8 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
         if (result.count === 0) {
             (0, module_service_utils_1.throwInventoryNotFound)('Item reorder not found', 'ir_id', `No item reorder found with id ${irId}`, item_reorder_error_codes_1.ItemReorderErrorCode.NOT_FOUND);
         }
-        const originalRecord = this.toPayload(existing);
-        const modifiedRecord = this.toPayload({
+        const originalRecord = this.toAuditRecord(existing);
+        const modifiedRecord = this.toAuditRecord({
             ...existing,
             irIsDeleted: nextDeleted,
             irModifiedOn: modifiedOn,
@@ -199,7 +199,7 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
             pk: payload.ir_id,
             displayName: this.buildDisplayName(created),
             originalRecord: null,
-            modifiedRecord: payload,
+            modifiedRecord: this.toAuditRecord(created),
             userId: createdBy,
             notes: 'Item reorder created',
         }, tx);
@@ -232,8 +232,8 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
             screenType: 'master',
             pk: irId,
             displayName: this.buildDisplayName(updated),
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
+            originalRecord: this.toAuditRecord(existing),
+            modifiedRecord: this.toAuditRecord(updated),
             userId: payload.ir_modified_by ?? this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
             notes: 'Item reorder updated',
         }, tx);
@@ -326,6 +326,10 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
                 },
             ]);
         }
+    }
+    toAuditRecord(record) {
+        const { ir_unit_id: unitId, ...rest } = this.toPayload(record);
+        return { ...rest, ir_uc_unit_id: unitId };
     }
     toPayload(record) {
         return {

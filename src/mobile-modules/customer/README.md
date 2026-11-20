@@ -20,9 +20,9 @@ Customer master for the React Native (Expo) app: the "Customer list and entry" s
 
 | Method | Path | What it does |
 | --- | --- | --- |
-| `GET` | `/list` | Paged list with search, filter chips, chip counts and balances |
+| `GET` | `/list` | Paged list with search, filter chips, chip counts, balances and outstanding |
 | `GET` | `/options` | Pickers for the form: areas, groups, price levels, states, GST types |
-| `GET` | `/get?cusId=` | The desktop `/customers/get` payload plus `balance` / `balanceStatus` |
+| `GET` | `/get?cusId=` | The desktop `/customers/get` payload plus `balance` / `balanceStatus` and the outstanding |
 | `POST` | `/create` | Create (desktop payload **without** `cusId`) |
 | `PUT` | `/update` | Update (desktop payload, `cusId` **required**, no `cusLinkLedId`) |
 | `GET` | `/delete-check?cusId=` | Would the delete go through? (party rules D1-4) |
@@ -48,9 +48,30 @@ Query: `search` (≤100), `filter` = `ALL` \| `OUTSTANDING` \| `UNREGISTERED` \|
   ([`voucher-books.sql.ts`](../../modules/reports/common/voucher-books.sql.ts)). Money is text with
   two decimals, as `{ amount, side }`. `balanceStatus`: `OUTSTANDING`, `OVER_LIMIT`
   (DR above `cusCreditAmtLimit` when that is > 0), `ADVANCE` (CR) or `SETTLED` (0).
-- `balance` / `balanceStatus` are `null` (and `balanceAsOn` / `accYear` too) when the login has no
-  company or no financial year holds today. The row shows no figure rather than a wrong 0.
+- **Outstanding** (since 2026-11-20) = what the customer's **unpaid bills** still owe today:
+  the Party Outstanding report's `owed` on the Receivable side, login company, all branches, read
+  through the report's own CTEs (`partiesWith` in
+  [`party-outstanding.sql.ts`](../../modules/reports/party-outstanding/party-outstanding.sql.ts))
+  with its party card's scope (no group / area / salesman filter, PDC in hand not deducted).
+  `outstanding` (two decimals, never negative), `outstandingBills` (unpaid DR bills) and
+  `oldestBillDate` (bill date of the oldest one, null when none). The e2e suite checks every row
+  against `/reports/party-outstanding/parties`.
+- **Balance vs outstanding.** The balance is the whole ledger: it nets bills with everything else
+  posted to the customer. The outstanding is bill-wise: a credit the customer holds (an advance,
+  a sales return, a receipt left on account) lowers the balance but not the outstanding, and a
+  post-dated cheque counts in neither until its date. 12,000 of bills open plus a 2,000 advance
+  = outstanding 12,000.00, balance 10,000.00 DR.
+- `balance` / `balanceStatus` / `outstanding*` are `null` (and `balanceAsOn` / `accYear` /
+  `companyId` too) when the login has no company or no financial year holds today. The row shows
+  no figure rather than a wrong 0. `companyId` names the company the figures are read in.
 - Like the desktop customer grid, the list is **not** company-filtered: customers are shared.
+
+### `GET /options`
+
+Live, active rows only: `areas` {id, name, cityId, cityName}, `groups` {id, name}, `priceLevels`
+{id, name}, `states` {code, name}, `gstTypes`. `cityId` (since 2026-11-19) is
+`area_master.arm_city_id` (NOT NULL): the phone's offer engine reaches a customer's city through
+the beat (`cus_area_id`), as the desktop promotion rules do, to match `CITY` scheme rows.
 
 ### Writes
 

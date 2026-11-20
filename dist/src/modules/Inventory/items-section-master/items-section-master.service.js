@@ -16,6 +16,8 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const code_series_lock_1 = require("../../settings/shared/code-series-lock");
+const short_from_name_1 = require("../utils/short-from-name");
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_SECTION_TABLE_NAME = 'item section master';
 const ITEM_SECTION_AUDIT_SCREEN_NAME = 'Item Section Master';
@@ -152,6 +154,9 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
                     secCreatedBy: createdBy,
                 };
                 this.applyOptionalFields(data, saveItemSectionDto);
+                if (!saveItemSectionDto.sec_short?.trim()) {
+                    data.secShort = await this.shortFromName(tx, data.secName, null);
+                }
                 const created = await tx.itemSectionMaster.create({ data });
                 await this.ensureSelfInPath(tx, created.secId);
                 if (saveItemSectionDto.sec_parent_id) {
@@ -228,6 +233,9 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
                     secModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveItemSectionDto);
+                if ((0, short_from_name_1.isEmptyShortName)(saveItemSectionDto.sec_short)) {
+                    data.secShort = await this.shortFromName(tx, saveItemSectionDto.sec_name.trim(), secId);
+                }
                 const updated = await tx.itemSectionMaster.update({ where: { secId }, data });
                 await this.ensureSelfInPath(tx, secId);
                 if (isParentChanged) {
@@ -259,6 +267,19 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    shortFromName(tx, name, exceptId) {
+        return (0, short_from_name_1.shortNameFromName)(tx, code_series_lock_1.ITEM_SECTION_SHORT_SERIES, name, async (base) => {
+            const rows = await tx.itemSectionMaster.findMany({
+                where: {
+                    secIsDeleted: false,
+                    secShort: { startsWith: base, mode: 'insensitive' },
+                    ...(exceptId ? { NOT: { secId: exceptId } } : {}),
+                },
+                select: { secShort: true },
+            });
+            return rows.map((row) => row.secShort);
+        });
     }
     async ensureParentExists(parentId, tx) {
         const parent = await tx.itemSectionMaster.findFirst({

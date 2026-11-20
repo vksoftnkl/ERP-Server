@@ -7,6 +7,9 @@ var AuthErrorCode;
 (function (AuthErrorCode) {
     AuthErrorCode["INVALID_CREDENTIALS"] = "AUTH_INVALID_CREDENTIALS";
     AuthErrorCode["USER_INACTIVE"] = "AUTH_USER_INACTIVE";
+    AuthErrorCode["USER_LOCKED"] = "AUTH_USER_LOCKED";
+    AuthErrorCode["CHANNEL_DISABLED"] = "AUTH_CHANNEL_DISABLED";
+    AuthErrorCode["PASSWORD_CHANGE_REQUIRED"] = "AUTH_PASSWORD_CHANGE_REQUIRED";
     AuthErrorCode["AUTHORIZATION_MISSING"] = "AUTH_AUTHORIZATION_MISSING";
     AuthErrorCode["ACCESS_TOKEN_INVALID"] = "AUTH_ACCESS_TOKEN_INVALID";
     AuthErrorCode["ACCESS_TOKEN_EXPIRED"] = "AUTH_ACCESS_TOKEN_EXPIRED";
@@ -21,8 +24,11 @@ var AuthErrorCode;
     AuthErrorCode["DEVICE_NOT_REGISTERED"] = "AUTH_DEVICE_NOT_REGISTERED";
     AuthErrorCode["DEVICE_BLOCKED"] = "AUTH_DEVICE_BLOCKED";
     AuthErrorCode["DEVICE_UNAVAILABLE"] = "AUTH_DEVICE_UNAVAILABLE";
+    AuthErrorCode["CURRENT_PASSWORD_WRONG"] = "AUTH_CURRENT_PASSWORD_WRONG";
+    AuthErrorCode["NEW_PASSWORD_TOO_SHORT"] = "AUTH_NEW_PASSWORD_TOO_SHORT";
+    AuthErrorCode["NEW_PASSWORD_SAME"] = "AUTH_NEW_PASSWORD_SAME";
 })(AuthErrorCode || (exports.AuthErrorCode = AuthErrorCode = {}));
-function authErrorBody(message, field, code) {
-    return (0, module_shared_utils_1.buildErrorResponse)(message, [{ field, message, code }]);
+function authErrorBody(message, field, code, extra = {}) {
+    return (0, module_shared_utils_1.buildErrorResponse)(message, [{ field, message, code, ...extra }]);
 }
 //# sourceMappingURL=auth-error-codes.js.map

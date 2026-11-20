@@ -437,8 +437,8 @@ export class SalesStockService {
         ${l.godownId}::uuid, ${l.lotId ?? null}::uuid, ${l.bucket ?? 'SALEABLE'},
         ${l.batchNo ?? null}, ${l.batchDate ?? null}::date, ${l.expiryDate ?? null}::date,
         ${l.mrp ?? null}::numeric, ${l.rate ?? null}::numeric, ${l.serialNo ?? null},
-        ${qty}::numeric, ${decQty(qty.times(factor))}::numeric,
-        ${free}::numeric, ${decQty(free.times(factor))}::numeric,
+        ${qty}::numeric, ${decBase(qty.times(factor))}::numeric,
+        ${free}::numeric, ${decBase(free.times(factor))}::numeric,
         ${l.weightQty ?? 0}::numeric,
         ${l.costRate ?? 0}::numeric, ${costRateWot(l)}::numeric, ${l.taxPerc ?? 0}::numeric,
         ${now}, ${actor === '00000000-0000-0000-0000-000000000000' ? null : actor}
@@ -513,6 +513,21 @@ function decQty(v: number | string | Prisma.Decimal | null | undefined): Prisma.
   }
   return d.isFinite()
     ? d.toDecimalPlaces(QTY_SCALE, Prisma.Decimal.ROUND_HALF_UP)
+    : new Prisma.Decimal(0);
+}
+
+/**
+ * A BASE quantity (qty × to-base factor) at its columns' scale: `svi_base_qty` /
+ * `sml_base_qty` are numeric(18,6), the scale the stock voucher save, the delivery
+ * note and the engine's own "base = round(qty × factor, 6)" check use. Item master
+ * review 11-20 Q1: a "part" unit below the base (1 PC = 1/12 BOX = 0.083333) lost
+ * two places here — 1 PC moved 0.0833 BOX, so twelve single sales left 0.0004 BOX
+ * behind instead of 0.000004. The line quantity keeps QTY_SCALE.
+ */
+const BASE_QTY_SCALE = 6;
+function decBase(v: Prisma.Decimal): Prisma.Decimal {
+  return v.isFinite()
+    ? v.toDecimalPlaces(BASE_QTY_SCALE, Prisma.Decimal.ROUND_HALF_UP)
     : new Prisma.Decimal(0);
 }
 

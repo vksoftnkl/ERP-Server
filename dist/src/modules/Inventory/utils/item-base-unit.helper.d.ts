@@ -12,4 +12,5 @@ export declare function baseUnitChange(base: StoredBaseRow, row: BaseUnitFields)
     column: string;
     message: string;
 } | null;
+export declare function baseRowRePick(base: StoredBaseRow, rows: ReadonlyArray<BaseUnitFields> | undefined): string | null;
 export declare function refuseBaseUnitChange(code: string, field: string, message: string): never;

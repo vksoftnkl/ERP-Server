@@ -74,6 +74,11 @@ export interface AdjustLine {
     isThisBill: boolean;
     amount: Dec;
 }
+export type AdjustReplanner = (input: {
+    bills: readonly OpenBillFacts[];
+    adjustable: Dec;
+    thisSbId: string | null;
+}) => AdjustAsk[];
 export declare function proposeAdjust(bills: readonly OpenBillFacts[], adjustable: Dec, thisSbId: string | null): AdjustLine[];
 export declare function checkAdjust(asks: readonly AdjustAsk[], bills: readonly OpenBillFacts[], adjustable: Dec, thisSbId: string | null, closed?: ReadonlyMap<string, OpenBillFacts>): {
     lines: AdjustLine[];
@@ -131,6 +136,7 @@ export interface SettlementInput {
     custId: string | null;
     tenders: readonly RefundTender[];
     adjustments: readonly AdjustAsk[] | null;
+    replan?: AdjustReplanner | null;
     billSort: string | null;
     lock: boolean;
     unwound: UnwindAddBack | null;

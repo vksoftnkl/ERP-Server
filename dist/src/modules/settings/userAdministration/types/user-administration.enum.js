@@ -27,5 +27,14 @@ var UserAdminErrorCode;
     UserAdminErrorCode["EMPLOYEE_OTHER_COMPANY"] = "USER_EMPLOYEE_OTHER_COMPANY";
     UserAdminErrorCode["EMPLOYEE_INACTIVE"] = "USER_EMPLOYEE_INACTIVE";
     UserAdminErrorCode["EMPLOYEE_LINKED"] = "USER_EMPLOYEE_LINKED";
+    UserAdminErrorCode["RIGHT_VIEW"] = "USER_RIGHT_VIEW";
+    UserAdminErrorCode["RIGHT_CREATE"] = "USER_RIGHT_CREATE";
+    UserAdminErrorCode["RIGHT_EDIT"] = "USER_RIGHT_EDIT";
+    UserAdminErrorCode["RIGHT_DELETE"] = "USER_RIGHT_DELETE";
+    UserAdminErrorCode["NOT_DELETED"] = "USER_NOT_DELETED";
+    UserAdminErrorCode["RESTORE_LOGIN_TAKEN"] = "USER_RESTORE_LOGIN_TAKEN";
+    UserAdminErrorCode["PASSWORD_TOO_SHORT"] = "USER_PASSWORD_TOO_SHORT";
+    UserAdminErrorCode["MAX_DISC_INVALID"] = "USER_MAX_DISC_INVALID";
+    UserAdminErrorCode["RESET_PASSWORD_CHOICE"] = "USER_RESET_PASSWORD_CHOICE";
 })(UserAdminErrorCode || (exports.UserAdminErrorCode = UserAdminErrorCode = {}));
 //# sourceMappingURL=user-administration.enum.js.map

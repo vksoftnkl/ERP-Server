@@ -17,6 +17,8 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
+const code_series_lock_1 = require("../../settings/shared/code-series-lock");
+const short_from_name_1 = require("../utils/short-from-name");
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
@@ -170,6 +172,9 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                     itgCreatedBy: createdBy,
                 };
                 this.applyOptionalFields(data, saveItemGroupDto);
+                if (!saveItemGroupDto.itg_short?.trim()) {
+                    data.itgShort = await this.shortFromName(tx, data.itgName, null);
+                }
                 const created = await tx.itemGroupMaster.create({ data, include: TRACK_PRESET_INCLUDE });
                 await this.ensureSelfInPath(tx, created.itgId);
                 await this.stockTrackPolicyService.syncFromItemGroup(created, tx);
@@ -255,6 +260,9 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                     itgModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveItemGroupDto);
+                if ((0, short_from_name_1.isEmptyShortName)(saveItemGroupDto.itg_short)) {
+                    data.itgShort = await this.shortFromName(tx, saveItemGroupDto.itg_name.trim(), itgId);
+                }
                 const updated = await tx.itemGroupMaster.update({
                     where: {
                         itgId,
@@ -297,6 +305,19 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    shortFromName(tx, name, exceptId) {
+        return (0, short_from_name_1.shortNameFromName)(tx, code_series_lock_1.ITEM_GROUP_SHORT_SERIES, name, async (base) => {
+            const rows = await tx.itemGroupMaster.findMany({
+                where: {
+                    itgIsDeleted: false,
+                    itgShort: { startsWith: base, mode: 'insensitive' },
+                    ...(exceptId ? { NOT: { itgId: exceptId } } : {}),
+                },
+                select: { itgShort: true },
+            });
+            return rows.map((row) => row.itgShort);
+        });
     }
     async ensureParentExists(parentId, tx) {
         const parent = await tx.itemGroupMaster.findFirst({

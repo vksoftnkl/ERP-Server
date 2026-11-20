@@ -12,7 +12,7 @@ export declare const POST_TRANSACTION_OPTIONS: {
     maxWait: number;
     timeout: number;
 };
-export type ReceiptSettlementOf = (tx: Prisma.TransactionClient, saved: ReceiptDraftPayload) => Promise<Pick<PostReceiptDto, 'allocations' | 'onAccount'>>;
+export type ReceiptSettlementOf = (tx: Prisma.TransactionClient, saved: ReceiptDraftPayload) => Promise<Pick<PostReceiptDto, 'allocations' | 'onAccount'> & Partial<Pick<PostReceiptDto, 'creditsApplied'>>>;
 export declare class ReceiptPostingService {
     private readonly prisma;
     private readonly requestContext;

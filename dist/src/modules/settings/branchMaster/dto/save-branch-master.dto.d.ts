@@ -16,7 +16,7 @@ export declare class SaveBranchMasterDto {
     brDistrict?: string | null;
     brState?: string | null;
     brStateCode: string;
-    brPin?: number;
+    brPin?: number | null;
     brCountry?: string;
     brLandmark?: string | null;
     brRegionAddr1?: string | null;

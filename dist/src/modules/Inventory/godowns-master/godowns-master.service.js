@@ -16,6 +16,8 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const code_series_lock_1 = require("../../settings/shared/code-series-lock");
+const short_from_name_1 = require("../utils/short-from-name");
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
@@ -169,6 +171,9 @@ let GodownsMasterService = class GodownsMasterService {
                     gdlCreatedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveGodownDto);
+                if (!saveGodownDto.gdl_short?.trim()) {
+                    data.gdlShort = await this.shortFromName(tx, gdlName, gdlBranchId, null);
+                }
                 const created = await tx.godownLocation.create({ data });
                 await this.ensureSelfInPath(tx, created.gdlId);
                 if (saveGodownDto.gdl_parent_id) {
@@ -274,6 +279,9 @@ let GodownsMasterService = class GodownsMasterService {
                         ]);
                     }
                     data.gdlName = saveGodownDto.gdl_name.trim();
+                }
+                if ((0, short_from_name_1.isEmptyShortName)(saveGodownDto.gdl_short)) {
+                    data.gdlShort = await this.shortFromName(tx, saveGodownDto.gdl_name?.trim() || existing.gdlName, gdlBranchId, gdlId);
                 }
                 if (Object.keys(data).length === 0) {
                     return this.toPayload(existing);
@@ -406,6 +414,20 @@ let GodownsMasterService = class GodownsMasterService {
             (0, module_service_utils_1.throwInventoryNotFound)('Godown location not found', 'gdl_id', `No active godown location found with id ${gdlId}`, godown_error_codes_1.GodownErrorCode.NOT_FOUND);
         }
         return record;
+    }
+    shortFromName(tx, name, branchId, exceptId) {
+        return (0, short_from_name_1.shortNameFromName)(tx, code_series_lock_1.GODOWN_SHORT_SERIES, name, async (base) => {
+            const rows = await tx.godownLocation.findMany({
+                where: {
+                    gdlBranchId: branchId,
+                    gdlIsDeleted: false,
+                    gdlShort: { startsWith: base, mode: 'insensitive' },
+                    ...(exceptId ? { NOT: { gdlId: exceptId } } : {}),
+                },
+                select: { gdlShort: true },
+            });
+            return rows.map((row) => row.gdlShort);
+        });
     }
     async assertBranchLive(tx, branchId) {
         const branch = await tx.branchMaster.findFirst({

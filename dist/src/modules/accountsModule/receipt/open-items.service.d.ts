@@ -6,6 +6,18 @@ import type { AdjacentVoucherPayload, DuplicateCheckPayload, OpenCredit, OpenIte
 import { AdjacentVoucherQueryDto, DuplicateCheckQueryDto, ListOpenItemsQueryDto, PartyContextQueryDto } from './dto/open-item.dto';
 import { type ReceiptSettings } from './receipt.settings';
 export declare function openReceivableWhere(companyId: string, partyId?: string): Prisma.AccBillBalanceWhereInput;
+export declare function openCreditWhere(companyId: string, partyId?: string, side?: 'CR' | 'DR'): Prisma.AccBillBalanceWhereInput;
+export interface CompanyOpenCredit {
+    ablId: string;
+    ablAccYear: string;
+    ablPartyId: string;
+    ablBillType: string;
+    ablDocRefno: string;
+    ablDocDate: Date;
+    ablDueDate: Date | null;
+    ablBillAmount: Prisma.Decimal;
+    ablPendingAmount: Prisma.Decimal | null;
+}
 export interface OpenBillOrderKey {
     ablDueDate: Date | null;
     ablDocDate: Date;
@@ -28,7 +40,11 @@ export declare class OpenItemsService {
     private attachTempCredits;
     private loadBills;
     listCompanyOpenBills(companyId: string): Promise<CompanyOpenBill[]>;
-    private loadPostDatedHeld;
+    listCompanyOpenCredits(companyId: string): Promise<CompanyOpenCredit[]>;
+    loadPostDatedHeld(bills: readonly {
+        billId: string;
+        accYear: string;
+    }[], onDate: Date): Promise<Map<string, Prisma.Decimal>>;
     private loadSourceBillFacts;
     private loadBillTcs;
     loadCredits(companyId: string, partyId: string, side?: 'CR' | 'DR'): Promise<OpenCredit[]>;

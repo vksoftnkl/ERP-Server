@@ -460,6 +460,113 @@ describe('SaleOrderLifecycleService', () => {
     });
   });
 
+  describe('postInTx from the phone (user, 2026-11-19: no Post right needed)', () => {
+    const PHONE = { skipPostRight: true, origin: 'PHONE' } as const;
+
+    it('confirms without the Post right and says it came from the phone', async () => {
+      ctx.rights.post = false;
+
+      await expect(service.postInTx(prisma as never, KEYS, new Date(), PHONE)).resolves.toEqual({
+        soStatus: 'CONFIRMED',
+        warnings: [],
+        confirmedNow: true,
+      });
+      expect(reservations.reserve).toHaveBeenCalledTimes(1);
+      expect(prisma.saleOrder.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ soStatus: 'CONFIRMED' }) as object,
+        }),
+      );
+      expect(trailStep()).toMatchObject({
+        event: TxnStatusEvent.POSTED,
+        toStatus: 'CONFIRMED',
+        remarks: 'Confirmed from the phone',
+      });
+      expect(audit.logEntityChange).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'approve', notes: 'Order confirmed from the phone' }),
+        prisma,
+      );
+    });
+
+    it('names the shortfall after the phone in the step remarks', async () => {
+      const short = { code: 'SALES_RESERVE_SHORT', line: 1, short: 6, message: 'short by 6' };
+      reservations.reserve.mockResolvedValue({
+        reserved: new Map([[LINE_1, 4]]),
+        warnings: [short],
+      });
+
+      const result = await service.postInTx(prisma as never, KEYS, new Date(), PHONE);
+
+      expect(result.warnings).toEqual([short]);
+      expect(trailStep().remarks).toBe('Confirmed from the phone; 1 line(s) short on reservation');
+    });
+
+    it('still refuses on every other check: a closed day', async () => {
+      jest.mocked(loadDayClosed).mockResolvedValueOnce(true);
+
+      const refusal = await refusalOf(service.postInTx(prisma as never, KEYS, new Date(), PHONE));
+
+      expect(refusal).toMatchObject({
+        status: 409,
+        body: { errors: [{ code: 'SALES_DAY_CLOSED' }] },
+      });
+      expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+    });
+
+    it('still refuses on every other check: an invalid salesman', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(orderRow({ soSalesmanId: [USER_ID] }));
+      jest
+        .mocked(assertSalesmen)
+        .mockRejectedValueOnce(
+          new HttpException({ errors: [{ code: 'SALES_SALESMAN_INVALID' }] }, 422),
+        );
+
+      const refusal = await refusalOf(service.postInTx(prisma as never, KEYS, new Date(), PHONE));
+
+      expect(refusal).toMatchObject({
+        status: 422,
+        body: { errors: [{ code: 'SALES_SALESMAN_INVALID' }] },
+      });
+      expect(reservations.reserve).not.toHaveBeenCalled();
+    });
+
+    it('the desktop still needs the right: postInTx without options, /post and save-and-post', async () => {
+      ctx.rights.post = false;
+
+      for (const call of [
+        () => service.postInTx(prisma as never, KEYS, new Date()),
+        () => service.postInTx(prisma as never, KEYS, new Date(), {}),
+        () => service.postInTx(prisma as never, KEYS, new Date(), { origin: 'PHONE' }),
+        () => service.post(KEYS),
+        () =>
+          service.saveAndPost({
+            soCompanyId: COMPANY_ID,
+            soBranchId: BRANCH_ID,
+            soAccYear: ACC_YEAR,
+            post: true,
+          } as SaveSaleOrderDto),
+      ]) {
+        const refusal = await refusalOf(call());
+        expect(refusal).toMatchObject({
+          status: 403,
+          body: { errors: [{ code: 'SALES_RIGHT_POST' }] },
+        });
+      }
+      expect(reservations.reserve).not.toHaveBeenCalled();
+      expect(prisma.saleOrder.update).not.toHaveBeenCalled();
+    });
+
+    it('the desktop confirm keeps its own wording', async () => {
+      await service.postInTx(prisma as never, KEYS, new Date());
+
+      expect(trailStep().remarks).toBeNull();
+      expect(audit.logEntityChange).toHaveBeenCalledWith(
+        expect.objectContaining({ notes: 'Order confirmed' }),
+        prisma,
+      );
+    });
+  });
+
   describe('save (/create without the confirm instruction)', () => {
     const dto = (overrides: Partial<SaveSaleOrderDto> = {}): SaveSaleOrderDto =>
       ({

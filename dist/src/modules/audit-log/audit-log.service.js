@@ -9,7 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuditLogService = void 0;
+exports.AuditLogService = exports.maskAuditValue = exports.deviceDisplayName = void 0;
+exports.extractSelectList = extractSelectList;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const node_net_1 = require("node:net");
@@ -18,6 +19,8 @@ const prisma_service_1 = require("../../database/prisma/prisma.service");
 const audit_screen_sql_constants_1 = require("./audit-screen-sql.constants");
 const module_shared_utils_1 = require("../../common/utils/module-shared.utils");
 const audit_log_error_codes_1 = require("./types/audit-log-error-codes");
+const audit_text_digest_1 = require("./audit-text-digest");
+const audit_item_history_1 = require("./audit-item-history");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^\d+$/;
 const DEFAULT_PAGE = 1;
@@ -41,7 +44,7 @@ const AUDIT_LOG_SELECT = {
     logEntityId: true,
     logRevNo: true,
     logDeviceName: true,
-    auditScreen: { select: { screenName: true } },
+    auditScreen: { select: { screenName: true, screenType: true } },
 };
 const normalizeAuditFieldLookupToken = (value) => value
     .replace(/["'`]/g, '')
@@ -51,27 +54,35 @@ const normalizeAuditFieldLookupToken = (value) => value
     .toLowerCase();
 const createAuditReferenceTypeMap = (entries) => new Map(entries.map(([label, lookupType]) => [normalizeAuditFieldLookupToken(label), lookupType]));
 const GLOBAL_AUDIT_FIELD_REFERENCE_TYPES = createAuditReferenceTypeMap([
+    ['Approved By', 'user'],
     ['Area ID', 'area'],
     ['Base Unit ID', 'unit'],
     ['Branch ID', 'branch'],
     ['City ID', 'city'],
     ['Company ID', 'company'],
     ['Company IDs', 'company'],
+    ['Created By', 'user'],
     ['Customer Group ID', 'customerGroup'],
     ['Customer ID', 'customer'],
     ['Default Tax ID', 'itemTax'],
     ['Default UOM ID', 'unit'],
     ['Department ID', 'employeeDepartment'],
     ['Designation ID', 'employeeDesignation'],
+    ['Device ID', 'device'],
+    ['Employee ID', 'employee'],
     ['Item ID', 'item'],
     ['Ledger ID', 'ledger'],
+    ['Locked By', 'user'],
+    ['Modified By', 'user'],
     ['State ID', 'state'],
     ['Supplier Group ID', 'supplierGroup'],
     ['Tax ID', 'itemTax'],
     ['Tender Type ID', 'tenderType'],
     ['Unit ID', 'unit'],
     ['Unit Rate ID', 'unitRate'],
+    ['User ID', 'user'],
 ]);
+const USER_STAMP_KEY_PATTERN = /(^|_)(created_by|modified_by|updated_by|approved_by|locked_by|deleted_by|cancelled_by)$/;
 const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map([
     [
         'Account Group Master',
@@ -138,6 +149,154 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map([
             ['Parent Section ID', 'itemSection'],
             ['Path IDs', 'itemSection'],
         ]),
+    ],
+    [
+        'Charge Master',
+        createAuditReferenceTypeMap([
+            ['Ledger', 'ledger'],
+            ['Tax Rate', 'itemTax'],
+        ]),
+    ],
+    ['Employee Master', createAuditReferenceTypeMap([['Staff Advance Ledger', 'ledger']])],
+    ['Posting Ledger Map', createAuditReferenceTypeMap([['Ledger', 'ledger']])],
+    [
+        'Print Template',
+        createAuditReferenceTypeMap([
+            ['Purpose', 'printPurpose'],
+            ['Forked From', 'printTemplate'],
+        ]),
+    ],
+    [
+        'Print Template Assignments',
+        createAuditReferenceTypeMap([
+            ['Purpose', 'printPurpose'],
+            ['Template', 'printTemplate'],
+            ['Printer', 'printerProfile'],
+        ]),
+    ],
+    [
+        'Tax Rate Master',
+        createAuditReferenceTypeMap([
+            ['Supersedes', 'itemTax'],
+            ['Ledger', 'ledger'],
+        ]),
+    ],
+    ['Stock Reason Master', createAuditReferenceTypeMap([['Ledger', 'ledger']])],
+]);
+const MASKED_AUDIT_FIELDS_BY_SCREEN = new Map([
+    [
+        'Employee Master',
+        new Set(['PAN', 'Aadhaar', 'Bank Account No'].map((label) => normalizeAuditFieldLookupToken(label))),
+    ],
+]);
+const NOISE_STAMP_KEY_PATTERN = /(^|_)(sync_date|synced_on|modified_on|modified_by|updated_on|updated_by)$/;
+const THEME_TEMPLATE_SCREEN_NAME = 'App Theme Template';
+const STYLESHEET_TEXT_KEYS = new Set(['Stylesheet', 'tplQss', 'tpl_qss']);
+const deviceDisplayName = (device) => device.devDeviceName?.trim() || device.devCode?.trim() || device.devDeviceUid;
+exports.deviceDisplayName = deviceDisplayName;
+const MASK_VISIBLE_TAIL = 4;
+const maskAuditValue = (value) => {
+    const text = value.trim();
+    if (!text) {
+        return value;
+    }
+    if (text.length <= MASK_VISIBLE_TAIL) {
+        return 'X'.repeat(text.length);
+    }
+    return 'X'.repeat(text.length - MASK_VISIBLE_TAIL) + text.slice(-MASK_VISIBLE_TAIL);
+};
+exports.maskAuditValue = maskAuditValue;
+const SAME_SCREEN_RECORD_EXPANSION_BY_SCREEN_NAME = new Map([
+    [
+        'Print Template',
+        async (prisma, ptlId) => {
+            if (!UUID_PATTERN.test(ptlId)) {
+                return [];
+            }
+            const versions = await prisma.printTemplateVersion.findMany({
+                where: { ptvTemplateId: ptlId },
+                select: { ptvId: true },
+            });
+            const versionIds = versions.map((version) => version.ptvId);
+            if (versionIds.length === 0) {
+                return [];
+            }
+            const datasets = await prisma.printTemplateDataset.findMany({
+                where: { ptdVersionId: { in: versionIds } },
+                select: { ptdId: true },
+            });
+            return [...versionIds, ...datasets.map((dataset) => dataset.ptdId)];
+        },
+    ],
+    [
+        'App Settings',
+        async (prisma, recordPk) => {
+            let settingKey = recordPk;
+            let target = {};
+            if (UUID_PATTERN.test(recordPk)) {
+                const override = await prisma.appSettingValue.findUnique({
+                    where: { asvId: recordPk },
+                    select: {
+                        asvSettingKey: true,
+                        asvScope: true,
+                        asvCompanyId: true,
+                        asvBranchId: true,
+                        asvDeviceId: true,
+                        asvUserId: true,
+                    },
+                });
+                if (!override) {
+                    return [];
+                }
+                settingKey = override.asvSettingKey;
+                target = {
+                    asvScope: override.asvScope,
+                    asvCompanyId: override.asvCompanyId,
+                    asvBranchId: override.asvBranchId,
+                    asvDeviceId: override.asvDeviceId,
+                    asvUserId: override.asvUserId,
+                };
+            }
+            const overrides = await prisma.appSettingValue.findMany({
+                where: { asvSettingKey: settingKey, ...target },
+                select: { asvId: true },
+            });
+            return overrides.map((override) => override.asvId);
+        },
+    ],
+    [
+        'Posting Ledger Map',
+        async (prisma, recordPk) => {
+            let role = recordPk.trim().toUpperCase();
+            if (UUID_PATTERN.test(recordPk)) {
+                const mapping = await prisma.accLedgerMap.findUnique({
+                    where: { almId: recordPk },
+                    select: { almRole: true },
+                });
+                if (!mapping) {
+                    return [];
+                }
+                role = mapping.almRole;
+            }
+            const mappings = await prisma.accLedgerMap.findMany({
+                where: { almRole: role },
+                select: { almId: true },
+            });
+            return mappings.map((mapping) => mapping.almId);
+        },
+    ],
+    [
+        'Tax Rate Master',
+        async (prisma, taxId) => {
+            if (!UUID_PATTERN.test(taxId)) {
+                return [];
+            }
+            const lines = await prisma.taxRateLedger.findMany({
+                where: { trlTaxId: taxId },
+                select: { trlId: true },
+            });
+            return lines.map((line) => line.trlId);
+        },
     ],
 ]);
 const RELATED_AUDIT_SCREENS_BY_SCREEN_NAME = new Map([
@@ -210,12 +369,15 @@ let AuditLogService = class AuditLogService {
         }
         return null;
     }
-    async list(queryDto) {
+    async list(queryDto, scope) {
         const limit = Math.min(queryDto.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
         const page = queryDto.page ?? DEFAULT_PAGE;
         const cursor = queryDto.cursor?.trim() || undefined;
         const includeTotal = queryDto.include_total === true;
-        const where = await this.buildWhereClause(queryDto);
+        const { where, compositeHistory } = await this.buildWhereClause(queryDto);
+        if (scope?.screenIds) {
+            where.AND = [...this.whereAndOf(where), { logScreenId: { in: scope.screenIds } }];
+        }
         const orderBy = [
             { logDate: 'desc' },
             { logId: 'desc' },
@@ -233,7 +395,11 @@ let AuditLogService = class AuditLogService {
             this.prisma.auditLog.findMany(findArgs),
             includeTotal ? this.prisma.auditLog.count({ where }) : Promise.resolve(null),
         ]);
-        const preparedRecords = records.map((r) => this.prepareAuditLogListRecord(r));
+        const preparedRecords = records
+            .map((r) => this.prepareAuditLogListRecord(r))
+            .filter((prepared) => !compositeHistory ||
+            prepared.record.logAction !== 'update' ||
+            !this.isEmptyChange(prepared.changedFields));
         const userIds = [
             ...new Set(records.map((r) => r.logUserId).filter((id) => id !== null)),
         ];
@@ -257,17 +423,23 @@ let AuditLogService = class AuditLogService {
             },
         };
     }
+    whereAndOf(where) {
+        if (!where.AND) {
+            return [];
+        }
+        return Array.isArray(where.AND) ? where.AND : [where.AND];
+    }
     async buildWhereClause(queryDto) {
         const where = {};
         if (queryDto.action?.trim()) {
             where.logAction = this.normalizeAction(queryDto.action);
         }
-        if (queryDto.screen_id !== undefined) {
+        const recordScope = await this.buildRecordScopeFilter(queryDto);
+        if (queryDto.screen_id !== undefined && !recordScope?.composite) {
             where.logScreenId = queryDto.screen_id;
         }
-        const recordScopeFilter = await this.buildRecordScopeFilter(queryDto);
-        if (recordScopeFilter) {
-            where.AND = [recordScopeFilter];
+        if (recordScope) {
+            where.AND = [recordScope.filter];
         }
         const dateFrom = queryDto.date_from
             ? this.parseDateBoundary(queryDto.date_from, 'start')
@@ -292,7 +464,7 @@ let AuditLogService = class AuditLogService {
                 { auditScreen: { is: { screenName: { contains: search, mode: 'insensitive' } } } },
             ];
         }
-        return where;
+        return { where, compositeHistory: recordScope?.composite ?? false };
     }
     async buildRecordScopeFilter(queryDto) {
         const screenName = queryDto.screen_name?.trim();
@@ -301,14 +473,26 @@ let AuditLogService = class AuditLogService {
             ? { auditScreen: { is: { screenName } } }
             : {};
         if (!recordPk) {
-            return screenName ? screenFilter : null;
+            return screenName ? { filter: screenFilter, composite: false } : null;
         }
-        const relatedScreens = screenName
-            ? RELATED_AUDIT_SCREENS_BY_SCREEN_NAME.get(screenName)
+        const expandScreenName = screenName ??
+            (queryDto.screen_id !== undefined ? await this.screenNameOf(queryDto.screen_id) : null);
+        const expandSameScreen = expandScreenName
+            ? SAME_SCREEN_RECORD_EXPANSION_BY_SCREEN_NAME.get(expandScreenName)
+            : undefined;
+        const ownPkFilter = expandSameScreen
+            ? { in: [...new Set([recordPk, ...(await expandSameScreen(this.prisma, recordPk))])] }
+            : recordPk;
+        const relatedScreens = expandScreenName
+            ? RELATED_AUDIT_SCREENS_BY_SCREEN_NAME.get(expandScreenName)
             : undefined;
         if (!relatedScreens || !UUID_PATTERN.test(recordPk)) {
-            return { ...screenFilter, logPk: recordPk };
+            return { filter: { ...screenFilter, logPk: ownPkFilter }, composite: false };
         }
+        const ownScreenFilter = {
+            ...screenFilter,
+            ...(queryDto.screen_id !== undefined ? { logScreenId: queryDto.screen_id } : {}),
+        };
         const relatedFilters = await Promise.all(relatedScreens.map(async (relatedScreen) => {
             const childPks = await relatedScreen.findChildPks(this.prisma, recordPk);
             if (childPks.length === 0) {
@@ -320,11 +504,21 @@ let AuditLogService = class AuditLogService {
             };
         }));
         return {
-            OR: [
-                { ...screenFilter, logPk: recordPk },
-                ...relatedFilters.filter((relatedFilter) => relatedFilter !== null),
-            ],
+            filter: {
+                OR: [
+                    { ...ownScreenFilter, logPk: ownPkFilter },
+                    ...relatedFilters.filter((relatedFilter) => relatedFilter !== null),
+                ],
+            },
+            composite: true,
         };
+    }
+    async screenNameOf(screenId) {
+        const screen = await this.prisma.auditScreen.findFirst({
+            where: { screenId },
+            select: { screenName: true },
+        });
+        return screen?.screenName ?? null;
     }
     async createAuditLog(input, tx) {
         const client = tx ?? this.prisma;
@@ -360,9 +554,9 @@ let AuditLogService = class AuditLogService {
         const action = this.normalizeAction(input.action);
         const screen = await this.resolveAuditScreen(input, client);
         const screenId = screen.screenId;
-        const originalRecord = this.projectAuditRecord(this.toNullableJson(input.originalRecord), screen.auditFields);
+        const originalRecord = this.projectAuditRecord(this.toNullableJson(input.originalRecord), screen.auditFields, screen.presentFieldsOnly);
         const isModifiedRecordProvided = input.modifiedRecord !== undefined;
-        let modifiedRecord = this.projectAuditRecord(this.toNullableJson(input.modifiedRecord), screen.auditFields);
+        let modifiedRecord = this.projectAuditRecord(this.toNullableJson(input.modifiedRecord), screen.auditFields, screen.presentFieldsOnly);
         if (!isModifiedRecordProvided) {
             const pk = this.normalizePk(input.pk);
             if (pk !== null) {
@@ -370,7 +564,7 @@ let AuditLogService = class AuditLogService {
                     screenId,
                     keyNo: pk,
                     accYear: input.accYear ?? null,
-                }, tx), screen.auditFields);
+                }, tx), screen.auditFields, screen.presentFieldsOnly);
             }
         }
         if (!isModifiedRecordProvided && modifiedRecord === null) {
@@ -400,7 +594,13 @@ let AuditLogService = class AuditLogService {
         if (action === 'update' && (originalRecord === null || modifiedRecord === null)) {
             throwAuditLogInvalid('originalRecord and modifiedRecord are required for update audit log', 'originalRecord', audit_log_error_codes_1.AuditLogErrorCode.RECORD_REQUIRED);
         }
-        const changedFields = this.computeChangedFields(originalRecord, modifiedRecord);
+        const computedChangedFields = this.computeChangedFields(originalRecord, modifiedRecord);
+        const changedFields = screen.isTransaction
+            ? computedChangedFields
+            : this.dropNoiseStamps(computedChangedFields);
+        if (action === 'update' && input.skipWhenUnchanged && this.isEmptyChange(changedFields)) {
+            return;
+        }
         await this.createAuditLog({
             action,
             screenId,
@@ -493,6 +693,7 @@ let AuditLogService = class AuditLogService {
                 select: {
                     screenId: true,
                     screenName: true,
+                    screenType: true,
                     screenAuditSql: true,
                 },
             });
@@ -503,6 +704,8 @@ let AuditLogService = class AuditLogService {
             return {
                 screenId: resolvedScreen.screenId,
                 auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
+                presentFieldsOnly: audit_screen_sql_constants_1.AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY.has(existingScreen.screenName),
+                isTransaction: existingScreen.screenType === 'transaction',
             };
         }
         const screenName = input.screenName?.trim();
@@ -517,6 +720,7 @@ let AuditLogService = class AuditLogService {
             select: {
                 screenId: true,
                 screenName: true,
+                screenType: true,
                 screenAuditSql: true,
             },
             orderBy: {
@@ -528,13 +732,16 @@ let AuditLogService = class AuditLogService {
             return {
                 screenId: resolvedScreen.screenId,
                 auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
+                presentFieldsOnly: audit_screen_sql_constants_1.AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY.has(existingScreen.screenName),
+                isTransaction: existingScreen.screenType === 'transaction',
             };
         }
         const screenAuditSql = (0, audit_screen_sql_constants_1.getAuditScreenSql)(screenName);
+        const screenType = this.normalizeScreenType(input.screenType);
         const createdScreen = await tx.auditScreen.create({
             data: {
                 screenName,
-                screenType: this.normalizeScreenType(input.screenType),
+                screenType,
                 screenStatus: true,
                 screenAuditSql,
             },
@@ -546,6 +753,8 @@ let AuditLogService = class AuditLogService {
         return {
             screenId: createdScreen.screenId,
             auditFields: this.extractAuditFields(createdScreen.screenAuditSql),
+            presentFieldsOnly: audit_screen_sql_constants_1.AUDIT_SCREENS_RECORDING_PRESENT_FIELDS_ONLY.has(screenName),
+            isTransaction: screenType === 'transaction',
         };
     }
     async syncAuditScreenSqlIfNeeded(tx, screen) {
@@ -597,10 +806,16 @@ let AuditLogService = class AuditLogService {
     }
     toListItem(preparedRecord, userNameById, branchNameById, auditReferenceNameLookup) {
         const { record, screenName } = preparedRecord;
-        const originalRecord = this.resolveAuditReferenceNames(preparedRecord.originalRecord, screenName, auditReferenceNameLookup);
-        const modifiedRecord = this.resolveAuditReferenceNames(preparedRecord.modifiedRecord, screenName, auditReferenceNameLookup);
-        const changedFields = this.resolveAuditReferenceNames(preparedRecord.changedFields, screenName, auditReferenceNameLookup);
-        const displayName = this.normalizeOptionalText(record.logDisplayName) ??
+        const maskedFields = MASKED_AUDIT_FIELDS_BY_SCREEN.get(screenName);
+        const forView = (value) => {
+            const named = this.resolveAuditReferenceNames(value, screenName, auditReferenceNameLookup);
+            return maskedFields ? this.maskAuditFields(named, maskedFields) : named;
+        };
+        const originalRecord = forView(preparedRecord.originalRecord);
+        const modifiedRecord = forView(preparedRecord.modifiedRecord);
+        const changedFields = forView(preparedRecord.changedFields);
+        const displayName = (0, audit_item_history_1.itemChildDisplayName)(screenName, modifiedRecord ?? originalRecord) ??
+            this.normalizeOptionalText(record.logDisplayName) ??
             this.findAuditDisplayName(modifiedRecord) ??
             this.findAuditDisplayName(originalRecord);
         const userName = record.logUserId ? (userNameById.get(record.logUserId) ?? null) : null;
@@ -627,16 +842,99 @@ let AuditLogService = class AuditLogService {
             log_device_name: record.logDeviceName,
         };
     }
+    maskAuditFields(value, maskedFields) {
+        if (value === null || !this.isJsonObject(value)) {
+            return value;
+        }
+        const maskLeaf = (leaf) => typeof leaf === 'string' ? (0, exports.maskAuditValue)(leaf) : leaf;
+        const masked = {};
+        for (const [fieldName, fieldValue] of Object.entries(value)) {
+            const normalizedFieldValue = (fieldValue ?? null);
+            if (!maskedFields.has(this.normalizeAuditFieldLookup(fieldName))) {
+                masked[fieldName] = this.isJsonObject(normalizedFieldValue)
+                    ? this.maskAuditFields(normalizedFieldValue, maskedFields)
+                    : normalizedFieldValue;
+                continue;
+            }
+            masked[fieldName] = this.isAuditDiffLeaf(normalizedFieldValue)
+                ? { from: maskLeaf(normalizedFieldValue.from), to: maskLeaf(normalizedFieldValue.to) }
+                : maskLeaf(normalizedFieldValue);
+        }
+        return masked;
+    }
     prepareAuditLogListRecord(record) {
         const screenName = record.auditScreen.screenName;
         const auditFields = this.extractAuditFields((0, audit_screen_sql_constants_1.getAuditScreenSql)(screenName));
+        let originalRecord = this.renameAuditRecordFields(record.logOriginalRecord, auditFields);
+        let modifiedRecord = this.renameAuditRecordFields(record.logModifiedRecord, auditFields);
+        let changedFields = this.renameAuditRecordFields(record.logChangedFields, auditFields);
+        if (screenName === THEME_TEMPLATE_SCREEN_NAME) {
+            originalRecord = this.digestStylesheetText(originalRecord);
+            modifiedRecord = this.digestStylesheetText(modifiedRecord);
+            changedFields = this.digestStylesheetChange(changedFields);
+        }
+        if (record.auditScreen.screenType !== 'transaction') {
+            changedFields = this.dropNoiseStamps(changedFields);
+        }
+        return { record, screenName, auditFields, originalRecord, modifiedRecord, changedFields };
+    }
+    isNoiseStampKey(key) {
+        return NOISE_STAMP_KEY_PATTERN.test(this.toSnakeCase(key));
+    }
+    dropNoiseStamps(changedFields) {
+        if (changedFields === null || !this.isJsonObject(changedFields)) {
+            return changedFields;
+        }
+        return Object.fromEntries(Object.entries(changedFields).filter(([key]) => !this.isNoiseStampKey(key)));
+    }
+    isEmptyChange(changedFields) {
+        return (changedFields === null ||
+            (this.isJsonObject(changedFields) && Object.keys(changedFields).length === 0));
+    }
+    digestStylesheetText(record) {
+        if (record === null || !this.isJsonObject(record)) {
+            return record;
+        }
+        const digested = {};
+        for (const [key, value] of Object.entries(record)) {
+            if (!STYLESHEET_TEXT_KEYS.has(key)) {
+                digested[key] = value ?? null;
+                continue;
+            }
+            Object.assign(digested, this.stylesheetDigestFields(value ?? null));
+        }
+        return digested;
+    }
+    digestStylesheetChange(changedFields) {
+        if (changedFields === null || !this.isJsonObject(changedFields)) {
+            return changedFields;
+        }
+        const digested = {};
+        for (const [key, value] of Object.entries(changedFields)) {
+            const change = value ?? null;
+            if (!STYLESHEET_TEXT_KEYS.has(key) || !this.isAuditDiffLeaf(change)) {
+                digested[key] = change;
+                continue;
+            }
+            const from = this.stylesheetDigestFields(change.from);
+            const to = this.stylesheetDigestFields(change.to);
+            for (const label of Object.keys(to)) {
+                if (from[label] !== to[label]) {
+                    digested[label] = { from: from[label] ?? null, to: to[label] ?? null };
+                }
+            }
+        }
+        return digested;
+    }
+    stylesheetDigestFields(text) {
+        if (typeof text !== 'string') {
+            return { 'Stylesheet Hash': null, 'Stylesheet Size': null, 'Stylesheet Lines': null };
+        }
+        const digest = (0, audit_text_digest_1.stylesheetDigest)(text);
         return {
-            record,
-            screenName,
-            auditFields,
-            originalRecord: this.renameAuditRecordFields(record.logOriginalRecord, auditFields),
-            modifiedRecord: this.renameAuditRecordFields(record.logModifiedRecord, auditFields),
-            changedFields: this.renameAuditRecordFields(record.logChangedFields, auditFields),
+            'Stylesheet Hash': digest.stylesheetHash,
+            'Stylesheet Size': digest.stylesheetSize,
+            'Stylesheet Lines': digest.stylesheetLines,
         };
     }
     renameAuditRecordFields(record, auditFields) {
@@ -657,7 +955,7 @@ let AuditLogService = class AuditLogService {
             return null;
         }
         for (const auditField of auditFields) {
-            const candidateFieldNames = [auditField.sourceFieldName, auditField.targetFieldName].filter((fieldName) => Boolean(fieldName));
+            const candidateFieldNames = [...auditField.sourceFieldNames, auditField.targetFieldName];
             for (const candidateFieldName of candidateFieldNames) {
                 const candidateTokens = this.buildAuditFieldLookupTokens(candidateFieldName);
                 if (candidateTokens.some((token) => lookupTokens.has(token))) {
@@ -780,7 +1078,11 @@ let AuditLogService = class AuditLogService {
         if (screenResolver?.has(normalizedFieldName)) {
             return screenResolver.get(normalizedFieldName) ?? null;
         }
-        return GLOBAL_AUDIT_FIELD_REFERENCE_TYPES.get(normalizedFieldName) ?? null;
+        const globalType = GLOBAL_AUDIT_FIELD_REFERENCE_TYPES.get(normalizedFieldName);
+        if (globalType) {
+            return globalType;
+        }
+        return USER_STAMP_KEY_PATTERN.test(this.toSnakeCase(fieldName)) ? 'user' : null;
     }
     isValidAuditReferenceId(lookupType, value) {
         if (lookupType === 'tenderType') {
@@ -925,6 +1227,49 @@ let AuditLogService = class AuditLogService {
                 });
                 return new Map(groups.map((group) => [group.cgrId, group.cgrName]));
             }
+            case 'device': {
+                const devices = await this.prisma.deviceMaster.findMany({
+                    where: { devId: { in: [...ids] } },
+                    select: { devId: true, devDeviceName: true, devCode: true, devDeviceUid: true },
+                });
+                return new Map(devices.map((device) => [device.devId, (0, exports.deviceDisplayName)(device)]));
+            }
+            case 'employee': {
+                const employees = await this.prisma.employeeMaster.findMany({
+                    where: { empId: { in: [...ids] } },
+                    select: { empId: true, empName: true, empCode: true },
+                });
+                return new Map(employees.map((employee) => [
+                    employee.empId,
+                    employee.empName?.trim() || employee.empCode?.trim() || employee.empId,
+                ]));
+            }
+            case 'printPurpose': {
+                const purposes = await this.prisma.printPurpose.findMany({
+                    where: { ppoId: { in: [...ids] } },
+                    select: { ppoId: true, ppoName: true },
+                });
+                return new Map(purposes.map((purpose) => [purpose.ppoId, purpose.ppoName]));
+            }
+            case 'printTemplate': {
+                const templates = await this.prisma.printTemplate.findMany({
+                    where: { ptlId: { in: [...ids] } },
+                    select: { ptlId: true, ptlName: true, ptlCode: true },
+                });
+                return new Map(templates.map((template) => [
+                    template.ptlId,
+                    `${template.ptlName} (${template.ptlCode})`,
+                ]));
+            }
+            case 'printerProfile': {
+                const printers = await this.prisma.printerProfile.findMany({
+                    where: { prfId: { in: [...ids] } },
+                    select: { prfId: true, prfName: true },
+                });
+                return new Map(printers.map((printer) => [printer.prfId, printer.prfName]));
+            }
+            case 'user':
+                return this.getUserNameByIds(ids);
             case 'employeeDepartment': {
                 const departments = await this.prisma.employeeDepartment.findMany({
                     where: {
@@ -1206,9 +1551,10 @@ let AuditLogService = class AuditLogService {
             select: {
                 usrId: true,
                 usrDisplayName: true,
+                usrLoginName: true,
             },
         });
-        return new Map(users.map((user) => [user.usrId, user.usrDisplayName]));
+        return new Map(users.map((user) => [user.usrId, user.usrDisplayName?.trim() || user.usrLoginName]));
     }
     async getBranchNameByIds(branchIds) {
         const branches = await this.prisma.branchMaster.findMany({
@@ -1241,28 +1587,31 @@ let AuditLogService = class AuditLogService {
                 throwAuditLogInvalid(`Unsupported audit screen type: ${screenType}`, 'screenType', audit_log_error_codes_1.AuditLogErrorCode.SCREEN_TYPE_UNSUPPORTED);
         }
     }
-    projectAuditRecord(record, auditFields) {
+    projectAuditRecord(record, auditFields, presentFieldsOnly = false) {
         if (record === null || auditFields.length === 0 || !this.isJsonObject(record)) {
             return record;
         }
         const projectedRecord = {};
         for (const auditField of auditFields) {
-            projectedRecord[auditField.targetFieldName] = this.resolveAuditFieldValue(record, auditField);
+            const key = this.findAuditFieldSourceKey(record, auditField);
+            if (key === null) {
+                if (!presentFieldsOnly) {
+                    projectedRecord[auditField.targetFieldName] = null;
+                }
+                continue;
+            }
+            projectedRecord[auditField.targetFieldName] = record[key] ?? null;
         }
         return projectedRecord;
     }
-    resolveAuditFieldValue(record, auditField) {
-        const sourceKey = auditField.sourceFieldName
-            ? this.findAuditFieldKey(record, auditField.sourceFieldName)
-            : null;
-        if (sourceKey) {
-            return record[sourceKey] ?? null;
+    findAuditFieldSourceKey(record, auditField) {
+        for (const sourceFieldName of auditField.sourceFieldNames) {
+            const sourceKey = this.findAuditFieldKey(record, sourceFieldName);
+            if (sourceKey) {
+                return sourceKey;
+            }
         }
-        const targetKey = this.findAuditFieldKey(record, auditField.targetFieldName);
-        if (!targetKey) {
-            return null;
-        }
-        return record[targetKey] ?? null;
+        return this.findAuditFieldKey(record, auditField.targetFieldName);
     }
     findAuditFieldKey(record, auditFieldName) {
         const lookupTokens = new Set(this.buildAuditFieldLookupTokens(auditFieldName));
@@ -1294,11 +1643,11 @@ let AuditLogService = class AuditLogService {
         if (!normalizedSql) {
             return [];
         }
-        const selectClauseMatch = normalizedSql.match(/^\s*select\s+([\s\S]+?)\s+from\b/i);
-        if (!selectClauseMatch) {
+        const selectClause = extractSelectList(normalizedSql);
+        if (selectClause === null) {
             return [];
         }
-        const fields = this.splitSelectClause(selectClauseMatch[1])
+        const fields = this.splitSelectClause(selectClause)
             .map((fieldExpression) => this.extractAuditFieldDefinition(fieldExpression))
             .filter((field) => Boolean(field));
         const seen = new Set();
@@ -1311,41 +1660,7 @@ let AuditLogService = class AuditLogService {
         });
     }
     splitSelectClause(selectClause) {
-        const fields = [];
-        let currentField = '';
-        let parenthesisDepth = 0;
-        let insideSingleQuote = false;
-        let insideDoubleQuote = false;
-        for (const character of selectClause) {
-            if (character === "'" && !insideDoubleQuote) {
-                insideSingleQuote = !insideSingleQuote;
-            }
-            else if (character === '"' && !insideSingleQuote) {
-                insideDoubleQuote = !insideDoubleQuote;
-            }
-            else if (!insideSingleQuote && !insideDoubleQuote) {
-                if (character === '(') {
-                    parenthesisDepth += 1;
-                }
-                else if (character === ')' && parenthesisDepth > 0) {
-                    parenthesisDepth -= 1;
-                }
-                else if (character === ',' && parenthesisDepth === 0) {
-                    const field = currentField.trim();
-                    if (field) {
-                        fields.push(field);
-                    }
-                    currentField = '';
-                    continue;
-                }
-            }
-            currentField += character;
-        }
-        const trailingField = currentField.trim();
-        if (trailingField) {
-            fields.push(trailingField);
-        }
-        return fields;
+        return splitTopLevel(selectClause, ',');
     }
     extractAuditFieldDefinition(fieldExpression) {
         const normalizedExpression = fieldExpression.trim();
@@ -1358,8 +1673,10 @@ let AuditLogService = class AuditLogService {
             if (!targetFieldName) {
                 return null;
             }
+            const sourceFieldNames = this.extractSourceFieldNames(explicitAliasMatch.groups.source);
             return {
-                sourceFieldName: this.extractSourceFieldName(explicitAliasMatch.groups.source),
+                sourceFieldName: sourceFieldNames[0] ?? null,
+                sourceFieldNames,
                 targetFieldName,
             };
         }
@@ -1369,8 +1686,19 @@ let AuditLogService = class AuditLogService {
         }
         return {
             sourceFieldName,
+            sourceFieldNames: [sourceFieldName],
             targetFieldName: sourceFieldName,
         };
+    }
+    extractSourceFieldNames(expression) {
+        const coalesceArguments = coalesceArgumentsOf(expression);
+        if (coalesceArguments) {
+            return coalesceArguments
+                .map((argument) => this.extractSourceFieldName(argument))
+                .filter((fieldName) => Boolean(fieldName));
+        }
+        const sourceFieldName = this.extractSourceFieldName(expression);
+        return sourceFieldName ? [sourceFieldName] : [];
     }
     extractSourceFieldName(expression) {
         const expressionWithoutCast = expression
@@ -1538,6 +1866,97 @@ exports.AuditLogService = AuditLogService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         request_context_service_1.RequestContextService])
 ], AuditLogService);
+function scanUnquoted(text, visit) {
+    let depth = 0;
+    let quote = null;
+    for (let index = 0; index < text.length; index += 1) {
+        const character = text[index];
+        if (quote !== null) {
+            if (character === quote) {
+                quote = null;
+            }
+            continue;
+        }
+        if (character === "'" || character === '"') {
+            quote = character;
+            continue;
+        }
+        if (visit(index, depth) === true) {
+            return;
+        }
+        if (character === '(' || character === '[') {
+            depth += 1;
+        }
+        else if ((character === ')' || character === ']') && depth > 0) {
+            depth -= 1;
+        }
+    }
+}
+function splitTopLevel(text, separator) {
+    const cuts = [];
+    scanUnquoted(text, (index, depth) => {
+        if (depth === 0 && text[index] === separator) {
+            cuts.push(index);
+        }
+    });
+    const parts = [];
+    let start = 0;
+    for (const cut of [...cuts, text.length]) {
+        const part = text.slice(start, cut).trim();
+        if (part) {
+            parts.push(part);
+        }
+        start = cut + 1;
+    }
+    return parts;
+}
+const SQL_WORD_CHARACTER = /[A-Za-z0-9_$]/;
+function extractSelectList(sql) {
+    const head = /^\s*select\s+/i.exec(sql);
+    if (!head) {
+        return null;
+    }
+    const body = sql.slice(head[0].length);
+    let end = -1;
+    scanUnquoted(body, (index, depth) => {
+        if (depth === 0 &&
+            body.slice(index, index + 4).toLowerCase() === 'from' &&
+            !SQL_WORD_CHARACTER.test(body[index - 1] ?? ' ') &&
+            !SQL_WORD_CHARACTER.test(body[index + 4] ?? ' ')) {
+            end = index;
+            return true;
+        }
+        return false;
+    });
+    if (end < 0) {
+        return null;
+    }
+    const selectList = body.slice(0, end).trim();
+    return selectList || null;
+}
+function coalesceArgumentsOf(expression) {
+    const text = expression
+        .trim()
+        .replace(/::\s*("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)(\[\])?\s*$/, '')
+        .trim();
+    const head = /^coalesce\s*\(/i.exec(text);
+    if (!head || !text.endsWith(')')) {
+        return null;
+    }
+    const open = head[0].length - 1;
+    let close = -1;
+    scanUnquoted(text, (index, depth) => {
+        if (index > open && depth === 1 && text[index] === ')') {
+            close = index;
+            return true;
+        }
+        return false;
+    });
+    if (close !== text.length - 1) {
+        return null;
+    }
+    return splitTopLevel(text.slice(open + 1, close), ',');
+}
 function throwAuditLogInvalid(message, field, code) {
     (0, module_shared_utils_1.throwBadRequest)(message, [{ field, message, code }]);
 }

@@ -1,6 +1,6 @@
-import { SaveUserAdministrationDto } from './dto/save-user-administration.dto';
+import { ResetUserPasswordDto, SaveUserAdministrationDto } from './dto/save-user-administration.dto';
 import { UserAdministrationService } from './user-administration.service';
-import { UserAdminPayload, UserAdminSuccessResponse } from './types/user-administration-api.types';
+import { UserAdminPayload, UserAdminResetPasswordResult, UserAdminRestoreResult, UserAdminSuccessResponse, UserAdminUnlockResult } from './types/user-administration-api.types';
 export declare class UserAdministrationController {
     private readonly userAdministrationService;
     constructor(userAdministrationService: UserAdministrationService);
@@ -10,4 +10,7 @@ export declare class UserAdministrationController {
         usrId: string;
         deleted: true;
     }>>;
+    resetPassword(dto: ResetUserPasswordDto): Promise<UserAdminSuccessResponse<UserAdminResetPasswordResult>>;
+    unlock(usrId: string): Promise<UserAdminSuccessResponse<UserAdminUnlockResult>>;
+    restore(usrId: string): Promise<UserAdminSuccessResponse<UserAdminRestoreResult>>;
 }

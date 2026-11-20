@@ -37,10 +37,16 @@ export declare class SaveUserAdministrationDto {
     usrEditDate?: boolean;
     usrEditEntry?: boolean;
     usrEditRate?: boolean;
+    usrMaxDiscPerc?: string | number | null;
     usrDesktopLogin?: boolean;
     usrWebLogin?: boolean;
     usrMobileLogin?: boolean;
     usrIsActive?: boolean;
     usrNotes?: string | null;
     menus?: SaveUserMenuDto[];
+}
+export declare class ResetUserPasswordDto {
+    usrId: string;
+    newPassword?: string | null;
+    generate?: boolean;
 }

@@ -2975,10 +2975,6 @@ model AccVoucherType {
   vchrPrintPurposeId         String?              @db.Uuid @map("vchr_print_purpose_id")
   /// Print right after posting (Ctrl+Enter), never after a draft save
   vchrPrintAfterPost         Boolean              @default(false) @map("vchr_print_after_post")
-  /// WhatsApp on Post (20261119100000, Q3): after a post of this type commits, the server sends
-  /// the document on WhatsApp unless the post said waOnPost = false. Phase 1: Sales Bill and its
-  /// child types, Sales Order, Receipt (Bill-wise). All false to start
-  vchrWhatsappAfterPost      Boolean              @default(false) @map("vchr_whatsapp_after_post")
   /// Delivery tracking (20261117100000, Q3): INSTANT | PICKUP | DISPATCH, the default
   /// delivery mode of a new bill of this type (ck_vchr_delivery_mode). INSTANT on the base
   /// Sales Bill; a child keeps NULL (= the base's) until saved; NULL on every other type

@@ -104,9 +104,6 @@ export declare class DeliveryNoteReadService {
         sdnId: string;
         accYear?: string | null;
     }): Promise<{
-        sdnGodownId: string;
-        sdnVehicleId: string | null;
-        sdnCollectedBy: string | null;
         sdnId: string;
         sdnCompanyId: string;
         sdnBranchId: string;
@@ -119,12 +116,15 @@ export declare class DeliveryNoteReadService {
         sdnRefno: string;
         sdnDate: Date;
         sdnDatetime: Date;
+        sdnGodownId: string;
         sdnMode: string;
+        sdnVehicleId: string | null;
         sdnVehicleNo: string | null;
         sdnVehicleCapacityKg: Prisma.Decimal | null;
         sdnDriverId: string | null;
         sdnSupervisorId: string | null;
         sdnLoadmanId: string[];
+        sdnCollectedBy: string | null;
         sdnCollectorPhone: string | null;
         sdnTotLines: number;
         sdnTotQty: Prisma.Decimal;

@@ -69,6 +69,24 @@ export function baseUnitChange(
   return null;
 }
 
+/**
+ * Item master review 2026-11-20, Q2 (user: recommended) — the unit a save gives
+ * the stored base row BY ITS OWN iuc_id, when it differs: a wrongly picked base
+ * unit (KG for PC) put right on the same row. Null when the base row keeps its
+ * unit or is not addressed by id. The caller allows it only while the item has
+ * never been used (item-unit-in-use.helper); the row id, and every quantity,
+ * price and barcode on it, stay.
+ */
+export function baseRowRePick(
+  base: StoredBaseRow,
+  rows: ReadonlyArray<BaseUnitFields> | undefined,
+): string | null {
+  const row = rows?.find((candidate) => candidate.iuc_id === base.iuc_id);
+  return row?.iuc_unit_id !== undefined && row.iuc_unit_id !== base.iuc_unit_id
+    ? row.iuc_unit_id
+    : null;
+}
+
 /** 409 `code` on `field`: the save would change a saved item's base unit. */
 export function refuseBaseUnitChange(code: string, field: string, message: string): never {
   return throwInventoryConflict<InventoryErrorDetail>("A saved item's base unit cannot change", [

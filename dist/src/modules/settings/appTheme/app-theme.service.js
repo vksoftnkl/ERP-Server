@@ -9,10 +9,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AppThemeService = void 0;
+exports.templateTextDigest = exports.AppThemeService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
+const audit_text_digest_1 = require("../../audit-log/audit-text-digest");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const rights_1 = require("../../../common/posting/rights");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -489,7 +490,7 @@ let AppThemeService = class AppThemeService {
         return {
             tplId: record.tplId,
             tplName: record.tplName,
-            tplQss: record.tplQss,
+            ...(0, audit_text_digest_1.stylesheetDigest)(record.tplQss),
             tplRemarks: record.tplRemarks,
             tplIsActive: record.tplIsActive,
             tplIsDeleted: record.tplIsDeleted,
@@ -582,4 +583,5 @@ exports.AppThemeService = AppThemeService = __decorate([
         audit_log_service_1.AuditLogService,
         request_context_service_1.RequestContextService])
 ], AppThemeService);
+exports.templateTextDigest = audit_text_digest_1.stylesheetDigest;
 //# sourceMappingURL=app-theme.service.js.map

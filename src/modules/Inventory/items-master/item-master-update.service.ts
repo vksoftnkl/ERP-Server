@@ -26,10 +26,18 @@ import { ItemUnitConversionPayload } from '../item-unit-conversion/types/item-un
 import { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
 import { ItemEanCodePayload } from '../items-ean-code-master/types/item-ean-code-api.types';
 import { ItemReorderPayload } from '../items-reorder-master/types/item-reorder-api.types';
-import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
+import {
+  throwInventoryBadRequest,
+  throwInventoryConflict,
+} from 'src/common/utils/module-service.utils';
 import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils';
 import { ItemErrorCode } from './types/item-error-codes';
-import { baseUnitChange, refuseBaseUnitChange } from '../utils/item-base-unit.helper';
+import {
+  baseRowRePick,
+  baseUnitChange,
+  refuseBaseUnitChange,
+} from '../utils/item-base-unit.helper';
+import { rowUnitLock, unitRowsInUse } from '../utils/item-unit-in-use.helper';
 
 export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item' | 'scheduled_prices'>;
 
@@ -138,8 +146,21 @@ export class ItemMasterUpdateService {
     dto: SaveItemCompositeDto,
     tx: Prisma.TransactionClient,
   ): Promise<ItemChildrenSyncResult> {
-    const unit_conversions = await this.syncUnitConversions(itemId, dto.unit_conversions, tx);
-    const conversions = await this.indexUnitConversions(itemId, dto, unit_conversions, tx);
+    // old unit id → the row that was re-picked away from it in this save.
+    const rePicked = new Map<string, string>();
+    const unit_conversions = await this.syncUnitConversions(
+      itemId,
+      dto.unit_conversions,
+      tx,
+      rePicked,
+    );
+    const conversions = await this.indexUnitConversions(
+      itemId,
+      dto,
+      unit_conversions,
+      tx,
+      rePicked,
+    );
     const prices = await this.syncPrices(itemId, dto.prices, conversions, tx);
     const ean_codes = await this.syncEanCodes(itemId, dto.ean_codes, conversions, tx);
     const reorders = await this.syncReorders(itemId, dto.reorders, conversions, tx);
@@ -203,6 +224,7 @@ export class ItemMasterUpdateService {
     dto: SaveItemCompositeDto,
     syncedUnitConversions: ItemUnitConversionPayload[],
     tx: Prisma.TransactionClient,
+    rePicked: ReadonlyMap<string, string>,
   ): Promise<UnitConversionIndex> {
     const needed =
       dto.prices !== undefined || dto.ean_codes !== undefined || dto.reorders !== undefined;
@@ -211,10 +233,14 @@ export class ItemMasterUpdateService {
       : dto.unit_conversions !== undefined
         ? syncedUnitConversions
         : await this.itemUnitConversionService.findByItemId(itemId, tx);
-    return {
-      iucIdByUnitId: new Map(rows.map((row) => [row.iuc_unit_id, row.iuc_id])),
-      iucIds: new Set(rows.map((row) => row.iuc_id)),
-    };
+    const iucIdByUnitId = new Map(rows.map((row) => [row.iuc_unit_id, row.iuc_id]));
+    // Item master review 11-20 Q2: a re-picked row keeps its prices, barcodes and
+    // reorders, so a child row still naming the OLD unit means that same row —
+    // unless another live row now holds the old unit.
+    for (const [oldUnitId, iucId] of rePicked) {
+      if (!iucIdByUnitId.has(oldUnitId)) iucIdByUnitId.set(oldUnitId, iucId);
+    }
+    return { iucIdByUnitId, iucIds: new Set(rows.map((row) => row.iuc_id)) };
   }
 
   /**
@@ -252,11 +278,23 @@ export class ItemMasterUpdateService {
    * a base row, no payload row may change its base unit and the base row may
    * not be left out (notes 138 A1, item-base-unit.helper) — refused before
    * anything is written, naming the payload row.
+   *
+   * ITEM MASTER REVIEW 11-20 Q2 (user: recommended). A row re-picked to another
+   * unit BY ITS OWN iuc_id keeps the id — and with it every bill, stock row,
+   * price and barcode that points at it — so:
+   *  - the base row may be re-picked only while the WHOLE item has never been
+   *    used (no stock, no document line on any of its units, removed ones
+   *    included); every row then follows the new base unit;
+   *  - any other row only while that row itself is unused;
+   *  - else 409 ITEM_UNIT_IN_USE on `unit_conversions.<i>.iuc_unit_id`.
+   * A unit dropped and another added (no iuc_id) is a remove + add, as before:
+   * old documents keep the removed row and read its old unit.
    */
   private async syncUnitConversions(
     itemId: string,
     children: CompositeItemUnitConversionDto[] | undefined,
     tx: Prisma.TransactionClient,
+    rePicked: Map<string, string>,
   ): Promise<ItemUnitConversionPayload[]> {
     if (children === undefined) {
       return [];
@@ -270,13 +308,21 @@ export class ItemMasterUpdateService {
       'two conversion rows for the same unit',
     );
 
-    const base = existing.find((row) => row.iuc_is_base_unit);
+    const storedBase = existing.find((row) => row.iuc_is_base_unit);
+    const matches = children.map((child) =>
+      child.iuc_id
+        ? existing.find((row) => row.iuc_id === child.iuc_id)
+        : existingByKey.get(child.iuc_unit_id),
+    );
+    await this.refuseUsedUnitRePicks(itemId, children, matches, tx);
+    const newBaseUnitId = storedBase ? baseRowRePick(storedBase, children) : null;
+    // From here on the lock reads the base row with the unit this save may give it.
+    const base =
+      storedBase && newBaseUnitId ? { ...storedBase, iuc_unit_id: newBaseUnitId } : storedBase;
     const toSave: SaveItemUnitConversionDto[] = [];
     const claimedIds = new Set<string>();
     children.forEach((child, index) => {
-      const match = child.iuc_id
-        ? existing.find((row) => row.iuc_id === child.iuc_id)
-        : existingByKey.get(child.iuc_unit_id);
+      const match = matches[index];
       const change = base && baseUnitChange(base, { ...child, iuc_id: match?.iuc_id });
       if (change) {
         refuseBaseUnitChange(
@@ -287,11 +333,20 @@ export class ItemMasterUpdateService {
       }
       if (match) {
         claimedIds.add(match.iuc_id);
-        if (!this.rowChanged(child, match, IUC_IGNORED_FIELDS)) {
+        if (child.iuc_unit_id !== match.iuc_unit_id) {
+          rePicked.set(match.iuc_unit_id, match.iuc_id);
+        }
+        // A new base unit is every row's base unit: none may keep the old one.
+        if (!newBaseUnitId && !this.rowChanged(child, match, IUC_IGNORED_FIELDS)) {
           return;
         }
       }
-      toSave.push({ ...child, iuc_item_id: itemId, iuc_id: child.iuc_id ?? match?.iuc_id });
+      toSave.push({
+        ...child,
+        iuc_item_id: itemId,
+        iuc_id: child.iuc_id ?? match?.iuc_id,
+        ...(newBaseUnitId ? { iuc_base_unit_id: newBaseUnitId } : {}),
+      });
     });
     // Notes 138 A1 — an unclaimed row is soft-deleted below, and the base
     // row's going would change the base unit just as surely.
@@ -311,9 +366,62 @@ export class ItemMasterUpdateService {
       await this.itemUnitConversionService.toggleDelete(staleIds, tx);
     }
     if (toSave.length > 0) {
-      await this.itemUnitConversionService.save(toSave, tx);
+      await this.itemUnitConversionService.save(
+        toSave,
+        tx,
+        base && newBaseUnitId ? { baseRePick: { iucId: base.iuc_id, unitId: newBaseUnitId } } : {},
+      );
     }
     return this.itemUnitConversionService.findByItemId(itemId, tx);
+  }
+
+  /**
+   * Item master review 11-20 Q2 / point 11 — refuses, before anything is written,
+   * a stored row re-picked to another unit while it is used (item-unit-in-use
+   * .helper: the base row once anything of the item is used, another row once it
+   * is). The usage query runs only when the save re-picks something.
+   */
+  private async refuseUsedUnitRePicks(
+    itemId: string,
+    children: ReadonlyArray<CompositeItemUnitConversionDto>,
+    matches: ReadonlyArray<ItemUnitConversionPayload | undefined>,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const rePicks = children
+      .map((child, index) => ({ child, index, match: matches[index] }))
+      .filter(
+        (
+          entry,
+        ): entry is {
+          child: CompositeItemUnitConversionDto;
+          index: number;
+          match: ItemUnitConversionPayload;
+        } => entry.match !== undefined && entry.child.iuc_unit_id !== entry.match.iuc_unit_id,
+      );
+    if (rePicks.length === 0) {
+      return;
+    }
+    const inUse = await unitRowsInUse(tx, itemId);
+    for (const { child, index, match } of rePicks) {
+      const lock = rowUnitLock(inUse, match);
+      if (!lock.locked) {
+        continue;
+      }
+      const usedBy = lock.usedBy.join(', ');
+      throwInventoryConflict<InventoryErrorDetail>('This unit is already used', [
+        {
+          field: `unit_conversions.${index}.iuc_unit_id`,
+          code: ItemErrorCode.UNIT_IN_USE,
+          message: match.iuc_is_base_unit
+            ? `Unit conversion ${match.iuc_id} is the item's base row and the item is already ` +
+              `used (${usedBy}); its unit stays ${match.iuc_unit_id}. To count stock in another ` +
+              'unit, make this item inactive and create a new one.'
+            : `Unit conversion ${match.iuc_id} (unit ${match.iuc_unit_id}) is already used ` +
+              `(${usedBy}); its unit cannot change to ${child.iuc_unit_id}, or those documents ` +
+              'would read the new unit. Add the new unit as another row instead.',
+        },
+      ]);
+    }
   }
 
   /**

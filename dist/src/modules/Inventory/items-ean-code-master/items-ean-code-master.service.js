@@ -164,8 +164,8 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
         if (result.count === 0) {
             (0, module_service_utils_1.throwInventoryNotFound)('Item EAN code not found', 'ean_id', `No item EAN code found with id ${eanId}`, item_ean_error_codes_1.ItemEanErrorCode.NOT_FOUND);
         }
-        const originalRecord = this.toPayload(existing);
-        const modifiedRecord = this.toPayload({
+        const originalRecord = this.toAuditRecord(existing);
+        const modifiedRecord = this.toAuditRecord({
             ...existing,
             eanIsDeleted: nextDeleted,
             eanModifiedOn: modifiedOn,
@@ -227,7 +227,7 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
             pk: payload.ean_id,
             displayName: payload.ean_code,
             originalRecord: null,
-            modifiedRecord: payload,
+            modifiedRecord: this.toAuditRecord(created),
             userId: createdBy,
             notes: 'Item EAN code created',
         }, tx);
@@ -283,8 +283,8 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
             screenType: 'master',
             pk: eanId,
             displayName: payload.ean_code,
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
+            originalRecord: this.toAuditRecord(existing),
+            modifiedRecord: this.toAuditRecord(updated),
             userId: payload.ean_modified_by ?? this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
             notes: 'Item EAN code updated',
         }, tx);
@@ -324,6 +324,10 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
                 eanModifiedBy: actor,
             },
         });
+    }
+    toAuditRecord(record) {
+        const { ean_unit_id: unitId, ...rest } = this.toPayload(record);
+        return { ...rest, ean_uc_unit_id: unitId };
     }
     toPayload(record) {
         return {

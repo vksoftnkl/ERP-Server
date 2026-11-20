@@ -12,5 +12,8 @@ export declare class LoginResponseDto {
     dev_branch_id: string | null;
     dev_user_id: string | null;
     device_type: string | null;
+    mustChangePassword: boolean;
+    usrEditRate: boolean;
+    usrMaxDiscPerc: string | null;
     appUpdate?: AppUpdateInfoDto;
 }

@@ -11,12 +11,17 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmployeeMasterService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const staff_advance_ledger_service_1 = require("./staff-advance-ledger.service");
 const employee_master_error_codes_1 = require("./types/employee-master-error-codes");
+const employee_master_values_1 = require("./types/employee-master-values");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const code_from_name_1 = require("../shared/code-from-name");
+const code_series_lock_1 = require("../shared/code-series-lock");
+const unique_violation_1 = require("../shared/unique-violation");
 const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
@@ -61,6 +66,12 @@ const EMPLOYEE_MASTER_OPTIONAL_FIELDS = [
     'empAadharNo',
     'empPfNo',
     'empEsiNo',
+    'empUanNo',
+    'empBankName',
+    'empBankAccountNo',
+    'empBankIfsc',
+    'empEmergencyContactName',
+    'empEmergencyContactPhone',
     'empPhotoUrl',
     'empPhoto',
     'empRemarks',
@@ -263,21 +274,28 @@ let EmployeeMasterService = class EmployeeMasterService {
     }
     async createEmployee(saveEmployeeMasterDto) {
         try {
-            return this.prisma.$transaction(async (tx) => {
+            return await this.prisma.$transaction(async (tx) => {
                 const empName = this.normalizeRequiredValue(saveEmployeeMasterDto.empName, 'empName', employee_master_error_codes_1.EmployeeMasterErrorCode.NAME_REQUIRED);
                 const empSalaryType = this.normalizeRequiredValue(saveEmployeeMasterDto.empSalaryType, 'empSalaryType', employee_master_error_codes_1.EmployeeMasterErrorCode.SALARY_TYPE_REQUIRED);
-                await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
+                const empCompanyId = saveEmployeeMasterDto.empCompanyId ?? this.requestContextService.getCompanyId() ?? null;
+                await this.ensureCompanyExists(empCompanyId, tx);
                 await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
                 await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
+                await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.EMPLOYEE_CODE_SERIES);
+                const typedCode = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeMasterDto.empCode) ?? null;
+                await this.ensureCodeIsUnique(tx, typedCode);
+                const empCode = typedCode ?? (await this.nextEmployeeCode(tx, empName));
                 const now = new Date();
                 const data = {
-                    empCompanyId: saveEmployeeMasterDto.empCompanyId,
+                    empCompanyId,
                     empName,
                     empSalaryType,
                     empCreatedOn: now,
                     empCreatedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveEmployeeMasterDto);
+                data.empCode = empCode;
+                data.empStatus = this.statusOf(saveEmployeeMasterDto.empStatus);
                 const created = await this.staffAdvanceLedgers.settle(tx, await tx.employeeMaster.create({ data }), null, saveEmployeeMasterDto.empLoanLedgerId);
                 const payload = this.toPayload(created);
                 await this.auditLogService.logEntityChange({
@@ -303,7 +321,7 @@ let EmployeeMasterService = class EmployeeMasterService {
     async updateEmployee(saveEmployeeMasterDto) {
         const empId = saveEmployeeMasterDto.empId;
         try {
-            return this.prisma.$transaction(async (tx) => {
+            return await this.prisma.$transaction(async (tx) => {
                 const existing = await tx.employeeMaster.findFirst({
                     where: {
                         empId,
@@ -318,6 +336,11 @@ let EmployeeMasterService = class EmployeeMasterService {
                 await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
                 await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
                 await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
+                const typedCode = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeMasterDto.empCode);
+                if (typedCode) {
+                    await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.EMPLOYEE_CODE_SERIES);
+                    await this.ensureCodeIsUnique(tx, typedCode, empId);
+                }
                 const data = {
                     empCompanyId: saveEmployeeMasterDto?.empCompanyId,
                     empName,
@@ -326,6 +349,12 @@ let EmployeeMasterService = class EmployeeMasterService {
                     empModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveEmployeeMasterDto);
+                if (typedCode !== undefined) {
+                    data.empCode = typedCode;
+                }
+                if (saveEmployeeMasterDto.empStatus !== undefined) {
+                    data.empStatus = this.statusOf(saveEmployeeMasterDto.empStatus);
+                }
                 const updated = await this.staffAdvanceLedgers.settle(tx, await tx.employeeMaster.update({
                     where: {
                         empId,
@@ -352,6 +381,41 @@ let EmployeeMasterService = class EmployeeMasterService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    statusOf(value) {
+        const status = (0, employee_master_values_1.canonicalListValue)(value ?? null, employee_master_values_1.EMPLOYEE_STATUSES, employee_master_values_1.EMPLOYEE_STATUS_WORKING);
+        return typeof status === 'string' ? status : employee_master_values_1.EMPLOYEE_STATUS_WORKING;
+    }
+    async ensureCodeIsUnique(tx, empCode, excludeEmpId) {
+        if (!empCode) {
+            return;
+        }
+        const clash = await tx.employeeMaster.findFirst({
+            where: {
+                empIsDeleted: false,
+                empCode: { equals: empCode, mode: 'insensitive' },
+                ...(excludeEmpId ? { empId: { not: excludeEmpId } } : {}),
+            },
+            select: { empId: true },
+        });
+        if (clash) {
+            (0, module_service_utils_1.throwSettingsConflict)('Employee code already exists', [
+                {
+                    field: 'empCode',
+                    message: 'Duplicate empCode is not allowed',
+                    code: employee_master_error_codes_1.EmployeeMasterErrorCode.CODE_DUPLICATE,
+                },
+            ]);
+        }
+    }
+    async nextEmployeeCode(tx, empName) {
+        return (0, code_from_name_1.nextFreeCode)((0, code_from_name_1.initialsCode)(empName, code_from_name_1.EMPLOYEE_CODE_RULE), async (base) => {
+            const rows = await tx.employeeMaster.findMany({
+                where: { empIsDeleted: false, empCode: { startsWith: base, mode: 'insensitive' } },
+                select: { empCode: true },
+            });
+            return rows.map((row) => row.empCode);
+        });
     }
     async ensureCompanyExists(compId, tx) {
         if (compId === undefined || compId === null) {
@@ -425,7 +489,12 @@ let EmployeeMasterService = class EmployeeMasterService {
     applyOptionalFields(data, saveEmployeeMasterDto) {
         (0, module_service_utils_1.applyPresentFields)(data, saveEmployeeMasterDto, EMPLOYEE_MASTER_OPTIONAL_FIELDS, {
             empPhoto: (value) => this.decodePhoto(value),
+            empCommissionValue: (value) => value === null || value === '' ? null : new client_1.Prisma.Decimal(value),
         });
+        if (saveEmployeeMasterDto.empHasCommission === false) {
+            data.empCommissionType = null;
+            data.empCommissionValue = null;
+        }
     }
     normalizeRequiredValue(value, field, code) {
         return (0, module_service_utils_1.normalizeRequiredText)(value, field, `${field} must not be empty`, code);
@@ -500,7 +569,7 @@ let EmployeeMasterService = class EmployeeMasterService {
             empOvertimeAllowed: record.empOvertimeAllowed,
             empHasCommission: record.empHasCommission,
             empCommissionType: record.empCommissionType,
-            empCommissionValue: (0, module_service_utils_1.toNullableNumber)(record.empCommissionValue),
+            empCommissionValue: record.empCommissionValue ? record.empCommissionValue.toFixed(3) : null,
             empSalaryType: record.empSalaryType,
             empSalaryAmount: (0, module_service_utils_1.toNumber)(record.empSalaryAmount),
             empBataAmount: (0, module_service_utils_1.toNumber)(record.empBataAmount),
@@ -509,6 +578,12 @@ let EmployeeMasterService = class EmployeeMasterService {
             empAadharNo: record.empAadharNo,
             empPfNo: record.empPfNo,
             empEsiNo: record.empEsiNo,
+            empUanNo: record.empUanNo,
+            empBankName: record.empBankName,
+            empBankAccountNo: record.empBankAccountNo,
+            empBankIfsc: record.empBankIfsc,
+            empEmergencyContactName: record.empEmergencyContactName,
+            empEmergencyContactPhone: record.empEmergencyContactPhone,
             empLoanLedgerId: record.empLoanLedgerId,
             empPhotoUrl: record.empPhotoUrl,
             empPhoto: record.empPhoto ? Buffer.from(record.empPhoto).toString('base64') : null,
@@ -523,6 +598,15 @@ let EmployeeMasterService = class EmployeeMasterService {
         };
     }
     handleWriteError(error) {
+        if ((0, unique_violation_1.isUniqueViolationOf)(error, 'ux_emp_code', 'emp_code')) {
+            (0, module_service_utils_1.throwSettingsConflict)('Employee code already exists', [
+                {
+                    field: 'empCode',
+                    message: 'Another employee took this code at the same moment',
+                    code: employee_master_error_codes_1.EmployeeMasterErrorCode.CODE_DUPLICATE,
+                },
+            ]);
+        }
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Employee already exists', [
             {
                 field: 'empCode',

@@ -1,8 +1,9 @@
 import './env.preload';
 import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
-import { createServer, type RequestListener } from 'node:http';
+import type { RequestListener } from 'node:http';
 import { dirname, isAbsolute, resolve } from 'node:path';
+import type { Server as TlsServer } from 'node:tls';
 import * as compression from 'compression';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
@@ -13,6 +14,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { createClientInfoMiddleware } from './common/client-info/client-info.middleware';
 import { FileLoggerService } from './common/logging/file-logger.service';
+import { phoneRoutesOnly, servePlainHttpOnTlsServer } from './common/phone-http/phone-http';
 import { createHouseValidationPipe } from './common/validation/house-validation';
 import { PrismaService } from './database/prisma/prisma.service';
 import { runStartupDatabaseTasks } from './database/seed/startup-seed';
@@ -86,26 +88,6 @@ const buildHttpsOptions = () => {
     key: readFileSync(resolvedKeyPath),
     passphrase: process.env.HTTPS_PASSPHRASE || undefined,
   };
-};
-/*
- * The phone port (MOBILE_HTTP_PORT): plain HTTP for the VKSMAN salesman phones on the
- * office LAN, beside the main (HTTPS) port. The phones can't trust this PC's self-made
- * certificate, so they sync over HTTP, as the old Qt salesman app did. Only the routes the
- * phone calls answer here; everything else is a 404, so the desktop and web clients stay on
- * HTTPS. Add a route here when the phone's Sync starts calling it.
- */
-// The ledger pair (VKSMAN Sync downloads each customer's Ledger Statement, 2026-11-16): both still
-// need a token, and the statement needs the menu-258 view right, as on the desktop.
-const PHONE_HTTP_ROUTES = ['health', 'auth/login', 'reports/ledger-statement/vouchers'];
-const PHONE_HTTP_ROUTE_PREFIXES = ['mobile/', 'master-lookups/fiscal-years/by-company/'];
-const isPhoneHttpRoute = (url: string, apiBase: string): boolean => {
-  const path = url.split('?')[0] ?? '';
-  // No dot segments or encoded characters: the path is matched as written.
-  if (path.includes('%') || /(^|\/)\.\.?(\/|$)/.test(path) || !path.startsWith(apiBase)) {
-    return false;
-  }
-  const route = path.slice(apiBase.length);
-  return PHONE_HTTP_ROUTES.includes(route) || PHONE_HTTP_ROUTE_PREFIXES.some((p) => route.startsWith(p));
 };
 const buildSwaggerConfig = (title: string, description: string) =>
   new DocumentBuilder()
@@ -301,33 +283,33 @@ async function bootstrap(): Promise<void> {
     );
     SwaggerModule.setup(docsPath, app, moduleSwaggerDocument, { customJsStr: moduleSearchJs });
   }
-  await app.listen(port, host);
-  const mobileHttpPort = configService.get<number>('app.mobileHttpPort', 0);
-  if (mobileHttpPort && mobileHttpPort !== port) {
-    const apiVersion = configService.get<string>('app.apiVersion', '1');
-    const phoneApiBase = `/${[apiPrefix, `v${apiVersion}`].filter(Boolean).join('/')}/`;
-    // Same Express app (middleware, guards, routes) as the main port.
+  // Phone sync (src/common/phone-http): the HTTPS port also answers plain HTTP for the phone's
+  // routes, because the phones can't trust a self-made certificate. A plain-HTTP main port
+  // (PM2 :3000, the cloud behind nginx) already serves them, so it needs nothing.
+  const phoneApiBase = `/${[apiPrefix, `v${configService.get<string>('app.apiVersion', '1')}`].filter(Boolean).join('/')}/`;
+  let phoneHttpOnMainPort = false;
+  if (httpsOptions && configService.get<boolean>('app.phoneHttpEnabled', false)) {
+    // Same Express app (middleware, guards, routes) as HTTPS. Wired before listen, so no
+    // connection arrives unsniffed.
     const expressApp = app.getHttpAdapter().getInstance() as RequestListener;
-    const phoneServer = createServer((req, res) => {
-      if (isPhoneHttpRoute(req.url ?? '', phoneApiBase)) {
-        expressApp(req, res);
-        return;
-      }
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, message: 'Not available on the phone port' }));
-    });
-    // A busy port must not stop VK Nex itself: log it and carry on without the phone port.
-    phoneServer.on('error', (error) => {
-      logger.error(`Phone port ${mobileHttpPort} not opened: ${error.message}`, undefined, 'Bootstrap');
-    });
-    phoneServer.listen(mobileHttpPort, host, () => {
-      logger.log(`Phone sync (plain HTTP, phone routes only): http://${host}:${mobileHttpPort}${phoneApiBase}`, 'Bootstrap');
-    });
-    // Close with the main server, or `nest start --watch` waits on it to exit.
-    app.getHttpServer().once('close', () => {
-      phoneServer.closeAllConnections();
-      phoneServer.close();
-    });
+    phoneHttpOnMainPort = servePlainHttpOnTlsServer(
+      app.getHttpServer() as TlsServer,
+      phoneRoutesOnly(expressApp, phoneApiBase),
+    );
+    if (!phoneHttpOnMainPort) {
+      logger.error(
+        'Phone sync over plain HTTP is off: Node TLS listener not found',
+        undefined,
+        'Bootstrap',
+      );
+    }
+  }
+  await app.listen(port, host);
+  if (phoneHttpOnMainPort) {
+    logger.log(
+      `Phone sync (plain HTTP, phone routes only): http://${host}:${port}${phoneApiBase}`,
+      'Bootstrap',
+    );
   }
   const appUrl = await app.getUrl();
   const docsUrl = buildAbsoluteUrl(appUrl, allDocsPath);

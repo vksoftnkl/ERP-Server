@@ -14,6 +14,8 @@ exports.escapeLike = escapeLike;
 exports.searchSql = searchSql;
 exports.filterSql = filterSql;
 exports.balancesSql = balancesSql;
+exports.outstandingScope = outstandingScope;
+exports.outstandingSql = outstandingSql;
 exports.balanceStatusOf = balanceStatusOf;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
@@ -21,6 +23,8 @@ const prisma_service_1 = require("../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../common/request-context/request-context.service");
 const party_gst_type_1 = require("../../common/party/party-gst-type");
 const voucher_books_sql_1 = require("../../modules/reports/common/voucher-books.sql");
+const party_outstanding_ageing_1 = require("../../modules/reports/party-outstanding/party-outstanding.ageing");
+const party_outstanding_sql_1 = require("../../modules/reports/party-outstanding/party-outstanding.sql");
 const customer_service_1 = require("../../modules/sales/customer/customer.service");
 const mobile_customer_dto_1 = require("./dto/mobile-customer.dto");
 function escapeLike(term) {
@@ -78,6 +82,52 @@ function balancesSql(scope, ledgers) {
                 FROM (${(0, voucher_books_sql_1.countedLegsSql)(scope, { upTo: scope.asOn, ledgers })}) l) x
        GROUP BY x.ledger_id`;
 }
+function outstandingScope(scope, partyId, today = (0, party_outstanding_ageing_1.istToday)()) {
+    return {
+        companyId: scope.companyId,
+        asOn: scope.asOn,
+        today,
+        fyName: scope.accYear,
+        branchId: null,
+        side: 'RECEIVABLE',
+        owedSide: 'DR',
+        traType: 'R',
+        group: null,
+        areaId: null,
+        salesmanId: null,
+        collectionDay: null,
+        partyId,
+        ageBy: 'BILL_DATE',
+        edges: [...party_outstanding_ageing_1.DEFAULT_BUCKETS],
+        includeOnAccount: true,
+        onlyOverdue: false,
+        minDueDays: null,
+        maxDueDays: null,
+        deductPdc: false,
+        hideZero: true,
+    };
+}
+function outstandingSql(scope, partyId) {
+    if (!scope) {
+        return client_1.Prisma.sql `SELECT NULL::uuid AS party_id, NULL::numeric AS owed, NULL::int AS owed_bills,
+                             NULL::date AS oldest_date WHERE false`;
+    }
+    const s = outstandingScope(scope, partyId);
+    return client_1.Prisma.sql `${(0, party_outstanding_sql_1.partiesWith)(s)}
+      SELECT pf.party_id, pf.owed, pf.bills::int AS owed_bills,
+             CASE WHEN pf.bills > 0 THEN ${s.asOn}::date - pf.oldest::int END AS oldest_date
+        FROM pf`;
+}
+function outstandingOf(r, read) {
+    if (!read) {
+        return { outstanding: null, outstandingBills: null, oldestBillDate: null };
+    }
+    return {
+        outstanding: (0, voucher_books_sql_1.money)(r?.owed ?? 0),
+        outstandingBills: r?.owed_bills ?? 0,
+        oldestBillDate: r?.oldest_date ?? null,
+    };
+}
 function balanceStatusOf(bal, creditAmtLimit) {
     if (bal === null) {
         return null;
@@ -113,15 +163,18 @@ let MobileCustomerService = class MobileCustomerService {
             const scope = await this.balanceScope(tx);
             const rows = await tx.$queryRaw `
         WITH bal AS MATERIALIZED (${balancesSql(scope, null)}),
+        os AS MATERIALIZED (${outstandingSql(scope, null)}),
         base AS MATERIALIZED (
           SELECT c.cus_id, c.cus_name, c.cus_short, c.cus_code, c.cus_city,
                  a.arm_name AS area_name, c.cus_phone1, c.cus_whatsapp_no,
                  c.cus_gst_no, c.cus_gst_type, c.cus_is_active, c.cus_credit_amt_limit,
                  CASE WHEN ${scope !== null}::boolean THEN COALESCE(lb.bal, 0) END AS bal,
+                 o.owed, o.owed_bills, o.oldest_date::text AS oldest_date,
                  upper(COALESCE(btrim(c.cus_gst_type), '')) IN ('UNREGISTERED', '') AS is_unregistered
             FROM sales.customers c
             LEFT JOIN sales.area_master a ON a.arm_id = c.cus_area_id
             LEFT JOIN bal lb ON lb.ledger_id = c.cus_id
+            LEFT JOIN os o ON o.party_id = c.cus_id
            WHERE c.cus_is_deleted = false
            ${searchSql(q.search)}
         ),
@@ -142,7 +195,8 @@ let MobileCustomerService = class MobileCustomerService {
         SELECT k.n_all, k.n_outstanding, k.n_unregistered, k.n_inactive, k.n_filtered,
                p.cus_id, p.cus_name, p.cus_short, p.cus_code, p.cus_city, p.area_name,
                p.cus_phone1, p.cus_whatsapp_no, p.cus_gst_no, p.cus_gst_type,
-               p.cus_is_active, p.cus_credit_amt_limit, p.bal
+               p.cus_is_active, p.cus_credit_amt_limit, p.bal,
+               p.owed, p.owed_bills, p.oldest_date
           FROM counts k
           LEFT JOIN page p ON true
          ORDER BY lower(p.cus_name) NULLS LAST, p.cus_id`;
@@ -163,28 +217,40 @@ let MobileCustomerService = class MobileCustomerService {
                 hasMore: page * pageSize < total,
                 balanceAsOn: scope?.asOn ?? null,
                 accYear: scope?.accYear ?? null,
+                companyId: scope?.companyId ?? null,
             };
         });
     }
     async getById(cusId) {
         const customer = await this.customerService.getById(cusId);
-        const balance = await this.prisma.$transaction(async (tx) => {
+        const figures = await this.prisma.$transaction(async (tx) => {
             await tx.$executeRaw `SET LOCAL plan_cache_mode = force_custom_plan`;
             const scope = await this.balanceScope(tx);
             if (!scope) {
-                return balanceOf(null, null);
+                return { ...balanceOf(null, null), ...outstandingOf(null, false) };
             }
             const [row] = await tx.$queryRaw `
         SELECT b.bal FROM (${balancesSql(scope, { ledgerId: cusId })}) b`;
-            return balanceOf(row?.bal ?? 0, customer.cusCreditAmtLimit);
+            const [open] = await tx.$queryRaw `
+        SELECT o.owed, o.owed_bills, o.oldest_date::text AS oldest_date
+          FROM (${outstandingSql(scope, cusId)}) o`;
+            return {
+                ...balanceOf(row?.bal ?? 0, customer.cusCreditAmtLimit),
+                ...outstandingOf(open ?? null, true),
+            };
         });
-        return { ...customer, ...balance };
+        return { ...customer, ...figures };
     }
     async formOptions() {
         const [areas, groups, priceLevels, states] = await Promise.all([
             this.prisma.areaMaster.findMany({
                 where: { armIsDeleted: false, armIsActive: true },
-                select: { armId: true, armName: true, city: { select: { ctmName: true } } },
+                select: {
+                    armId: true,
+                    armName: true,
+                    armCityId: true,
+                    city: { select: { ctmName: true } },
+                },
                 orderBy: [{ armSort: 'asc' }, { armName: 'asc' }],
             }),
             this.prisma.custGroup.findMany({
@@ -207,6 +273,7 @@ let MobileCustomerService = class MobileCustomerService {
             areas: areas.map((a) => ({
                 id: a.armId,
                 name: a.armName,
+                cityId: a.armCityId,
                 cityName: a.city?.ctmName ?? null,
             })),
             groups: groups.map((g) => ({ id: g.cgrId, name: g.cgrName })),
@@ -244,6 +311,7 @@ let MobileCustomerService = class MobileCustomerService {
             cusIsActive: r.cus_is_active ?? false,
             cusCreditAmtLimit: (0, voucher_books_sql_1.money)(r.cus_credit_amt_limit),
             ...balanceOf(r.bal, r.cus_credit_amt_limit),
+            ...outstandingOf(r, r.bal !== null),
         };
     }
 };

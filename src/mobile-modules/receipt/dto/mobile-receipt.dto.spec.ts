@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHouseValidationPipe } from 'src/common/validation/house-validation';
-import { CreateMobileReceiptDto, MobileReceiptOptionsQueryDto } from './mobile-receipt.dto';
+import {
+  CreateMobileReceiptDto,
+  MobileOpenBillsQueryDto,
+  MobileReceiptOptionsQueryDto,
+  MobileReceiptStatusQueryDto,
+} from './mobile-receipt.dto';
 
 const UUID = '019c6f6c-be87-7a11-8905-36092c46e101';
 const PHONE_UUID = '3b241101-e2bb-4255-8caf-4136c566a962';
@@ -50,9 +55,28 @@ describe('CreateMobileReceiptDto', () => {
     await expect(refusals(bare, CreateMobileReceiptDto)).resolves.toEqual([]);
   });
 
+  it("takes the phone's settlement, the picked branch and the shop's own number and date", async () => {
+    await expect(
+      refusals(
+        {
+          ...RECEIPT,
+          avhBranchId: UUID,
+          avhDocRefno: 'SHOP/77',
+          avhDocDate: '2026-11-17',
+          allocations: [
+            { billId: UUID, billAccYear: '2026-2027', amount: 117.6, discount: 0, roundoff: 0.4 },
+            { billId: PHONE_UUID, billAccYear: '2026-2027', amount: 50 },
+          ],
+          creditsApplied: [{ billId: UUID, billAccYear: '2026-2027', amount: 100 }],
+          onAccount: 0,
+        },
+        CreateMobileReceiptDto,
+      ),
+    ).resolves.toEqual([]);
+  });
+
   it.each([
     ['avhVoucherId', UUID],
-    ['avhBranchId', UUID],
     ['avhAccYear', '2026-2027'],
     ['avhTenantId', UUID],
     ['avhDeviceType', 'MOBILE'],
@@ -60,12 +84,8 @@ describe('CreateMobileReceiptDto', () => {
     ['avhSessionId', UUID],
     ['avhUserId', UUID],
     ['avhEmployeeId', [UUID]],
-    ['avhDocRefno', 'x'],
     ['otherLines', []],
-    ['allocations', []],
-    ['creditsApplied', []],
     ['otherLineBills', []],
-    ['onAccount', 0],
     ['post', true],
     ['replace', true],
   ])('refuses the server-filled %s', async (key, value) => {
@@ -89,6 +109,52 @@ describe('CreateMobileReceiptDto', () => {
     );
     expect(errors).toContainEqual(
       expect.objectContaining({ field: `tenders.0.${key}`, code: 'VALIDATION_WHITELIST' }),
+    );
+  });
+
+  it.each([
+    ['writeoff', 5],
+    ['writeoffApprovedBy', UUID],
+  ])('a phone may not write off: allocations[].%s is refused', async (key, value) => {
+    const errors = await refusals(
+      {
+        ...RECEIPT,
+        allocations: [{ billId: UUID, billAccYear: '2026-2027', amount: 10, [key]: value }],
+      },
+      CreateMobileReceiptDto,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        field: `allocations.0.${key}`,
+        code: 'VALIDATION_WHITELIST',
+      }),
+    );
+  });
+
+  it('an allocation needs its bill, year and a non-negative amount; a credit too', async () => {
+    const fields = (
+      await refusals(
+        {
+          ...RECEIPT,
+          allocations: [{ amount: -1, discount: -2 }],
+          creditsApplied: [{}],
+          onAccount: -5,
+          avhBranchId: 'not-a-uuid',
+        },
+        CreateMobileReceiptDto,
+      )
+    ).map((e) => e.field);
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        'allocations.0.billId',
+        'allocations.0.billAccYear',
+        'allocations.0.amount',
+        'allocations.0.discount',
+        'creditsApplied.0.billId',
+        'creditsApplied.0.amount',
+        'onAccount',
+        'avhBranchId',
+      ]),
     );
   });
 
@@ -130,5 +196,33 @@ describe('MobileReceiptOptionsQueryDto', () => {
     ).resolves.toEqual([]);
     const fields = (await refusals({}, MobileReceiptOptionsQueryDto)).map((e) => e.field);
     expect(fields).toEqual(expect.arrayContaining(['companyId', 'deviceUid']));
+  });
+});
+
+describe('MobileOpenBillsQueryDto', () => {
+  it('withCredits is an optional query boolean ("false" stays false)', async () => {
+    await expect(
+      refusals({ companyId: UUID, withCredits: 'true' }, MobileOpenBillsQueryDto),
+    ).resolves.toEqual([]);
+    const pipeOut = (await pipe.transform(
+      { companyId: UUID, withCredits: 'false' },
+      { type: 'query', metatype: MobileOpenBillsQueryDto },
+    )) as MobileOpenBillsQueryDto;
+    expect(pipeOut.withCredits).toBe(false);
+  });
+});
+
+describe('MobileReceiptStatusQueryDto', () => {
+  it('needs the company and the phone; since is an ISO instant', async () => {
+    await expect(
+      refusals(
+        { companyId: UUID, deviceUid: 'phone-1', since: '2026-11-19T07:47:10.249Z', page: 2 },
+        MobileReceiptStatusQueryDto,
+      ),
+    ).resolves.toEqual([]);
+    const fields = (await refusals({ since: 'yesterday' }, MobileReceiptStatusQueryDto)).map(
+      (e) => e.field,
+    );
+    expect(fields).toEqual(expect.arrayContaining(['companyId', 'deviceUid', 'since']));
   });
 });

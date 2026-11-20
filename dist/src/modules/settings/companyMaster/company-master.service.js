@@ -9,7 +9,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CompanyMasterService = void 0;
+exports.CompanyMasterService = exports.DEFAULT_CURRENCY_SYMBOL = void 0;
+exports.companyCodeBase = companyCodeBase;
+exports.uniqueRaceDetail = uniqueRaceDetail;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -17,6 +19,9 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const master_tree_helper_1 = require("../../Inventory/utils/master-tree.helper");
 const gst_registration_1 = require("../shared/gst-registration");
+const code_series_lock_1 = require("../shared/code-series-lock");
+const code_from_name_1 = require("../shared/code-from-name");
+const registered_address_1 = require("../shared/registered-address");
 const company_master_error_codes_1 = require("./types/company-master-error-codes");
 const branch_master_service_1 = require("../branchMaster/branch-master.service");
 const COMPANY_MASTER_TABLE_NAME = 'companys';
@@ -54,6 +59,7 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
     'compSupportEmail',
     'compSupportPhone',
     'compWebsiteName',
+    'compBooksLockDate',
     'compGstApplicable',
     'compTcsApplicable',
     'compTdsApplicable',
@@ -79,7 +85,15 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
     'compCurrencySymbol',
     'compLocaleCode',
     'compRemarks',
+    'compUdyamNo',
+    'compSignatoryName',
 ];
+const COMPANY_ADDRESS_KEYS = ['compAddr1', 'compCity', 'compStateCode', 'compPin'];
+const UDYAM_PATTERN = /^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$/;
+exports.DEFAULT_CURRENCY_SYMBOL = 'Rs.';
+function companyCodeBase(name) {
+    return (0, code_from_name_1.initialsCode)(name, code_from_name_1.COMPANY_CODE_RULE);
+}
 const COMPANY_DELETE_REFERENCES = [
     {
         table: 'public.branch_master',
@@ -111,12 +125,58 @@ const SIGNATURE_IMAGE_TYPES = [
             b.subarray(8, 12).toString('latin1') === 'WEBP',
     ],
 ];
+const SIGNATURE_IMAGE = {
+    field: 'compAuthorizeSignature',
+    title: 'Invalid signature image',
+    notBase64: company_master_error_codes_1.CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+    tooLarge: company_master_error_codes_1.CompanyMasterErrorCode.SIGNATURE_TOO_LARGE,
+    notImage: company_master_error_codes_1.CompanyMasterErrorCode.SIGNATURE_NOT_IMAGE,
+};
+const LOGO_IMAGE = {
+    field: 'compLogo',
+    title: 'Invalid logo image',
+    notBase64: company_master_error_codes_1.CompanyMasterErrorCode.LOGO_NOT_BASE64,
+    tooLarge: company_master_error_codes_1.CompanyMasterErrorCode.LOGO_TOO_LARGE,
+    notImage: company_master_error_codes_1.CompanyMasterErrorCode.LOGO_NOT_IMAGE,
+};
 const utcDay = (year, monthIndex, day) => new Date(Date.UTC(year, monthIndex, day));
 const sameDay = (date) => utcDay(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 const aprilYearOf = (date) => date.getUTCMonth() >= 3 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
 const isFirstApril = (date) => date.getUTCMonth() === 3 && date.getUTCDate() === 1;
 const isThirtyFirstMarch = (date) => date.getUTCMonth() === 2 && date.getUTCDate() === 31;
 const isoDay = (date) => date.toISOString().slice(0, 10);
+function uniqueRaceDetail(target) {
+    const covers = (column) => (target ?? '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .includes(column);
+    if (covers('compcode')) {
+        return {
+            field: 'compCode',
+            message: 'Another company took this code at the same moment',
+            code: company_master_error_codes_1.CompanyMasterErrorCode.CODE_DUPLICATE,
+        };
+    }
+    if (covers('compgstinno')) {
+        return {
+            field: 'compGstinNo',
+            message: 'Another company took this GSTIN at the same moment',
+            code: company_master_error_codes_1.CompanyMasterErrorCode.GSTIN_DUPLICATE,
+        };
+    }
+    if (covers('brcode')) {
+        return {
+            field: 'compCode',
+            message: 'Another branch took the Main Branch code made from this company code at the same moment; save again',
+            code: company_master_error_codes_1.CompanyMasterErrorCode.DUPLICATE,
+        };
+    }
+    return {
+        field: 'compName',
+        message: 'Duplicate company unique value is not allowed',
+        code: company_master_error_codes_1.CompanyMasterErrorCode.DUPLICATE,
+    };
+}
 let CompanyMasterService = class CompanyMasterService {
     prisma;
     auditLogService;
@@ -268,12 +328,17 @@ let CompanyMasterService = class CompanyMasterService {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 const compName = this.normalizeRequiredName(saveCompanyMasterDto.compName, 'compName');
+                this.assertRegistrationRules(saveCompanyMasterDto, null);
                 const compStateCode = this.normalizeLengthCode(saveCompanyMasterDto.compStateCode, 2, 'compStateCode');
                 const year = this.resolveFirstYear(saveCompanyMasterDto);
                 const panFromGstin = this.assertGstin(saveCompanyMasterDto.compGstinNo ?? null, compStateCode, saveCompanyMasterDto.compPanNo ?? null);
-                const signature = this.normalizeSignature(saveCompanyMasterDto.compAuthorizeSignature);
+                const signature = this.normalizeImage(saveCompanyMasterDto.compAuthorizeSignature, SIGNATURE_IMAGE);
+                const logo = this.normalizeImage(saveCompanyMasterDto.compLogo, LOGO_IMAGE);
+                await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.COMPANY_CODE_SERIES);
                 await this.ensureNameIsUnique(tx, compName);
-                await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null);
+                const typedCode = saveCompanyMasterDto.compCode ?? null;
+                await this.ensureCodeIsUnique(tx, typedCode);
+                const autoCode = typedCode ? null : await this.nextCompanyCode(tx, compName);
                 await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null);
                 await this.ensureThemeIsLive(tx, saveCompanyMasterDto.compStylesheetId);
                 if (saveCompanyMasterDto.compDefault === true) {
@@ -292,11 +357,20 @@ let CompanyMasterService = class CompanyMasterService {
                     compCreatedBy: actor,
                 };
                 this.applyOptionalFields(data, saveCompanyMasterDto);
+                if (autoCode) {
+                    data.compCode = autoCode;
+                }
+                if (!data.compCurrencySymbol) {
+                    data.compCurrencySymbol = exports.DEFAULT_CURRENCY_SYMBOL;
+                }
                 if (panFromGstin) {
                     data.compPanNo = panFromGstin;
                 }
                 if (signature !== undefined) {
                     data.compAuthorizeSignature = signature;
+                }
+                if (logo !== undefined) {
+                    data.compLogo = logo;
                 }
                 const created = await tx.company.create({ data });
                 const fiscalYear = await tx.fiscalYear.create({
@@ -351,13 +425,15 @@ let CompanyMasterService = class CompanyMasterService {
                     this.throwNotFound(compId);
                 }
                 const compName = this.normalizeRequiredName(saveCompanyMasterDto.compName, 'compName');
+                this.assertRegistrationRules(saveCompanyMasterDto, existing);
                 const compStateCode = this.normalizeLengthCode(saveCompanyMasterDto.compStateCode, 2, 'compStateCode');
                 const panFromGstin = this.assertGstin(saveCompanyMasterDto.compGstinNo !== undefined
                     ? saveCompanyMasterDto.compGstinNo
                     : existing.compGstinNo, compStateCode, saveCompanyMasterDto.compPanNo !== undefined
                     ? saveCompanyMasterDto.compPanNo
                     : existing.compPanNo);
-                const signature = this.normalizeSignature(saveCompanyMasterDto.compAuthorizeSignature);
+                const signature = this.normalizeImage(saveCompanyMasterDto.compAuthorizeSignature, SIGNATURE_IMAGE);
+                const logo = this.normalizeImage(saveCompanyMasterDto.compLogo, LOGO_IMAGE);
                 await this.ensureNameIsUnique(tx, compName, compId);
                 await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null, compId);
                 await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null, compId);
@@ -367,12 +443,14 @@ let CompanyMasterService = class CompanyMasterService {
                 if (saveCompanyMasterDto.compDefault === true) {
                     await this.clearDefaultCompany(tx, compId);
                 }
+                const now = new Date();
+                const actor = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
                 const data = {
                     compName,
                     compStateCode,
                     compStylesheetId: saveCompanyMasterDto.compStylesheetId,
-                    compModifiedOn: new Date(),
-                    compModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
+                    compModifiedOn: now,
+                    compModifiedBy: actor,
                 };
                 this.applyOptionalFields(data, saveCompanyMasterDto);
                 if (panFromGstin) {
@@ -381,12 +459,16 @@ let CompanyMasterService = class CompanyMasterService {
                 if (signature !== undefined) {
                     data.compAuthorizeSignature = signature;
                 }
+                if (logo !== undefined) {
+                    data.compLogo = logo;
+                }
                 const updated = await tx.company.update({
                     where: {
                         compId,
                     },
                     data,
                 });
+                await this.branchMasterService.syncOnlyBranch(tx, existing, updated, actor, now);
                 const year = await this.currentYear(tx, compId);
                 const payload = this.toPayload(updated, undefined, year);
                 await this.auditLogService.logEntityChange({
@@ -550,7 +632,7 @@ let CompanyMasterService = class CompanyMasterService {
         const booksBeginFrom = year
             ? (year.fyBooksBeginDate ?? year.fyBeginDate)
             : record.compBooksBeginFrom;
-        const booksLockDate = year ? year.fyLockDate : record.compBooksLockDate;
+        const booksLockDate = record.compBooksLockDate;
         return {
             compId: record.compId,
             compCode: record.compCode,
@@ -620,6 +702,9 @@ let CompanyMasterService = class CompanyMasterService {
             compLocaleCode: record.compLocaleCode,
             compRemarks: record.compRemarks,
             compAuthorizeSignature: record.compAuthorizeSignature,
+            compUdyamNo: record.compUdyamNo,
+            compLogo: record.compLogo,
+            compSignatoryName: record.compSignatoryName,
             compIsDeleted: record.compIsDeleted,
             compSyncDate: record.compSyncDate ? record.compSyncDate.toISOString() : null,
             compCreatedOn: record.compCreatedOn.toISOString(),
@@ -630,11 +715,7 @@ let CompanyMasterService = class CompanyMasterService {
     }
     handleWriteError(error) {
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Company already exists', [
-            {
-                field: 'compName',
-                message: 'Duplicate company unique value is not allowed',
-                code: company_master_error_codes_1.CompanyMasterErrorCode.DUPLICATE,
-            },
+            uniqueRaceDetail((0, module_service_utils_1.violatedConstraintOf)(error)),
         ]);
     }
     currentYear(client, compId) {
@@ -741,55 +822,106 @@ let CompanyMasterService = class CompanyMasterService {
         }
         return check.panFromGstin;
     }
-    normalizeSignature(value) {
+    normalizeImage(value, rule) {
         if (value === undefined) {
             return undefined;
         }
         if (value === null || !value.trim()) {
             return null;
         }
-        const field = 'compAuthorizeSignature';
+        const { field, title } = rule;
         const dataUrl = /^data:([^;,]*)((?:;[^;,]*)*),(.*)$/s.exec(value.trim());
         if (dataUrl && !dataUrl[2].split(';').includes('base64')) {
-            this.throwBadRequest('Invalid signature image', [
+            this.throwBadRequest(title, [
                 {
                     field,
                     message: `${field} must be base64-encoded`,
-                    code: company_master_error_codes_1.CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+                    code: rule.notBase64,
                 },
             ]);
         }
         const base64 = (dataUrl ? dataUrl[3] : value).replace(/\s+/g, '');
         if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64) || base64.length % 4 !== 0) {
-            this.throwBadRequest('Invalid signature image', [
+            this.throwBadRequest(title, [
                 {
                     field,
                     message: `${field} must be valid base64 content`,
-                    code: company_master_error_codes_1.CompanyMasterErrorCode.SIGNATURE_NOT_BASE64,
+                    code: rule.notBase64,
                 },
             ]);
         }
         const bytes = Buffer.from(base64, 'base64');
         if (bytes.length > SIGNATURE_MAX_BYTES) {
-            this.throwBadRequest('Invalid signature image', [
+            this.throwBadRequest(title, [
                 {
                     field,
                     message: `${field} must be at most ${SIGNATURE_MAX_BYTES / 1024} KB; this one is ${Math.ceil(bytes.length / 1024)} KB`,
-                    code: company_master_error_codes_1.CompanyMasterErrorCode.SIGNATURE_TOO_LARGE,
+                    code: rule.tooLarge,
                 },
             ]);
         }
         const type = SIGNATURE_IMAGE_TYPES.find(([, isType]) => isType(bytes))?.[0];
         if (!type) {
-            this.throwBadRequest('Invalid signature image', [
+            this.throwBadRequest(title, [
                 {
                     field,
                     message: `${field} must be a PNG, JPEG, GIF or WebP image`,
-                    code: company_master_error_codes_1.CompanyMasterErrorCode.SIGNATURE_NOT_IMAGE,
+                    code: rule.notImage,
                 },
             ]);
         }
         return `data:${type};base64,${bytes.toString('base64')}`;
+    }
+    assertRegistrationRules(dto, existing) {
+        const sent = dto;
+        const stored = existing;
+        const after = (key) => sent[key] !== undefined ? sent[key] : stored ? stored[key] : null;
+        const errors = [];
+        const regType = after('compGstRegType');
+        if ((0, registered_address_1.isGstRegistered)(regType)) {
+            if ((0, registered_address_1.isBlank)(after('compLegalName'))) {
+                errors.push({
+                    field: 'compLegalName',
+                    message: `compLegalName is required for a ${regType} company`,
+                    code: company_master_error_codes_1.CompanyMasterErrorCode.LEGAL_NAME_REQUIRED,
+                });
+            }
+            for (const key of COMPANY_ADDRESS_KEYS) {
+                if ((0, registered_address_1.isBlank)(after(key))) {
+                    errors.push({
+                        field: key,
+                        message: `${key} is required for a ${regType} company (the e-invoice / e-way seller address)`,
+                        code: company_master_error_codes_1.CompanyMasterErrorCode.ADDRESS_REQUIRED,
+                    });
+                }
+            }
+        }
+        if (typeof dto.compPin === 'number' && !(0, registered_address_1.isValidPin)(dto.compPin)) {
+            errors.push({
+                field: 'compPin',
+                message: `compPin must be 6 digits, ${registered_address_1.PIN_MIN} to ${registered_address_1.PIN_MAX}; it is ${dto.compPin}`,
+                code: company_master_error_codes_1.CompanyMasterErrorCode.PIN_INVALID,
+            });
+        }
+        if (typeof dto.compUdyamNo === 'string' && !UDYAM_PATTERN.test(dto.compUdyamNo)) {
+            errors.push({
+                field: 'compUdyamNo',
+                message: 'compUdyamNo must look like UDYAM-XX-00-0000000',
+                code: company_master_error_codes_1.CompanyMasterErrorCode.UDYAM_INVALID,
+            });
+        }
+        if (errors.length) {
+            this.throwBadRequest('Validation failed', errors);
+        }
+    }
+    async nextCompanyCode(tx, compName) {
+        return (0, code_from_name_1.nextFreeCode)(companyCodeBase(compName), async (base) => {
+            const rows = await tx.company.findMany({
+                where: { compCode: { startsWith: base, mode: 'insensitive' } },
+                select: { compCode: true },
+            });
+            return rows.map((row) => row.compCode);
+        });
     }
     throwNotFound(compId) {
         (0, module_service_utils_1.throwSettingsNotFound)('Company not found', 'compId', `No active company found with id ${compId}`, company_master_error_codes_1.CompanyMasterErrorCode.NOT_FOUND);

@@ -29,6 +29,7 @@ import {
   TillApprovalService,
   type GateAsk,
   type GateVerdict,
+  type TillApprovalRuleRow,
 } from '../../till/services/till-approval.service';
 import { buildReturnLegs } from '../posting/sales-leg.sources';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
@@ -112,6 +113,7 @@ import { mirrorCharges, type ChargeAsk } from './sale-return-money';
 import {
   buildSettlement,
   defaultSettleMode,
+  type AdjustReplanner,
   proRataBack,
   settlementJson,
   type AdjustAsk,
@@ -183,6 +185,48 @@ export const SR_SPEC: DocSpec = {
 };
 
 const TX = { timeout: 60_000, maxWait: 10_000 } as const;
+
+/**
+ * How the phone's upload (POST /mobile/returns/create, mobile-modules/return)
+ * saves a return through saveInTx. The desktop routes pass none: every check
+ * applies. Never set on a desktop route.
+ */
+export interface SaleReturnSaveOptions {
+  /**
+   * plan-mobile-sales-return-2026-11-20 (user, 2026-11-20): a salesman can
+   * always hand a return to the office, so the phone's save of a new return,
+   * or its re-save of the DRAFT its own client uuid made, needs neither the
+   * menu-13 CREATE nor the EDIT right. ONLY that check is skipped: D77, the
+   * customer lock and the money are judged as on the desktop, and the post
+   * keeps its Post right.
+   */
+  skipSaveRight?: boolean;
+  /** 'PHONE': the revision's notes say the return came from the phone. */
+  origin?: 'PHONE';
+}
+
+/** A gate event a post refused (428 TILL_APPROVAL_REQUIRED): what /till/approvals/request would file. */
+export interface SaleReturnRefusedGate {
+  ask: GateAsk;
+  rule: TillApprovalRuleRow;
+}
+
+/** What postInTx takes beyond /post's body. The desktop /post passes none. */
+export interface SaleReturnPostOptions {
+  /** The phone upload's Adjust split, re-planned under the lock instead of refused (D6). */
+  replanAdjust?: AdjustReplanner | null;
+  /** The post's WARN / INFO notes, once it went through. */
+  onWarnings?: (warnings: SalesGuardContext['warnings']) => void;
+  /** The gate event refused, just before the 428 is thrown. */
+  onGateRefused?: (refused: SaleReturnRefusedGate) => void;
+}
+
+/** What a post leaves for after its commit (the GST queue). */
+export type SaleReturnPostFire = {
+  gdrId: string | null;
+  einvoice: boolean;
+  ewaybill: boolean;
+} | null;
 
 /** What the not-taken rules read off the money: each row's qty, factor and bill line. */
 type NotTakenMoney = {
@@ -651,38 +695,54 @@ export class SaleReturnService {
   // ── create / get / delete / bill-lines ───────────────────────────────────
 
   async save(dto: SaveSaleReturnDto): Promise<Record<string, unknown>> {
+    const keys = await this.prisma.$transaction((tx) => this.saveInTx(tx, dto), TX);
+    return this.get(keys);
+  }
+
+  /**
+   * /create's DRAFT upsert inside the caller's transaction: the right, the
+   * save with the money worked out, and its ONE revision. Public for the
+   * phone's upload, which saves and posts in one transaction of its own and
+   * passes `opts` (SaleReturnSaveOptions); /create passes none.
+   */
+  async saveInTx(
+    tx: Prisma.TransactionClient,
+    dto: SaveSaleReturnDto,
+    opts: SaleReturnSaveOptions = {},
+  ): Promise<DocKeys> {
     const actor = this.salesContext.actor();
     const now = new Date();
     const ms = await this.moneySettings(dto.srCompanyId, dto.srBranchId, dto.srDeviceId);
-    const row = await this.prisma.$transaction(async (tx) => {
-      const existing = dto.srId
-        ? await tx.$queryRaw<
-            { sr_id: string; sr_company_id: string; sr_branch_id: string; sr_acc_year: string }[]
-          >`
-            SELECT sr_id, sr_company_id, sr_branch_id, sr_acc_year FROM sales.sale_return
-             WHERE sr_id = ${dto.srId}::uuid AND sr_is_deleted = false`
-        : [];
+    const existing = dto.srId
+      ? await tx.$queryRaw<
+          { sr_id: string; sr_company_id: string; sr_branch_id: string; sr_acc_year: string }[]
+        >`
+          SELECT sr_id, sr_company_id, sr_branch_id, sr_acc_year FROM sales.sale_return
+           WHERE sr_id = ${dto.srId}::uuid AND sr_is_deleted = false`
+      : [];
+    if (opts.skipSaveRight !== true) {
       await this.assertRight(existing.length > 0 ? 'edit' : 'create', tx);
-      // Notes 89 — the return as /get answers it before this save (none on a create).
-      const before = existing[0]
-        ? await this.documentOf(tx, {
-            id: existing[0].sr_id,
-            companyId: existing[0].sr_company_id,
-            branchId: existing[0].sr_branch_id,
-            accYear: existing[0].sr_acc_year.trim(),
-          })
-        : null;
-      const saved = await this.saveBody(tx, dto, actor, now, ms);
-      await this.writeRevision(
-        tx,
-        this.store.keysOf(saved),
-        before,
-        actor,
-        before ? 'Sale return updated' : 'Sale return created',
-      );
-      return saved;
-    }, TX);
-    return this.get(this.store.keysOf(row));
+    }
+    // Notes 89 — the return as /get answers it before this save (none on a create).
+    const before = existing[0]
+      ? await this.documentOf(tx, {
+          id: existing[0].sr_id,
+          companyId: existing[0].sr_company_id,
+          branchId: existing[0].sr_branch_id,
+          accYear: existing[0].sr_acc_year.trim(),
+        })
+      : null;
+    const saved = await this.saveBody(tx, dto, actor, now, ms);
+    const keys = this.store.keysOf(saved);
+    const fromPhone = opts.origin === 'PHONE' ? ' from the phone' : '';
+    await this.writeRevision(
+      tx,
+      keys,
+      before,
+      actor,
+      (before ? 'Sale return updated' : 'Sale return created') + fromPhone,
+    );
+    return keys;
   }
 
   async get(keys: DocKeys): Promise<Record<string, unknown>> {
@@ -845,13 +905,39 @@ export class SaleReturnService {
   }
 
   async delete(dto: SaleReturnKeysDto): Promise<{ srId: string; deleted: true }> {
-    const actor = this.salesContext.actor();
-    await this.prisma.$transaction(async (tx) => {
-      await this.assertRight('delete', tx);
-      await this.assertNoPendingApproval(tx, dto.srId);
-      await this.store.deleteDraft(tx, this.keys(dto), actor, new Date());
-    }, TX);
+    await this.prisma.$transaction((tx) => this.deleteInTx(tx, this.keys(dto)), TX);
     return { srId: dto.srId, deleted: true };
+  }
+
+  /**
+   * /delete inside the caller's transaction: the DELETE right, D77, the DRAFT
+   * delete. `withdrawPendingNote` (the phone deleting its own HELD draft):
+   * the return's PENDING approval requests are withdrawn first, in this
+   * transaction, as /till/approvals/cancel would, so D77 lets the delete
+   * through and no request is stranded in the approvers' inbox.
+   */
+  async deleteInTx(
+    tx: Prisma.TransactionClient,
+    keys: DocKeys,
+    opts: { withdrawPendingNote?: string } = {},
+  ): Promise<void> {
+    const actor = this.salesContext.actor();
+    await this.assertRight('delete', tx);
+    if (opts.withdrawPendingNote) {
+      const row = await this.store.lock(tx, keys);
+      if (row.srStatus === 'DRAFT') {
+        await this.approvals.withdrawForDocument(tx, {
+          companyId: keys.companyId,
+          srcDocType: 'SALE_RETURN',
+          srcDocId: keys.id,
+          userId: actor,
+          deviceId: isUuid(row.srDeviceId as string | null) ? (row.srDeviceId as string) : null,
+          note: opts.withdrawPendingNote,
+        });
+      }
+    }
+    await this.assertNoPendingApproval(tx, keys.id);
+    await this.store.deleteDraft(tx, keys, actor, new Date());
   }
 
   /**
@@ -1115,38 +1201,110 @@ export class SaleReturnService {
   }
 
   async post(dto: PostSaleReturnDto): Promise<Record<string, unknown>> {
-    let fire: { gdrId: string | null; einvoice: boolean; ewaybill: boolean } | null = null;
-    await this.prisma.$transaction(async (tx) => {
-      const row = await this.store.lock(tx, this.keys(dto));
-      if (row.srStatus === 'POSTED') {
-        return;
-      }
-      if (row.srStatus === 'CANCELLED') {
-        throwSalesLocked('This sale return is CANCELLED', SALES_ERROR_CODES.DOC_CANCELLED, 'srId');
-      }
-      const ctx = await this.ctxOf(tx, row);
-      if (!ctx.rights.post) {
-        throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
-      }
-      // Popup B's rows, written over the draft's before anything reads them.
-      if (dto.tenders !== undefined) {
-        await this.writeRefundTenders(tx, row, dto.tenders as unknown as DocRow[]);
-      }
-      await this.dropRefundRowsUnlessCash(tx, row);
-      await this.tillForPost(tx, row, ctx);
-      fire = await this.postPipeline(tx, row, ctx, {
-        overrides: dto.overrides ?? [],
-        adjustments: dto.adjustments,
-        approvalIds: dto.approvalIds ?? {},
-        now: new Date(),
-        revisionNo: undefined,
-        title: 'Sale return cannot be posted',
-      });
-    }, TX);
+    const fire = await this.prisma.$transaction((tx) => this.postInTx(tx, dto), TX);
+    this.afterPostCommit(fire);
+    return this.get(this.keys(dto));
+  }
+
+  /**
+   * /post inside the caller's transaction: the lock, the status gates, the
+   * Post right, the refund rows, the till, the pipeline. Public for the phone's
+   * upload, which posts behind a savepoint of its own and passes `opts`
+   * (SaleReturnPostOptions); /post passes none. Answers what afterPostCommit
+   * takes once the caller has committed (null: nothing posted now).
+   */
+  async postInTx(
+    tx: Prisma.TransactionClient,
+    dto: PostSaleReturnDto,
+    opts: SaleReturnPostOptions = {},
+  ): Promise<SaleReturnPostFire> {
+    const row = await this.store.lock(tx, this.keys(dto));
+    if (row.srStatus === 'POSTED') {
+      return null;
+    }
+    if (row.srStatus === 'CANCELLED') {
+      throwSalesLocked('This sale return is CANCELLED', SALES_ERROR_CODES.DOC_CANCELLED, 'srId');
+    }
+    const ctx = await this.ctxOf(tx, row);
+    if (!ctx.rights.post) {
+      throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
+    }
+    // Popup B's rows, written over the draft's before anything reads them.
+    if (dto.tenders !== undefined) {
+      await this.writeRefundTenders(tx, row, dto.tenders as unknown as DocRow[]);
+    }
+    await this.dropRefundRowsUnlessCash(tx, row);
+    await this.tillForPost(tx, row, ctx);
+    return this.postPipeline(tx, row, ctx, {
+      overrides: dto.overrides ?? [],
+      adjustments: dto.adjustments,
+      approvalIds: dto.approvalIds ?? {},
+      now: new Date(),
+      revisionNo: undefined,
+      title: 'Sale return cannot be posted',
+      replanAdjust: opts.replanAdjust ?? null,
+      onWarnings: opts.onWarnings,
+      onGateRefused: opts.onGateRefused,
+    });
+  }
+
+  /** After the caller's commit: the GST queue, for a return that really posted. */
+  afterPostCommit(fire: SaleReturnPostFire): void {
     if (fire) {
       this.gst.enqueueAfterPost(fire);
     }
-    return this.get(this.keys(dto));
+  }
+
+  /**
+   * The phone upload's HELD return (TILL_APPROVAL_REQUIRED): each refused gate
+   * event filed for the office inbox, as /till/approvals/request files one
+   * without a PIN (the requester is the login), in the caller's transaction,
+   * AFTER the refused post was rolled back. A PENDING request of this return
+   * for the event is reused, never a second one. Answers the request ids.
+   */
+  async fileGateRequestsInTx(
+    tx: Prisma.TransactionClient,
+    refused: readonly SaleReturnRefusedGate[],
+    note: string,
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    for (const { ask, rule } of refused) {
+      const open = await tx.tillApproval.findFirst({
+        where: {
+          tapCompanyId: ask.companyId,
+          tapBranchId: ask.branchId,
+          tapEventCode: ask.event,
+          tapSrcDocType: ask.srcDocType,
+          tapSrcDocId: ask.srcDocId,
+          tapStatus: 'PENDING',
+          tapIsDeleted: false,
+        },
+        select: { tapId: true },
+      });
+      ids.push(
+        open?.tapId ??
+          (await this.approvals.fileRequest(tx, {
+            companyId: ask.companyId,
+            branchId: ask.branchId,
+            tenantId: ask.tenantId,
+            accYear: ask.accYear,
+            event: ask.event,
+            rule,
+            amount: ask.amount,
+            requesterId: ask.requesterId,
+            deviceId: ask.deviceId,
+            sessionId: ask.sessionId,
+            counterId: ask.counterId,
+            srcDocType: ask.srcDocType,
+            srcDocId: ask.srcDocId,
+            srcRefno: ask.srcRefno,
+            reasonId: null,
+            note,
+            payload: { filedBy: 'phone' },
+          })),
+      );
+    }
+    return ids;
   }
 
   /**
@@ -1171,8 +1329,8 @@ export class SaleReturnService {
        * longer comes to is refused as stale, as /validate refuses it (N1).
        */
       expectReturnAmt?: string | number | null;
-    },
-  ): Promise<{ gdrId: string | null; einvoice: boolean; ewaybill: boolean } | null> {
+    } & SaleReturnPostOptions,
+  ): Promise<SaleReturnPostFire> {
     let row = row0;
     const mode = ((row.srSettleMode as string | null) ?? 'ADJUST').toUpperCase();
     const { items, money, ms } = await this.lockAndWorkOut(tx, row, ctx);
@@ -1207,6 +1365,7 @@ export class SaleReturnService {
       custId: (row.srCustId as string | null) ?? null,
       tenders: refundTendersFromRows(refundRows),
       adjustments: adjustAsksOf(opts.adjustments),
+      replan: opts.replanAdjust ?? null,
       billSort: ms.billSort,
       lock: true,
       // The live state: a first post has nothing to unwind, and /amend has
@@ -1235,6 +1394,7 @@ export class SaleReturnService {
     for (const ask of asks) {
       const v = await this.approvals.assessGate(tx, ask);
       if (v.state === 'REFUSE') {
+        opts.onGateRefused?.({ ask, rule: v.rule });
         this.approvals.throwApprovalRequired(v.need, ask);
       }
       verdicts.push({ ask, verdict: v });
@@ -1262,6 +1422,7 @@ export class SaleReturnService {
     for (const { ask, verdict: v } of verdicts) {
       await this.approvals.settleGate(tx, ask, v);
     }
+    opts.onWarnings?.(g.warnings);
     return fire;
   }
 

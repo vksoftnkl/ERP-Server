@@ -13,6 +13,7 @@ const receipt_exception_filter_1 = require("../../modules/accountsModule/receipt
 const mobile_exception_filter_1 = require("../common/mobile-exception.filter");
 const mobile_receipt_controller_1 = require("./mobile-receipt.controller");
 const mobile_receipt_service_1 = require("./mobile-receipt.service");
+const mobile_receipt_status_service_1 = require("./mobile-receipt-status.service");
 let MobileReceiptModule = class MobileReceiptModule {
 };
 exports.MobileReceiptModule = MobileReceiptModule;
@@ -20,7 +21,12 @@ exports.MobileReceiptModule = MobileReceiptModule = __decorate([
     (0, common_1.Module)({
         imports: [receipt_module_1.ReceiptModule],
         controllers: [mobile_receipt_controller_1.MobileReceiptController],
-        providers: [mobile_receipt_service_1.MobileReceiptService, receipt_exception_filter_1.ReceiptExceptionFilter, mobile_exception_filter_1.MobileExceptionFilter],
+        providers: [
+            mobile_receipt_service_1.MobileReceiptService,
+            mobile_receipt_status_service_1.MobileReceiptStatusService,
+            receipt_exception_filter_1.ReceiptExceptionFilter,
+            mobile_exception_filter_1.MobileExceptionFilter,
+        ],
     })
 ], MobileReceiptModule);
 //# sourceMappingURL=mobile-receipt.module.js.map

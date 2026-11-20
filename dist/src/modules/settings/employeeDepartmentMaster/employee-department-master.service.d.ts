@@ -18,6 +18,7 @@ export declare class EmployeeDepartmentMasterService {
     private updateDepartment;
     private ensureNameIsUnique;
     private ensureCodeIsUnique;
+    private nextDepartmentCode;
     private normalizeRequiredName;
     private toPayload;
     private handleWriteError;

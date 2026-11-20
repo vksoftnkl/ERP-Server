@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.baseUnitChange = baseUnitChange;
+exports.baseRowRePick = baseRowRePick;
 exports.refuseBaseUnitChange = refuseBaseUnitChange;
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const HOW_TO_FIX = 'A saved item keeps its base unit: to count it in another unit, make this item inactive ' +
@@ -32,6 +33,12 @@ function baseUnitChange(base, row) {
         };
     }
     return null;
+}
+function baseRowRePick(base, rows) {
+    const row = rows?.find((candidate) => candidate.iuc_id === base.iuc_id);
+    return row?.iuc_unit_id !== undefined && row.iuc_unit_id !== base.iuc_unit_id
+        ? row.iuc_unit_id
+        : null;
 }
 function refuseBaseUnitChange(code, field, message) {
     return (0, module_service_utils_1.throwInventoryConflict)("A saved item's base unit cannot change", [

@@ -407,8 +407,11 @@ async function buildSettlement(reader, c, money, input) {
         const bills = all.filter((b) => !shut.has(b.ablAccYear));
         const closed = new Map(all.filter((b) => shut.has(b.ablAccYear)).map((b) => [b.ablId, b]));
         let lines;
-        if (input.adjustments) {
-            const checked = checkAdjust(input.adjustments, bills, afterShares, bill.sbId, closed);
+        const asks = input.replan
+            ? input.replan({ bills, adjustable: afterShares, thisSbId: bill.sbId })
+            : input.adjustments;
+        if (asks) {
+            const checked = checkAdjust(asks, bills, afterShares, bill.sbId, closed);
             issues.push(...checked.issues);
             const named = new Map(checked.lines.map((l) => [l.bill.ablId, l]));
             lines = bills.map((b) => named.get(b.ablId) ?? { bill: b, isThisBill: isThis(b, bill.sbId), amount: sale_return_money_1.ZERO });
@@ -422,7 +425,7 @@ async function buildSettlement(reader, c, money, input) {
             adjustable: afterShares,
             adjusted,
             leftAsCredit: max0(afterShares.minus(adjusted)),
-            proposed: !input.adjustments,
+            proposed: !asks,
         };
     }
     if (!zeroNote && mode === 'CASH') {

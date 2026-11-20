@@ -24,6 +24,8 @@ export declare class ItemUnitConversionPayloadDto {
     iuc_updated_by: string | null;
     iuc_unit_name?: string | null;
     iuc_base_unit_name?: string | null;
+    iuc_in_use?: boolean;
+    iuc_used_by?: string[];
 }
 export declare class ItemUnitConversionDeleteResultDto {
     iuc_id: string;

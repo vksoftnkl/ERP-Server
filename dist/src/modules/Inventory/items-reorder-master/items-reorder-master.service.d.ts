@@ -32,6 +32,7 @@ export declare class ItemsReorderMasterService {
     private applyOptionalFields;
     private assertRowScope;
     private validateReorderRange;
+    private toAuditRecord;
     private toPayload;
     private buildDisplayName;
     private handleWriteError;

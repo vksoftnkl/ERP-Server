@@ -45,6 +45,7 @@ __decorate([
 class CompanySeededMainBranchDto {
     brId;
     brName;
+    brCode;
     gdlId;
     gdlName;
 }
@@ -57,6 +58,14 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'Main Branch' }),
     __metadata("design:type", String)
 ], CompanySeededMainBranchDto.prototype, "brName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 'MDT01',
+        nullable: true,
+        description: 'The company code + "01" (02, 03 … when taken); null when the company has no code.',
+    }),
+    __metadata("design:type", Object)
+], CompanySeededMainBranchDto.prototype, "brCode", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac3' }),
     __metadata("design:type", String)
@@ -134,6 +143,9 @@ class CompanyMasterPayloadDto {
     compLocaleCode;
     compRemarks;
     compAuthorizeSignature;
+    compUdyamNo;
+    compLogo;
+    compSignatoryName;
     compIsDeleted;
     compSyncDate;
     compCreatedOn;
@@ -296,7 +308,10 @@ __decorate([
     __metadata("design:type", Object)
 ], CompanyMasterPayloadDto.prototype, "compBooksBeginFrom", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The company’s own Books Lock Date (comp_books_lock_date), as saved; not enforced yet.',
+    }),
     __metadata("design:type", Object)
 ], CompanyMasterPayloadDto.prototype, "compBooksLockDate", void 0);
 __decorate([
@@ -418,6 +433,21 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], CompanyMasterPayloadDto.prototype, "compAuthorizeSignature", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'UDYAM-TN-01-0012345' }),
+    __metadata("design:type", Object)
+], CompanyMasterPayloadDto.prototype, "compUdyamNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The company logo as a data URL (data:image/png;base64,...).',
+    }),
+    __metadata("design:type", Object)
+], CompanyMasterPayloadDto.prototype, "compLogo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'R. Kumar, Proprietor' }),
+    __metadata("design:type", Object)
+], CompanyMasterPayloadDto.prototype, "compSignatoryName", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)

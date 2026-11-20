@@ -58,6 +58,7 @@ export declare class UserAdminPayloadDto {
     usrEditDate: boolean;
     usrEditEntry: boolean;
     usrEditRate: boolean;
+    usrMaxDiscPerc: string | null;
     usrDesktopLogin: boolean;
     usrWebLogin: boolean;
     usrMobileLogin: boolean;
@@ -90,4 +91,41 @@ export declare class UserAdminSuccessDeleteDto {
     success: true;
     message: string;
     data: UserAdminDeleteResultDto;
+}
+export declare class UserAdminResetPasswordResultDto {
+    usrId: string;
+    usrLoginName: string;
+    usrMustChangePassword: true;
+    usrPasswordChangedOn: string;
+    generatedPassword: string | null;
+}
+export declare class UserAdminUnlockResultDto {
+    usrId: string;
+    usrIsLocked: false;
+    usrFailedLoginCount: 0;
+    usrLockedOn: null;
+    usrLockedBy: null;
+    changed: boolean;
+}
+export declare class UserAdminRestoreResultDto {
+    usrId: string;
+    usrLoginName: string;
+    usrIsDeleted: false;
+    usrIsActive: false;
+    menuCount: number;
+}
+export declare class UserAdminSuccessResetPasswordDto {
+    success: true;
+    message: string;
+    data: UserAdminResetPasswordResultDto;
+}
+export declare class UserAdminSuccessUnlockDto {
+    success: true;
+    message: string;
+    data: UserAdminUnlockResultDto;
+}
+export declare class UserAdminSuccessRestoreDto {
+    success: true;
+    message: string;
+    data: UserAdminRestoreResultDto;
 }

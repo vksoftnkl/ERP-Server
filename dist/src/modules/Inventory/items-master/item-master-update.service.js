@@ -19,6 +19,7 @@ const items_reorder_master_service_1 = require("../items-reorder-master/items-re
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const item_error_codes_1 = require("./types/item-error-codes");
 const item_base_unit_helper_1 = require("../utils/item-base-unit.helper");
+const item_unit_in_use_helper_1 = require("../utils/item-unit-in-use.helper");
 const EAN_IGNORED_FIELDS = new Set(['ean_id', 'ean_item_id', 'ean_created_by', 'ean_modified_by']);
 const IUC_IGNORED_FIELDS = new Set([
     'iuc_id',
@@ -43,8 +44,9 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         this.priceBucketService = priceBucketService;
     }
     async syncChildren(itemId, dto, tx) {
-        const unit_conversions = await this.syncUnitConversions(itemId, dto.unit_conversions, tx);
-        const conversions = await this.indexUnitConversions(itemId, dto, unit_conversions, tx);
+        const rePicked = new Map();
+        const unit_conversions = await this.syncUnitConversions(itemId, dto.unit_conversions, tx, rePicked);
+        const conversions = await this.indexUnitConversions(itemId, dto, unit_conversions, tx, rePicked);
         const prices = await this.syncPrices(itemId, dto.prices, conversions, tx);
         const ean_codes = await this.syncEanCodes(itemId, dto.ean_codes, conversions, tx);
         const reorders = await this.syncReorders(itemId, dto.reorders, conversions, tx);
@@ -82,17 +84,19 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         if (reorderIds.length)
             await this.itemsReorderMasterService.toggleDelete(reorderIds, tx);
     }
-    async indexUnitConversions(itemId, dto, syncedUnitConversions, tx) {
+    async indexUnitConversions(itemId, dto, syncedUnitConversions, tx, rePicked) {
         const needed = dto.prices !== undefined || dto.ean_codes !== undefined || dto.reorders !== undefined;
         const rows = !needed
             ? []
             : dto.unit_conversions !== undefined
                 ? syncedUnitConversions
                 : await this.itemUnitConversionService.findByItemId(itemId, tx);
-        return {
-            iucIdByUnitId: new Map(rows.map((row) => [row.iuc_unit_id, row.iuc_id])),
-            iucIds: new Set(rows.map((row) => row.iuc_id)),
-        };
+        const iucIdByUnitId = new Map(rows.map((row) => [row.iuc_unit_id, row.iuc_id]));
+        for (const [oldUnitId, iucId] of rePicked) {
+            if (!iucIdByUnitId.has(oldUnitId))
+                iucIdByUnitId.set(oldUnitId, iucId);
+        }
+        return { iucIdByUnitId, iucIds: new Set(rows.map((row) => row.iuc_id)) };
     }
     resolveUnitConversionId(unitId, field, conversions) {
         const iucId = conversions.iucIdByUnitId.get(unitId);
@@ -110,7 +114,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             },
         ]);
     }
-    async syncUnitConversions(itemId, children, tx) {
+    async syncUnitConversions(itemId, children, tx, rePicked) {
         if (children === undefined) {
             return [];
         }
@@ -118,24 +122,36 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         const existingByKey = new Map(existing.map((row) => [row.iuc_unit_id, row]));
         this.refuseForeignIds(children, 'iuc_id', 'unit_conversions', existing);
         this.refuseDuplicateKeys(children.map((child) => child.iuc_unit_id), 'unit_conversions', 'two conversion rows for the same unit');
-        const base = existing.find((row) => row.iuc_is_base_unit);
+        const storedBase = existing.find((row) => row.iuc_is_base_unit);
+        const matches = children.map((child) => child.iuc_id
+            ? existing.find((row) => row.iuc_id === child.iuc_id)
+            : existingByKey.get(child.iuc_unit_id));
+        await this.refuseUsedUnitRePicks(itemId, children, matches, tx);
+        const newBaseUnitId = storedBase ? (0, item_base_unit_helper_1.baseRowRePick)(storedBase, children) : null;
+        const base = storedBase && newBaseUnitId ? { ...storedBase, iuc_unit_id: newBaseUnitId } : storedBase;
         const toSave = [];
         const claimedIds = new Set();
         children.forEach((child, index) => {
-            const match = child.iuc_id
-                ? existing.find((row) => row.iuc_id === child.iuc_id)
-                : existingByKey.get(child.iuc_unit_id);
+            const match = matches[index];
             const change = base && (0, item_base_unit_helper_1.baseUnitChange)(base, { ...child, iuc_id: match?.iuc_id });
             if (change) {
                 (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, `unit_conversions.${index}.${change.column}`, change.message);
             }
             if (match) {
                 claimedIds.add(match.iuc_id);
-                if (!this.rowChanged(child, match, IUC_IGNORED_FIELDS)) {
+                if (child.iuc_unit_id !== match.iuc_unit_id) {
+                    rePicked.set(match.iuc_unit_id, match.iuc_id);
+                }
+                if (!newBaseUnitId && !this.rowChanged(child, match, IUC_IGNORED_FIELDS)) {
                     return;
                 }
             }
-            toSave.push({ ...child, iuc_item_id: itemId, iuc_id: child.iuc_id ?? match?.iuc_id });
+            toSave.push({
+                ...child,
+                iuc_item_id: itemId,
+                iuc_id: child.iuc_id ?? match?.iuc_id,
+                ...(newBaseUnitId ? { iuc_base_unit_id: newBaseUnitId } : {}),
+            });
         });
         if (base && !claimedIds.has(base.iuc_id)) {
             (0, item_base_unit_helper_1.refuseBaseUnitChange)(item_error_codes_1.ItemErrorCode.BASE_UNIT_LOCKED, 'unit_conversions', `The item's base row (${base.iuc_id}, unit ${base.iuc_unit_id}) is missing from ` +
@@ -146,9 +162,38 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             await this.itemUnitConversionService.toggleDelete(staleIds, tx);
         }
         if (toSave.length > 0) {
-            await this.itemUnitConversionService.save(toSave, tx);
+            await this.itemUnitConversionService.save(toSave, tx, base && newBaseUnitId ? { baseRePick: { iucId: base.iuc_id, unitId: newBaseUnitId } } : {});
         }
         return this.itemUnitConversionService.findByItemId(itemId, tx);
+    }
+    async refuseUsedUnitRePicks(itemId, children, matches, tx) {
+        const rePicks = children
+            .map((child, index) => ({ child, index, match: matches[index] }))
+            .filter((entry) => entry.match !== undefined && entry.child.iuc_unit_id !== entry.match.iuc_unit_id);
+        if (rePicks.length === 0) {
+            return;
+        }
+        const inUse = await (0, item_unit_in_use_helper_1.unitRowsInUse)(tx, itemId);
+        for (const { child, index, match } of rePicks) {
+            const lock = (0, item_unit_in_use_helper_1.rowUnitLock)(inUse, match);
+            if (!lock.locked) {
+                continue;
+            }
+            const usedBy = lock.usedBy.join(', ');
+            (0, module_service_utils_1.throwInventoryConflict)('This unit is already used', [
+                {
+                    field: `unit_conversions.${index}.iuc_unit_id`,
+                    code: item_error_codes_1.ItemErrorCode.UNIT_IN_USE,
+                    message: match.iuc_is_base_unit
+                        ? `Unit conversion ${match.iuc_id} is the item's base row and the item is already ` +
+                            `used (${usedBy}); its unit stays ${match.iuc_unit_id}. To count stock in another ` +
+                            'unit, make this item inactive and create a new one.'
+                        : `Unit conversion ${match.iuc_id} (unit ${match.iuc_unit_id}) is already used ` +
+                            `(${usedBy}); its unit cannot change to ${child.iuc_unit_id}, or those documents ` +
+                            'would read the new unit. Add the new unit as another row instead.',
+                },
+            ]);
+        }
     }
     async syncPrices(itemId, children, conversions, tx) {
         if (children === undefined) {

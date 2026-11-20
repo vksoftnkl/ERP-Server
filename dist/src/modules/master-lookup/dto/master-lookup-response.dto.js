@@ -448,8 +448,10 @@ class CustomerDetailDto {
     gst_type;
     state_code;
     state_name;
+    cust_group_id;
     area_id;
     area_name;
+    city_id;
     distance_km;
     cust_phone1;
     debit_days;
@@ -531,6 +533,13 @@ __decorate([
     __metadata("design:type", String)
 ], CustomerDetailDto.prototype, "state_name", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: "cus_group_id: the customer's group, for CUSTOMER_GROUP promotion rules (since 2026-11-19)",
+    }),
+    __metadata("design:type", String)
+], CustomerDetailDto.prototype, "cust_group_id", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ format: 'uuid' }),
     __metadata("design:type", String)
 ], CustomerDetailDto.prototype, "area_id", void 0);
@@ -538,6 +547,16 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, example: 'Gandhipuram' }),
     __metadata("design:type", Object)
 ], CustomerDetailDto.prototype, "area_name", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: String,
+        format: 'uuid',
+        nullable: true,
+        description: "The area's arm_city_id, for CITY promotion rules (since 2026-11-19); a customer has no " +
+            'city of its own',
+    }),
+    __metadata("design:type", Object)
+], CustomerDetailDto.prototype, "city_id", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, example: 12 }),
     __metadata("design:type", Object)

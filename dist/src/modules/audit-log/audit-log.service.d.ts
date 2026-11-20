@@ -4,17 +4,26 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import { CaptureScreenSnapshotInput, CreateAuditLogInput, LogDocumentRevisionInput, LogEntityChangeInput } from './types/audit-log.types';
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
 import { AuditLogListItem, AuditLogListMeta } from './types/audit-log-api.types';
+import type { AuditReadScope } from './audit-log-access.service';
+export declare const deviceDisplayName: (device: {
+    devDeviceName: string | null;
+    devCode: string | null;
+    devDeviceUid: string;
+}) => string;
+export declare const maskAuditValue: (value: string) => string;
 export declare class AuditLogService {
     private readonly prisma;
     private readonly requestContextService;
     constructor(prisma: PrismaService, requestContextService: RequestContextService);
     captureScreenSnapshot(input: CaptureScreenSnapshotInput, tx?: Prisma.TransactionClient): Promise<Prisma.JsonValue | null>;
-    list(queryDto: ListAuditLogQueryDto): Promise<{
+    list(queryDto: ListAuditLogQueryDto, scope?: AuditReadScope): Promise<{
         items: AuditLogListItem[];
         meta: AuditLogListMeta;
     }>;
+    private whereAndOf;
     private buildWhereClause;
     private buildRecordScopeFilter;
+    private screenNameOf;
     createAuditLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient): Promise<void>;
     logEntityChange(input: LogEntityChangeInput, tx?: Prisma.TransactionClient): Promise<void>;
     logDocumentRevision(input: LogDocumentRevisionInput, tx?: Prisma.TransactionClient): Promise<{
@@ -27,7 +36,14 @@ export declare class AuditLogService {
     private normalizeAction;
     private parseDateBoundary;
     private toListItem;
+    private maskAuditFields;
     private prepareAuditLogListRecord;
+    private isNoiseStampKey;
+    private dropNoiseStamps;
+    private isEmptyChange;
+    private digestStylesheetText;
+    private digestStylesheetChange;
+    private stylesheetDigestFields;
     private renameAuditRecordFields;
     private findAuditFieldDefinitionByKey;
     private getAuditReferenceNameLookup;
@@ -44,12 +60,13 @@ export declare class AuditLogService {
     private getBranchNameByIds;
     private normalizeScreenType;
     private projectAuditRecord;
-    private resolveAuditFieldValue;
+    private findAuditFieldSourceKey;
     private findAuditFieldKey;
     private buildAuditFieldLookupTokens;
     private extractAuditFields;
     private splitSelectClause;
     private extractAuditFieldDefinition;
+    private extractSourceFieldNames;
     private extractSourceFieldName;
     private toSnakeCase;
     private toCamelCase;
@@ -68,3 +85,4 @@ export declare class AuditLogService {
     private resolveAuditIpAddress;
     private normalizeIpAddress;
 }
+export declare function extractSelectList(sql: string): string | null;

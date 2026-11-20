@@ -8,6 +8,10 @@ import { SaleOrderService } from './sale-order.service';
 import type { AmendSaleOrderDto, CancelSaleOrderDto, PostSaleOrderDto, SaleOrderKeysDto } from './dto/sale-order-lifecycle.dto';
 import type { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { type SaleOrderPayload } from './types/sale-order-api.types';
+export interface SaleOrderPostOptions {
+    skipPostRight?: boolean;
+    origin?: 'PHONE';
+}
 export declare class SaleOrderLifecycleService {
     private readonly prisma;
     private readonly orders;
@@ -21,7 +25,7 @@ export declare class SaleOrderLifecycleService {
         warnings: ReservationShort[];
         whatsapp?: WaPostBlock;
     }>;
-    private whatsappAfterPost;
+    whatsappAfterPost(keys: SaleOrderKeysDto, waOnPost: boolean | undefined): Promise<WaPostBlock | null>;
     saveAndPost(dto: SaveSaleOrderDto): Promise<SaleOrderPayload & {
         warnings: ReservationShort[];
         whatsapp?: WaPostBlock;
@@ -33,7 +37,7 @@ export declare class SaleOrderLifecycleService {
         warnings: ReservationShort[];
     }>;
     private rereserveInTx;
-    postInTx(tx: Prisma.TransactionClient, dto: SaleOrderKeysDto, now: Date): Promise<{
+    postInTx(tx: Prisma.TransactionClient, dto: SaleOrderKeysDto, now: Date, options?: SaleOrderPostOptions): Promise<{
         soStatus: string;
         warnings: ReservationShort[];
         confirmedNow?: boolean;

@@ -1,6 +1,7 @@
-import { CreateMobileReceiptDto, MobileOpenBillsQueryDto, MobileReceiptOptionsQueryDto } from './dto/mobile-receipt.dto';
+import { CreateMobileReceiptDto, MobileOpenBillsQueryDto, MobileReceiptOptionsQueryDto, MobileReceiptStatusQueryDto } from './dto/mobile-receipt.dto';
 import { MobileReceiptService } from './mobile-receipt.service';
-import type { MobileOpenBillsPayload, MobileReceiptCreateResult, MobileReceiptOptions } from './types/mobile-receipt-api.types';
+import { MobileReceiptStatusService } from './mobile-receipt-status.service';
+import type { MobileOpenBillsPayload, MobileReceiptCreateResult, MobileReceiptOptions, MobileReceiptStatusPayload } from './types/mobile-receipt-api.types';
 type MobileSuccess<T> = {
     success: true;
     message: string;
@@ -8,9 +9,11 @@ type MobileSuccess<T> = {
 };
 export declare class MobileReceiptController {
     private readonly mobileReceiptService;
-    constructor(mobileReceiptService: MobileReceiptService);
+    private readonly mobileReceiptStatusService;
+    constructor(mobileReceiptService: MobileReceiptService, mobileReceiptStatusService: MobileReceiptStatusService);
     options(query: MobileReceiptOptionsQueryDto): Promise<MobileSuccess<MobileReceiptOptions>>;
     openBills(query: MobileOpenBillsQueryDto): Promise<MobileSuccess<MobileOpenBillsPayload>>;
+    status(query: MobileReceiptStatusQueryDto): Promise<MobileSuccess<MobileReceiptStatusPayload>>;
     create(dto: CreateMobileReceiptDto): Promise<MobileSuccess<MobileReceiptCreateResult>>;
 }
 export {};

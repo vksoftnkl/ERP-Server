@@ -81,6 +81,7 @@ export declare class ItemPayloadDto {
     item_cust_group_name?: string | null;
     item_base_unit_name?: string | null;
     item_default_tax_name?: string | null;
+    item_units_in_use?: boolean;
 }
 export declare class ItemDeleteResultDto {
     item_id: string;

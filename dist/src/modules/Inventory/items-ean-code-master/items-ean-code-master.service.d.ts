@@ -31,6 +31,7 @@ export declare class ItemsEanCodeMasterService {
     private updateItemEanCode;
     private applyOptionalFields;
     private enforceSingleDefaultInScope;
+    private toAuditRecord;
     private toPayload;
     private handleWriteError;
 }

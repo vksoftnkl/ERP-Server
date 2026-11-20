@@ -16,6 +16,9 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const employee_department_master_error_codes_1 = require("./types/employee-department-master-error-codes");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const code_from_name_1 = require("../shared/code-from-name");
+const code_series_lock_1 = require("../shared/code-series-lock");
+const unique_violation_1 = require("../shared/unique-violation");
 const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee departments';
 const EMPLOYEE_DEPARTMENT_MASTER_AUDIT_SCREEN_NAME = 'Employee Department Master';
 let EmployeeDepartmentMasterService = class EmployeeDepartmentMasterService {
@@ -115,20 +118,22 @@ let EmployeeDepartmentMasterService = class EmployeeDepartmentMasterService {
     }
     async createDepartment(saveEmployeeDepartmentMasterDto) {
         try {
-            return this.prisma.$transaction(async (tx) => {
+            return await this.prisma.$transaction(async (tx) => {
                 const edptName = this.normalizeRequiredName(saveEmployeeDepartmentMasterDto.edptName);
-                const edptCode = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDepartmentMasterDto.edptCode);
+                const typedCode = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDepartmentMasterDto.edptCode);
                 const edptAlias = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDepartmentMasterDto.edptAlias);
                 const edptRemarks = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDepartmentMasterDto.edptRemarks);
+                await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.DEPARTMENT_CODE_SERIES);
                 await this.ensureNameIsUnique(tx, edptName);
-                await this.ensureCodeIsUnique(tx, edptCode);
+                await this.ensureCodeIsUnique(tx, typedCode);
+                const edptCode = typedCode ?? (await this.nextDepartmentCode(tx, edptName));
                 const now = new Date();
                 const data = {
                     edptName,
                     edptCreatedOn: now,
                     edptCreatedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
-                if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDepartmentMasterDto, 'edptCode')) {
+                if (edptCode !== null) {
                     data.edptCode = edptCode;
                 }
                 if ((0, module_service_utils_1.hasOwnProperty)(saveEmployeeDepartmentMasterDto, 'edptAlias')) {
@@ -165,7 +170,7 @@ let EmployeeDepartmentMasterService = class EmployeeDepartmentMasterService {
     async updateDepartment(saveEmployeeDepartmentMasterDto) {
         const edptId = saveEmployeeDepartmentMasterDto.edptId;
         try {
-            return this.prisma.$transaction(async (tx) => {
+            return await this.prisma.$transaction(async (tx) => {
                 const existing = await tx.employeeDepartment.findFirst({
                     where: {
                         edptId,
@@ -180,6 +185,9 @@ let EmployeeDepartmentMasterService = class EmployeeDepartmentMasterService {
                 const edptAlias = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDepartmentMasterDto.edptAlias);
                 const edptRemarks = (0, module_service_utils_1.normalizeNullableString)(saveEmployeeDepartmentMasterDto.edptRemarks);
                 await this.ensureNameIsUnique(tx, edptName, edptId);
+                if (edptCode) {
+                    await (0, code_series_lock_1.lockCodeSeries)(tx, code_series_lock_1.DEPARTMENT_CODE_SERIES);
+                }
                 await this.ensureCodeIsUnique(tx, edptCode, edptId);
                 const data = {
                     edptName,
@@ -288,6 +296,15 @@ let EmployeeDepartmentMasterService = class EmployeeDepartmentMasterService {
             ]);
         }
     }
+    async nextDepartmentCode(tx, edptName) {
+        return (0, code_from_name_1.nextFreeCode)((0, code_from_name_1.initialsCode)(edptName, code_from_name_1.DEPARTMENT_CODE_RULE), async (base) => {
+            const rows = await tx.employeeDepartment.findMany({
+                where: { edptIsDeleted: false, edptCode: { startsWith: base, mode: 'insensitive' } },
+                select: { edptCode: true },
+            });
+            return rows.map((row) => row.edptCode);
+        });
+    }
     normalizeRequiredName(value) {
         return (0, module_service_utils_1.normalizeRequiredText)(value, 'edptName', undefined, employee_department_master_error_codes_1.EmployeeDepartmentMasterErrorCode.NAME_REQUIRED);
     }
@@ -308,6 +325,15 @@ let EmployeeDepartmentMasterService = class EmployeeDepartmentMasterService {
         };
     }
     handleWriteError(error) {
+        if ((0, unique_violation_1.isUniqueViolationOf)(error, 'ux_edpt_code', 'edpt_code')) {
+            (0, module_service_utils_1.throwSettingsConflict)('Employee department code already exists', [
+                {
+                    field: 'edptCode',
+                    message: 'Another department took this code at the same moment',
+                    code: employee_department_master_error_codes_1.EmployeeDepartmentMasterErrorCode.CODE_DUPLICATE,
+                },
+            ]);
+        }
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Employee department already exists', [
             {
                 field: 'edptName',

@@ -54,6 +54,9 @@ export declare class PrintTemplateVersionPayloadDto {
     ptvCreatedBy: string | null;
     ptvModifiedOn: string | null;
     ptvModifiedBy: string | null;
+    ptvCreatedByName?: string | null;
+    ptvModifiedByName?: string | null;
+    ptvApprovedByName?: string | null;
     ptvIsPublishedRev: boolean;
     ptvIsEditable: boolean;
     datasets: PrintTemplateDatasetPayloadDto[];
@@ -82,6 +85,8 @@ export declare class PrintTemplatePayloadDto {
     ptlCreatedBy: string | null;
     ptlModifiedOn: string | null;
     ptlModifiedBy: string | null;
+    ptlCreatedByName?: string | null;
+    ptlModifiedByName?: string | null;
     versions: PrintTemplateVersionPayloadDto[];
 }
 export declare class PrintTemplateDeleteResultDto {

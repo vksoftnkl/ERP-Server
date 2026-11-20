@@ -94,6 +94,7 @@ class ItemPayloadDto {
     item_cust_group_name;
     item_base_unit_name;
     item_default_tax_name;
+    item_units_in_use;
 }
 exports.ItemPayloadDto = ItemPayloadDto;
 __decorate([
@@ -461,6 +462,16 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_default_tax_name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: Boolean,
+        description: 'Composite get only (item master review 11-20 Q2): true once any unit row of the item, ' +
+            'live or removed, is on a document line or a stock row. While false the base row\'s unit ' +
+            'may still be re-picked on the same row (iuc_id kept); once true that save is a 409 ' +
+            'ITEM_UNIT_IN_USE.',
+    }),
+    __metadata("design:type", Boolean)
+], ItemPayloadDto.prototype, "item_units_in_use", void 0);
 class ItemDeleteResultDto {
     item_id;
     deleted;

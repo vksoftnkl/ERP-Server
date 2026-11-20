@@ -37,6 +37,8 @@ class ItemUnitConversionPayloadDto {
     iuc_updated_by;
     iuc_unit_name;
     iuc_base_unit_name;
+    iuc_in_use;
+    iuc_used_by;
 }
 exports.ItemUnitConversionPayloadDto = ItemUnitConversionPayloadDto;
 __decorate([
@@ -131,6 +133,26 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ItemUnitConversionPayloadDto.prototype, "iuc_base_unit_name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: Boolean,
+        description: 'Item composite get only (item master review 11-20 Q2): true when this row\'s unit can ' +
+            'no longer be re-picked — the base row once any unit row of the item is on a document ' +
+            'line or a stock row (item.item_units_in_use), any other row once IT is. Re-picking it ' +
+            'anyway is a 409 ITEM_UNIT_IN_USE. Factors, weight, flags and remarks stay editable.',
+    }),
+    __metadata("design:type", Boolean)
+], ItemUnitConversionPayloadDto.prototype, "iuc_in_use", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [String],
+        description: 'Item composite get only: what uses the row, in a fixed order — stock, stock voucher, ' +
+            'sale bill, sale order, quotation, sale return, delivery challan, challan return, ' +
+            'delivery note, gift redemption, purchase order, GRN, purchase invoice, shortage ' +
+            'receipt, purchase return, accounts voucher. [] when unused.',
+    }),
+    __metadata("design:type", Array)
+], ItemUnitConversionPayloadDto.prototype, "iuc_used_by", void 0);
 class ItemUnitConversionDeleteResultDto {
     iuc_id;
     deleted;

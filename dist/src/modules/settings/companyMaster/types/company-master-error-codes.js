@@ -24,5 +24,12 @@ var CompanyMasterErrorCode;
     CompanyMasterErrorCode["SIGNATURE_TOO_LARGE"] = "COMPANY_SIGNATURE_TOO_LARGE";
     CompanyMasterErrorCode["SIGNATURE_NOT_IMAGE"] = "COMPANY_SIGNATURE_NOT_IMAGE";
     CompanyMasterErrorCode["THEME_INACTIVE"] = "COMPANY_THEME_INACTIVE";
+    CompanyMasterErrorCode["LEGAL_NAME_REQUIRED"] = "COMPANY_LEGAL_NAME_REQUIRED";
+    CompanyMasterErrorCode["ADDRESS_REQUIRED"] = "COMPANY_ADDRESS_REQUIRED";
+    CompanyMasterErrorCode["PIN_INVALID"] = "COMPANY_PIN_INVALID";
+    CompanyMasterErrorCode["UDYAM_INVALID"] = "COMPANY_UDYAM_INVALID";
+    CompanyMasterErrorCode["LOGO_NOT_BASE64"] = "COMPANY_LOGO_NOT_BASE64";
+    CompanyMasterErrorCode["LOGO_TOO_LARGE"] = "COMPANY_LOGO_TOO_LARGE";
+    CompanyMasterErrorCode["LOGO_NOT_IMAGE"] = "COMPANY_LOGO_NOT_IMAGE";
 })(CompanyMasterErrorCode || (exports.CompanyMasterErrorCode = CompanyMasterErrorCode = {}));
 //# sourceMappingURL=company-master-error-codes.js.map

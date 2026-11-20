@@ -18,6 +18,9 @@ export declare class MobileCustomerListItemDto {
     cusCreditAmtLimit: string;
     balance: MobileSidedAmountDto | null;
     balanceStatus: string | null;
+    outstanding: string | null;
+    outstandingBills: number | null;
+    oldestBillDate: string | null;
 }
 export declare class MobileCustomerCountsDto {
     all: number;
@@ -34,6 +37,7 @@ export declare class MobileCustomerListPayloadDto {
     hasMore: boolean;
     balanceAsOn: string | null;
     accYear: string | null;
+    companyId: string | null;
 }
 export declare class MobileCustomerListSuccessDto {
     success: true;
@@ -43,6 +47,9 @@ export declare class MobileCustomerListSuccessDto {
 export declare class MobileCustomerDetailDto extends CustomerPayloadDto {
     balance: MobileSidedAmountDto | null;
     balanceStatus: string | null;
+    outstanding: string | null;
+    outstandingBills: number | null;
+    oldestBillDate: string | null;
 }
 export declare class MobileCustomerDetailSuccessDto {
     success: true;
@@ -54,6 +61,7 @@ declare class MobileOptionDto {
     name: string;
 }
 declare class MobileAreaOptionDto extends MobileOptionDto {
+    cityId: string;
     cityName: string | null;
 }
 declare class MobilePriceLevelOptionDto {

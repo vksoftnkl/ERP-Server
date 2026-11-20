@@ -1,9 +1,12 @@
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveCompanyMasterDto } from './dto/save-company-master.dto';
-import { CompanyMasterPayload } from './types/company-master-api.types';
+import { CompanyMasterErrorDetail, CompanyMasterPayload } from './types/company-master-api.types';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { BranchMasterService } from '../branchMaster/branch-master.service';
+export declare const DEFAULT_CURRENCY_SYMBOL = "Rs.";
+export declare function companyCodeBase(name: string): string | null;
+export declare function uniqueRaceDetail(target: string | null): CompanyMasterErrorDetail;
 export declare class CompanyMasterService {
     private readonly prisma;
     private readonly auditLogService;
@@ -36,7 +39,9 @@ export declare class CompanyMasterService {
     private resolveFirstYear;
     private todayInIndia;
     private assertGstin;
-    private normalizeSignature;
+    private normalizeImage;
+    private assertRegistrationRules;
+    private nextCompanyCode;
     private throwNotFound;
     private ensureThemeIsLive;
     private throwBadRequest;

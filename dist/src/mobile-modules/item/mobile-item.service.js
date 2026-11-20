@@ -47,17 +47,31 @@ function unitPriceAnswer(unitRows, onDate, caller) {
     }
     return null;
 }
+const LISTED_COMPANY = {
+    compIsDeleted: false,
+    compIsActive: true,
+};
 let MobileItemService = class MobileItemService {
     prisma;
     constructor(prisma) {
         this.prisma = prisma;
     }
     async options() {
-        const [companies, groups, brands, levels] = await Promise.all([
+        const [companies, branches, groups, brands, levels] = await Promise.all([
             this.prisma.company.findMany({
-                where: { compIsDeleted: false, compIsActive: true },
+                where: LISTED_COMPANY,
                 select: { compId: true, compName: true, compCity: true },
                 orderBy: [{ compName: 'asc' }, { compId: 'asc' }],
+            }),
+            this.prisma.branchMaster.findMany({
+                where: { brIsDeleted: false, brIsActive: true, company: LISTED_COMPANY },
+                select: { brId: true, brName: true, brCompId: true, brIsDefault: true },
+                orderBy: [
+                    { company: { compName: 'asc' } },
+                    { brCompId: 'asc' },
+                    { brName: 'asc' },
+                    { brId: 'asc' },
+                ],
             }),
             this.prisma.itemGroupMaster.findMany({
                 where: { itgIsDeleted: false, itgIsActive: true },
@@ -75,8 +89,17 @@ let MobileItemService = class MobileItemService {
                 orderBy: { iplId: 'asc' },
             }),
         ]);
+        const listed = new Set(companies.map((c) => c.compId));
         return {
             companies: companies.map((c) => ({ id: c.compId, name: c.compName, place: c.compCity })),
+            branches: branches
+                .filter((b) => listed.has(b.brCompId))
+                .map((b) => ({
+                id: b.brId,
+                name: b.brName,
+                companyId: b.brCompId,
+                isDefault: b.brIsDefault === true,
+            })),
             itemGroups: groups.map((g) => ({ id: g.itgId, name: g.itgName, position: g.itgSort })),
             brands: brands.map((b) => ({ id: b.brand_id, name: b.brand_name, position: b.brand_sort })),
             priceLevels: levels.map((l) => ({ id: l.iplId, name: l.iplName })),
@@ -103,6 +126,7 @@ let MobileItemService = class MobileItemService {
             this.prisma.$queryRaw `
         SELECT i.item_id, i.item_code, i.item_name_en, i.item_name_ta,
                i.item_group_id, g.itg_name, i.item_brand_id, b.brand_name,
+               i.item_category_id, i.item_section_id,
                i.item_allow_loading, i.item_allow_freight, i.item_allow_promo,
                i.item_incl_tax, i.item_hsn_code, i.item_default_tax_id,
                t.tax_rate_perc
@@ -180,6 +204,8 @@ let MobileItemService = class MobileItemService {
             itemGroupName: row.itg_name,
             itemBrandId: row.item_brand_id,
             itemBrandName: row.brand_name,
+            categoryId: row.item_category_id,
+            sectionId: row.item_section_id,
             allowLoading: row.item_allow_loading,
             allowFreight: row.item_allow_freight,
             allowPromo: row.item_allow_promo,

@@ -166,6 +166,44 @@ export async function requireMobileBranch(
   return branchId;
 }
 
+/**
+ * A branch the phone names itself (the salesman picked it in VKSMAN's Switch
+ * company, 2026-11-18), checked the way GET /master-lookups/branches/by-company
+ * lists them: a branch of `companyId` that is active and not deleted. Anything
+ * else (another company's branch, a switched-off or deleted one, an unknown id)
+ * is a 422 MOBILE_BRANCH_NOT_OF_COMPANY on `field`; the phone's own branch and
+ * the company default are NOT tried instead, so a document never lands in a
+ * branch the salesman did not pick. No user-to-branch rule exists to check:
+ * user_menus is not scoped by company or branch (memory
+ * token-scope-is-home-company-and-device-branch).
+ */
+export async function requireMobileBranchOfCompany(
+  client: MobileReadClient,
+  companyId: string,
+  branchId: string,
+  field: string,
+): Promise<string> {
+  const [row] = await client.$queryRaw<{ brId: string }[]>`
+    SELECT b.br_id AS "brId"
+      FROM public.branch_master b
+     WHERE b.br_id = ${branchId}::uuid
+       AND b.br_comp_id = ${companyId}::uuid
+       AND b.br_is_deleted = false
+       AND b.br_is_active = true`;
+  if (!row) {
+    throwUnprocessable<ModuleErrorDetail>('Branch not of this company', [
+      {
+        field,
+        message:
+          `Branch ${branchId} is not an active branch of company ${companyId}. Pick one of ` +
+          "the company's branches and send it again.",
+        code: MobileErrorCode.BRANCH_NOT_OF_COMPANY,
+      },
+    ]);
+  }
+  return row.brId;
+}
+
 /** The database's today (IST, the session time zone) as YYYY-MM-DD. */
 export async function databaseToday(client: MobileReadClient): Promise<string> {
   const [row] = await client.$queryRaw<{ today: string }[]>`SELECT CURRENT_DATE::text AS today`;
@@ -204,7 +242,7 @@ export async function requireMobileAccYear(
 }
 
 /** The phone documents that carry a client uuid, each its own lock space. */
-export type MobileUploadKind = 'order' | 'visit' | 'bill' | 'receipt';
+export type MobileUploadKind = 'order' | 'visit' | 'bill' | 'receipt' | 'return';
 
 /**
  * Serialises every upload of one (kind, company, client uuid) for the rest of
@@ -225,7 +263,7 @@ export async function lockMobileClientUuid(
 
 /**
  * The unique-violation backstop of an upload: a clash on the client-uuid index
- * (ux_sb_client_uuid / ux_avh_client_uuid, reported under the PARTITION's index
+ * (ux_sb_client_uuid / ux_avh_client_uuid / ux_sr_client_uuid, reported under the PARTITION's index
  * name, e.g. sale_bill_2026_2027_sb_company_id_sb_client_uuid_sb_acc_yea_idx,
  * or as its columns by a raw write's 23505), or one that names nothing. Any
  * other unique index (a document number, a cheque number) is not a resend and

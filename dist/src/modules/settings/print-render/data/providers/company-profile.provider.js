@@ -44,6 +44,10 @@ let CompanyProfileProvider = class CompanyProfileProvider {
               comp_tel           AS tel,
               comp_phone         AS phone,
               comp_mail          AS email,
+              -- Plan 18/11: data keys only; no design prints them yet.
+              comp_udyam_no      AS udyam_no,
+              comp_logo          AS logo,
+              comp_signatory_name AS signatory_name,
               -- The address as one printable block, because every design wants
               -- it and none of them want to write the same COALESCE chain.
               concat_ws(', ',

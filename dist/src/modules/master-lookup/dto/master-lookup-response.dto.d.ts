@@ -117,8 +117,10 @@ export declare class CustomerDetailDto {
     gst_type: string | null;
     state_code: string;
     state_name: string;
+    cust_group_id: string;
     area_id: string;
     area_name: string | null;
+    city_id: string | null;
     distance_km: number | null;
     cust_phone1: string | null;
     debit_days: number;

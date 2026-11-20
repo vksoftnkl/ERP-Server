@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UnitsMasterService = void 0;
 const common_1 = require("@nestjs/common");
+const save_unit_dto_1 = require("./dto/save-unit.dto");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -204,6 +205,9 @@ let UnitsMasterService = class UnitsMasterService {
             unit_created_by: createdBy,
         };
         this.applyOptionalFields(data, saveUnitDto);
+        if (saveUnitDto.unit_decimal_count === undefined || saveUnitDto.unit_decimal_count === null) {
+            data.unit_decimal_count = save_unit_dto_1.NEW_UNIT_DECIMAL_COUNT;
+        }
         try {
             return await this.prisma.$transaction(async (tx) => {
                 await this.assertReferences(tx, saveUnitDto, null);
@@ -392,7 +396,7 @@ let UnitsMasterService = class UnitsMasterService {
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_description'))
             data.unit_description = saveUnitDto.unit_description;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_decimal_count'))
+        if (saveUnitDto.unit_decimal_count !== undefined && saveUnitDto.unit_decimal_count !== null)
             data.unit_decimal_count = saveUnitDto.unit_decimal_count;
         if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_weight'))
             data.unit_weight = saveUnitDto.unit_weight;

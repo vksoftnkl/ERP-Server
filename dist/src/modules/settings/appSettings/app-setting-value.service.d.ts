@@ -16,6 +16,8 @@ export declare class AppSettingValueService {
     private upsertValue;
     private updateValue;
     private applyUpdate;
+    private auditOverride;
+    private describeTarget;
     private loadWritableDef;
     private ensureScopeIsPermitted;
     private ensureValueIsAllowed;
@@ -26,7 +28,6 @@ export declare class AppSettingValueService {
     private requireScope;
     private requireField;
     private fieldPath;
-    private displayName;
     private throwNotFound;
     private toPayload;
 }

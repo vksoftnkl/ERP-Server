@@ -9,12 +9,13 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveUnitDto = exports.MAX_UNIT_DECIMAL_COUNT = void 0;
+exports.SaveUnitDto = exports.NEW_UNIT_DECIMAL_COUNT = exports.MAX_UNIT_DECIMAL_COUNT = void 0;
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const swagger_1 = require("@nestjs/swagger");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 exports.MAX_UNIT_DECIMAL_COUNT = 3;
+exports.NEW_UNIT_DECIMAL_COUNT = 3;
 class SaveUnitDto {
     unit_id;
     unit_name;
@@ -74,7 +75,12 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveUnitDto.prototype, "unit_description", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0, minimum: 0, maximum: exports.MAX_UNIT_DECIMAL_COUNT }),
+    (0, swagger_1.ApiPropertyOptional)({
+        default: exports.NEW_UNIT_DECIMAL_COUNT,
+        minimum: 0,
+        maximum: exports.MAX_UNIT_DECIMAL_COUNT,
+        description: 'Left out (or blank) on a create = 3; on an edit = keep the stored count.',
+    }),
     (0, dtoDecorators_1.NullableInteger)(0),
     (0, class_validator_1.Max)(exports.MAX_UNIT_DECIMAL_COUNT),
     __metadata("design:type", Number)

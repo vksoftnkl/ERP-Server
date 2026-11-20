@@ -7,15 +7,21 @@ import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import type { InventoryWriteClient } from "../../../common/utils/module-service.utils";
+export type ItemUnitConversionSaveOptions = {
+    baseRePick?: {
+        iucId: string;
+        unitId: string;
+    };
+};
 export declare class ItemUnitConversionService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly configuredGridSqlService;
     private readonly requestContextService;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService);
-    save(saveItemUnitConversionDto: SaveItemUnitConversionDto, tx?: Prisma.TransactionClient): Promise<ItemUnitConversionPayload>;
-    save(saveItemUnitConversionDto: SaveItemUnitConversionDto[], tx?: Prisma.TransactionClient): Promise<ItemUnitConversionPayload[]>;
-    save(saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[], tx?: Prisma.TransactionClient): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]>;
+    save(saveItemUnitConversionDto: SaveItemUnitConversionDto, tx?: Prisma.TransactionClient, options?: ItemUnitConversionSaveOptions): Promise<ItemUnitConversionPayload>;
+    save(saveItemUnitConversionDto: SaveItemUnitConversionDto[], tx?: Prisma.TransactionClient, options?: ItemUnitConversionSaveOptions): Promise<ItemUnitConversionPayload[]>;
+    save(saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[], tx?: Prisma.TransactionClient, options?: ItemUnitConversionSaveOptions): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]>;
     private assertBaseUnitsKept;
     list(queryDto: GetItemUnitConversionQueryDto): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta>>;
     getById(iucId: string): Promise<ItemUnitConversionPayload>;

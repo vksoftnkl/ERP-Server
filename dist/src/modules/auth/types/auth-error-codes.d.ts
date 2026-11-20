@@ -2,6 +2,9 @@ import { type ModuleErrorDetail, type ModuleErrorResponse } from '../../../commo
 export declare enum AuthErrorCode {
     INVALID_CREDENTIALS = "AUTH_INVALID_CREDENTIALS",
     USER_INACTIVE = "AUTH_USER_INACTIVE",
+    USER_LOCKED = "AUTH_USER_LOCKED",
+    CHANNEL_DISABLED = "AUTH_CHANNEL_DISABLED",
+    PASSWORD_CHANGE_REQUIRED = "AUTH_PASSWORD_CHANGE_REQUIRED",
     AUTHORIZATION_MISSING = "AUTH_AUTHORIZATION_MISSING",
     ACCESS_TOKEN_INVALID = "AUTH_ACCESS_TOKEN_INVALID",
     ACCESS_TOKEN_EXPIRED = "AUTH_ACCESS_TOKEN_EXPIRED",
@@ -15,9 +18,13 @@ export declare enum AuthErrorCode {
     JWT_SECRET_MISSING = "AUTH_JWT_SECRET_MISSING",
     DEVICE_NOT_REGISTERED = "AUTH_DEVICE_NOT_REGISTERED",
     DEVICE_BLOCKED = "AUTH_DEVICE_BLOCKED",
-    DEVICE_UNAVAILABLE = "AUTH_DEVICE_UNAVAILABLE"
+    DEVICE_UNAVAILABLE = "AUTH_DEVICE_UNAVAILABLE",
+    CURRENT_PASSWORD_WRONG = "AUTH_CURRENT_PASSWORD_WRONG",
+    NEW_PASSWORD_TOO_SHORT = "AUTH_NEW_PASSWORD_TOO_SHORT",
+    NEW_PASSWORD_SAME = "AUTH_NEW_PASSWORD_SAME"
 }
 export interface AuthErrorDetail extends ModuleErrorDetail {
     code: AuthErrorCode;
+    channel?: string;
 }
-export declare function authErrorBody(message: string, field: string, code: AuthErrorCode): ModuleErrorResponse<AuthErrorDetail>;
+export declare function authErrorBody(message: string, field: string, code: AuthErrorCode, extra?: Pick<AuthErrorDetail, 'channel'>): ModuleErrorResponse<AuthErrorDetail>;

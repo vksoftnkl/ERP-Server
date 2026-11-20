@@ -22,6 +22,7 @@ export declare class ItemsBrandMasterService {
     private setDeleted;
     private createItemBrand;
     private updateItemBrand;
+    private shortFromName;
     private ensureParentExists;
     private applyOptionalFields;
     private getAncestorIds;

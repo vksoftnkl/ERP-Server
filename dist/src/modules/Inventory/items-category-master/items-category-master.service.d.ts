@@ -22,6 +22,7 @@ export declare class ItemsCategoryMasterService {
     private setDeleted;
     private createItemCategory;
     private updateItemCategory;
+    private shortFromName;
     private ensureParentExists;
     private applyOptionalFields;
     private getAncestorIds;

@@ -30,6 +30,11 @@ export interface ItemUnitConversionPayload {
   // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
   iuc_unit_name?: string | null;
   iuc_base_unit_name?: string | null;
+  /** Item composite get only (item master review 11-20 Q2): this row's unit can no longer be
+   *  re-picked — the base row once the item is used at all, any other row once it is used. */
+  iuc_in_use?: boolean;
+  /** What holds it ("stock", "sale bill", "purchase invoice" …), in a fixed order; [] when unused. */
+  iuc_used_by?: string[];
 }
 
 export type ItemUnitConversionListItem = ItemUnitConversionPayload | Record<string, unknown>;

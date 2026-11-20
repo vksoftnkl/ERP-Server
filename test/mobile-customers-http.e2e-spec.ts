@@ -121,6 +121,75 @@ describe('/mobile/customers (e2e, live DB)', () => {
     expect((await http().get(`${BASE}/options`)).status).toBe(200);
   });
 
+  it("outstanding = the Party Outstanding report's owed, bills and oldest bill (read-only)", async () => {
+    const list = await http()
+      .get(`${BASE}/list`)
+      .query({ pageSize: 200 })
+      .set('Authorization', BEARER);
+    expect(list.status).toBe(200);
+    const d = list.body.data as {
+      items: Array<
+        ListItem & {
+          outstanding: string | null;
+          outstandingBills: number | null;
+          oldestBillDate: string | null;
+        }
+      >;
+      balanceAsOn: string;
+      companyId: string;
+    };
+    expect(d.companyId).toBe(COMPANY);
+    // The desktop / web report, same company, same day, receivables, all branches.
+    const report = await http()
+      .get('/api/v1/reports/party-outstanding/parties')
+      .query({ companyId: COMPANY, asOn: d.balanceAsOn, side: 'RECEIVABLE', pageSize: 500 })
+      .set('Authorization', BEARER);
+    expect(report.status).toBe(200);
+    const rows = report.body.data.rows as Array<{
+      partyId: string;
+      owed: string;
+      bills: number;
+      oldestDays: number | null;
+    }>;
+    const byParty = new Map(rows.map((r) => [r.partyId, r]));
+    let owing = 0;
+    for (const item of d.items) {
+      const r = byParty.get(item.cusId);
+      expect({
+        id: item.cusId,
+        outstanding: item.outstanding,
+        bills: item.outstandingBills,
+      }).toEqual({
+        id: item.cusId,
+        outstanding: r?.owed ?? '0.00',
+        bills: r?.bills ?? 0,
+      });
+      if (r && r.bills > 0) {
+        owing += 1;
+        const oldest = new Date(`${d.balanceAsOn}T00:00:00Z`);
+        oldest.setUTCDate(oldest.getUTCDate() - (r.oldestDays ?? 0));
+        expect(item.oldestBillDate).toBe(oldest.toISOString().slice(0, 10));
+      } else {
+        expect(item.oldestBillDate).toBeNull();
+      }
+    }
+    // The dev books have customers with unpaid bills: the check is not vacuous.
+    expect(owing).toBeGreaterThan(0);
+
+    // get answers the same figures for one of them.
+    const one = d.items.find((i) => (i.outstandingBills ?? 0) > 0)!;
+    const got = await http()
+      .get(`${BASE}/get`)
+      .query({ cusId: one.cusId })
+      .set('Authorization', BEARER);
+    expect(got.status).toBe(200);
+    expect([
+      got.body.data.outstanding,
+      got.body.data.outstandingBills,
+      got.body.data.oldestBillDate,
+    ]).toEqual([one.outstanding, one.outstandingBills, one.oldestBillDate]);
+  });
+
   it('@OptionalAuth: a token that is sent is still checked', async () => {
     const res = await http().get(`${BASE}/list`).set('Authorization', 'Basic abc');
     expect(res.status).toBe(401);
@@ -135,6 +204,15 @@ describe('/mobile/customers (e2e, live DB)', () => {
     expect(d.priceLevels.length).toBeGreaterThan(0);
     expect(d.states).toEqual(expect.arrayContaining([{ code: '33', name: expect.any(String) }]));
     expect(d.gstTypes).toEqual(expect.arrayContaining(['REGULAR', 'UNREGISTERED']));
+    // cityId (2026-11-19, scheme CITY rows) = area_master.arm_city_id of each beat.
+    const areaCities = await prisma.$queryRaw<{ id: string; cityId: string }[]>`
+      SELECT arm_id::text AS id, arm_city_id::text AS "cityId" FROM sales.area_master
+       WHERE arm_id = ANY(${d.areas.map((a: { id: string }) => a.id)}::uuid[])`;
+    const cityOf = new Map(areaCities.map((a) => [a.id, a.cityId] as const));
+    for (const a of d.areas as Array<{ id: string; cityId: string }>) {
+      expect(Object.keys(a)).toEqual(['id', 'name', 'cityId', 'cityName']);
+      expect(a.cityId).toBe(cityOf.get(a.id));
+    }
     const tn = d.states.find((s: { code: string }) => s.code === '33');
     form = {
       cusName: name,

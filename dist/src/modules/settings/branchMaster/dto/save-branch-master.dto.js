@@ -15,6 +15,7 @@ const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const gst_registration_1 = require("../../shared/gst-registration");
+const registered_address_1 = require("../../shared/registered-address");
 const INFORMATIONAL = 'Informational: stored and returned, but no posting, numbering, rounding or print reads it yet.';
 class SaveBranchMasterDto {
     brId;
@@ -106,7 +107,11 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brMailingName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Off the Qt screen since 18/11; optional, kept when not sent.',
+    }),
     (0, dtoDecorators_1.NullableString)(100),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brAlias", void 0);
@@ -161,16 +166,28 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brState", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 2 }),
-    (0, dtoDecorators_1.UpperString)(2),
+    (0, swagger_1.ApiProperty)({
+        maxLength: 2,
+        description: 'Two characters, upper-cased. Blank or null: 400 BRANCH_ADDRESS_REQUIRED (field ' +
+            'brStateCode) for a REGULAR / COMPOSITION / SEZ branch, else BRANCH_STATE_CODE_INVALID.',
+    }),
+    (0, class_transformer_1.Transform)(registered_address_1.upperStateCode),
+    (0, class_validator_1.ValidateIf)((dto) => dto.brStateCode !== ''),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.Length)(2, 2),
     __metadata("design:type", String)
 ], SaveBranchMasterDto.prototype, "brStateCode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: '100000 – 999999 when given (400 BRANCH_PIN_INVALID). Required for a REGULAR / ' +
+            'COMPOSITION / SEZ branch (brGstRegType), as are brAddr1, brCity and brStateCode: one ' +
+            'BRANCH_ADDRESS_REQUIRED error per missing key, its field the key (plan I1). District is optional.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
+    __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brPin", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 60 }),
@@ -245,12 +262,22 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brMail", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true, description: INFORMATIONAL }),
-    (0, dtoDecorators_1.NullableString)(20),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 4,
+        nullable: true,
+        example: 'CBE',
+        description: 'What {BR} prints in bill numbers; blank = the Branch Code (plan B5). Trimmed and ' +
+            'upper-cased, then 1 – 4 letters or digits, else 400 BRANCH_BILL_PREFIX_INVALID.',
+    }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brBillPrefix", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true, description: INFORMATIONAL }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 20,
+        nullable: true,
+        description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+    }),
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brInvoiceSeriesPrefix", void 0);
@@ -265,12 +292,19 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brTerms", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true, description: INFORMATIONAL }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 20,
+        nullable: true,
+        description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+    }),
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brRoundingMode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: INFORMATIONAL }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: `${INFORMATIONAL} Off the Qt screen since 18/11; optional, kept when not sent.`,
+    }),
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Number)
 ], SaveBranchMasterDto.prototype, "brRoundingValue", void 0);

@@ -98,6 +98,12 @@ class EmployeeMasterPayloadDto {
     empAadharNo;
     empPfNo;
     empEsiNo;
+    empUanNo;
+    empBankName;
+    empBankAccountNo;
+    empBankIfsc;
+    empEmergencyContactName;
+    empEmergencyContactPhone;
     empLoanLedgerId;
     empLoanLedgerName;
     empPhotoUrl;
@@ -117,8 +123,8 @@ __decorate([
     __metadata("design:type", String)
 ], EmployeeMasterPayloadDto.prototype, "empId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 1 }),
-    __metadata("design:type", Number)
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empCompanyId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
@@ -233,11 +239,14 @@ __decorate([
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empDesignationName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        enum: ['Permanent', 'Contract', 'Daily Wage', 'Apprentice'],
+    }),
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empEmploymentType", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, enum: ['Working', 'Resigned'], example: 'Working' }),
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empStatus", void 0);
 __decorate([
@@ -277,11 +286,16 @@ __decorate([
     __metadata("design:type", Boolean)
 ], EmployeeMasterPayloadDto.prototype, "empHasCommission", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, enum: ['Percent', 'Amount'] }),
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empCommissionType", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        example: '2.500',
+        description: 'numeric(12,3) as a decimal string with 3 decimals (money-decimal rule).',
+    }),
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empCommissionValue", void 0);
 __decorate([
@@ -316,6 +330,30 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empEsiNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], EmployeeMasterPayloadDto.prototype, "empUanNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], EmployeeMasterPayloadDto.prototype, "empBankName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], EmployeeMasterPayloadDto.prototype, "empBankAccountNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'SBIN0001234' }),
+    __metadata("design:type", Object)
+], EmployeeMasterPayloadDto.prototype, "empBankIfsc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], EmployeeMasterPayloadDto.prototype, "empEmergencyContactName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], EmployeeMasterPayloadDto.prototype, "empEmergencyContactPhone", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

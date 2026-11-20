@@ -18,6 +18,12 @@ export enum MobileErrorCode {
    * and more than one (or no) active branch.
    */
   BRANCH_NOT_RESOLVED = 'MOBILE_BRANCH_NOT_RESOLVED',
+  /**
+   * The branch the phone sent (an order's soBranchId, picked in VKSMAN's Switch
+   * company) is not an active, live branch of the document's company: another
+   * company's, switched off, deleted or unknown.
+   */
+  BRANCH_NOT_OF_COMPANY = 'MOBILE_BRANCH_NOT_OF_COMPANY',
   /** No financial year of the company holds the document's date. */
   NO_FISCAL_YEAR = 'MOBILE_NO_FISCAL_YEAR',
   /** An upload with no token names no soUserId either: so_user_id is NOT NULL. */
@@ -39,4 +45,34 @@ export enum MobileErrorCode {
    * phone's bills land in (GET /mobile/bills/options lists the ones it may use).
    */
   GODOWN_INVALID = 'MOBILE_GODOWN_INVALID',
+  /**
+   * accounts.receipt_salesman_mandatory is on and the signed-in login names no
+   * live employee (user_master.usr_employee_id), so the phone's receipt has no
+   * collector. Fixed on the User screen, not on the phone.
+   */
+  RECEIPT_NO_EMPLOYEE = 'MOBILE_RECEIPT_NO_EMPLOYEE',
+  /**
+   * A phone receipt line's discount is more than the prompt-payment discount
+   * accounts.ppd_slabs suggests for that bill on the receipt's date (D4).
+   */
+  RECEIPT_DISCOUNT_ABOVE_PPD = 'MOBILE_RECEIPT_DISCOUNT_ABOVE_PPD',
+  /** A phone receipt line's round-off is more than 0.99 (paise only, D5). */
+  RECEIPT_ROUNDOFF_TOO_BIG = 'MOBILE_RECEIPT_ROUNDOFF_TOO_BIG',
+  /** A phone return's srCustId names no live customer. */
+  RETURN_CUSTOMER_NOT_FOUND = 'MOBILE_RETURN_CUSTOMER_NOT_FOUND',
+  /**
+   * A phone return's srReasonId is not an active SALE_RETURN reason the
+   * company sees (GET /mobile/returns/options lists them).
+   */
+  RETURN_REASON_INVALID = 'MOBILE_RETURN_REASON_INVALID',
+  /**
+   * A phone return names a bill of another customer: the desktop would raise
+   * the credit note on the bill's customer, not the one the salesman picked.
+   */
+  RETURN_BILL_OTHER_CUSTOMER = 'MOBILE_RETURN_BILL_OTHER_CUSTOMER',
+  /**
+   * The client uuid names a return that was deleted in VK Nex (a DRAFT the
+   * office deleted): a resend cannot bring it back; the phone makes a new one.
+   */
+  RETURN_DELETED = 'MOBILE_RETURN_DELETED',
 }

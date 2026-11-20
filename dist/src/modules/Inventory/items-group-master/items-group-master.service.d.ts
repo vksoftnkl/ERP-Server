@@ -24,6 +24,7 @@ export declare class ItemsGroupMasterService {
     private setDeleted;
     private createItemGroup;
     private updateItemGroup;
+    private shortFromName;
     private ensureParentExists;
     private ensureTrackPresetExists;
     private applyOptionalFields;

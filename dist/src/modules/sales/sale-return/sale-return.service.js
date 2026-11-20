@@ -379,29 +379,34 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
         });
     }
     async save(dto) {
+        const keys = await this.prisma.$transaction((tx) => this.saveInTx(tx, dto), TX);
+        return this.get(keys);
+    }
+    async saveInTx(tx, dto, opts = {}) {
         const actor = this.salesContext.actor();
         const now = new Date();
         const ms = await this.moneySettings(dto.srCompanyId, dto.srBranchId, dto.srDeviceId);
-        const row = await this.prisma.$transaction(async (tx) => {
-            const existing = dto.srId
-                ? await tx.$queryRaw `
-            SELECT sr_id, sr_company_id, sr_branch_id, sr_acc_year FROM sales.sale_return
-             WHERE sr_id = ${dto.srId}::uuid AND sr_is_deleted = false`
-                : [];
+        const existing = dto.srId
+            ? await tx.$queryRaw `
+          SELECT sr_id, sr_company_id, sr_branch_id, sr_acc_year FROM sales.sale_return
+           WHERE sr_id = ${dto.srId}::uuid AND sr_is_deleted = false`
+            : [];
+        if (opts.skipSaveRight !== true) {
             await this.assertRight(existing.length > 0 ? 'edit' : 'create', tx);
-            const before = existing[0]
-                ? await this.documentOf(tx, {
-                    id: existing[0].sr_id,
-                    companyId: existing[0].sr_company_id,
-                    branchId: existing[0].sr_branch_id,
-                    accYear: existing[0].sr_acc_year.trim(),
-                })
-                : null;
-            const saved = await this.saveBody(tx, dto, actor, now, ms);
-            await this.writeRevision(tx, this.store.keysOf(saved), before, actor, before ? 'Sale return updated' : 'Sale return created');
-            return saved;
-        }, TX);
-        return this.get(this.store.keysOf(row));
+        }
+        const before = existing[0]
+            ? await this.documentOf(tx, {
+                id: existing[0].sr_id,
+                companyId: existing[0].sr_company_id,
+                branchId: existing[0].sr_branch_id,
+                accYear: existing[0].sr_acc_year.trim(),
+            })
+            : null;
+        const saved = await this.saveBody(tx, dto, actor, now, ms);
+        const keys = this.store.keysOf(saved);
+        const fromPhone = opts.origin === 'PHONE' ? ' from the phone' : '';
+        await this.writeRevision(tx, keys, before, actor, (before ? 'Sale return updated' : 'Sale return created') + fromPhone);
+        return keys;
     }
     async get(keys) {
         const c = this.prisma;
@@ -512,13 +517,27 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
         return revNo;
     }
     async delete(dto) {
-        const actor = this.salesContext.actor();
-        await this.prisma.$transaction(async (tx) => {
-            await this.assertRight('delete', tx);
-            await this.assertNoPendingApproval(tx, dto.srId);
-            await this.store.deleteDraft(tx, this.keys(dto), actor, new Date());
-        }, TX);
+        await this.prisma.$transaction((tx) => this.deleteInTx(tx, this.keys(dto)), TX);
         return { srId: dto.srId, deleted: true };
+    }
+    async deleteInTx(tx, keys, opts = {}) {
+        const actor = this.salesContext.actor();
+        await this.assertRight('delete', tx);
+        if (opts.withdrawPendingNote) {
+            const row = await this.store.lock(tx, keys);
+            if (row.srStatus === 'DRAFT') {
+                await this.approvals.withdrawForDocument(tx, {
+                    companyId: keys.companyId,
+                    srcDocType: 'SALE_RETURN',
+                    srcDocId: keys.id,
+                    userId: actor,
+                    deviceId: isUuid(row.srDeviceId) ? row.srDeviceId : null,
+                    note: opts.withdrawPendingNote,
+                });
+            }
+        }
+        await this.assertNoPendingApproval(tx, keys.id);
+        await this.store.deleteDraft(tx, keys, actor, new Date());
     }
     async billLines(q) {
         const c = this.prisma;
@@ -694,37 +713,81 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
         };
     }
     async post(dto) {
-        let fire = null;
-        await this.prisma.$transaction(async (tx) => {
-            const row = await this.store.lock(tx, this.keys(dto));
-            if (row.srStatus === 'POSTED') {
-                return;
-            }
-            if (row.srStatus === 'CANCELLED') {
-                (0, sales_errors_1.throwSalesLocked)('This sale return is CANCELLED', posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED, 'srId');
-            }
-            const ctx = await this.ctxOf(tx, row);
-            if (!ctx.rights.post) {
-                (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
-            }
-            if (dto.tenders !== undefined) {
-                await this.writeRefundTenders(tx, row, dto.tenders);
-            }
-            await this.dropRefundRowsUnlessCash(tx, row);
-            await this.tillForPost(tx, row, ctx);
-            fire = await this.postPipeline(tx, row, ctx, {
-                overrides: dto.overrides ?? [],
-                adjustments: dto.adjustments,
-                approvalIds: dto.approvalIds ?? {},
-                now: new Date(),
-                revisionNo: undefined,
-                title: 'Sale return cannot be posted',
-            });
-        }, TX);
+        const fire = await this.prisma.$transaction((tx) => this.postInTx(tx, dto), TX);
+        this.afterPostCommit(fire);
+        return this.get(this.keys(dto));
+    }
+    async postInTx(tx, dto, opts = {}) {
+        const row = await this.store.lock(tx, this.keys(dto));
+        if (row.srStatus === 'POSTED') {
+            return null;
+        }
+        if (row.srStatus === 'CANCELLED') {
+            (0, sales_errors_1.throwSalesLocked)('This sale return is CANCELLED', posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED, 'srId');
+        }
+        const ctx = await this.ctxOf(tx, row);
+        if (!ctx.rights.post) {
+            (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
+        }
+        if (dto.tenders !== undefined) {
+            await this.writeRefundTenders(tx, row, dto.tenders);
+        }
+        await this.dropRefundRowsUnlessCash(tx, row);
+        await this.tillForPost(tx, row, ctx);
+        return this.postPipeline(tx, row, ctx, {
+            overrides: dto.overrides ?? [],
+            adjustments: dto.adjustments,
+            approvalIds: dto.approvalIds ?? {},
+            now: new Date(),
+            revisionNo: undefined,
+            title: 'Sale return cannot be posted',
+            replanAdjust: opts.replanAdjust ?? null,
+            onWarnings: opts.onWarnings,
+            onGateRefused: opts.onGateRefused,
+        });
+    }
+    afterPostCommit(fire) {
         if (fire) {
             this.gst.enqueueAfterPost(fire);
         }
-        return this.get(this.keys(dto));
+    }
+    async fileGateRequestsInTx(tx, refused, note) {
+        const ids = [];
+        for (const { ask, rule } of refused) {
+            const open = await tx.tillApproval.findFirst({
+                where: {
+                    tapCompanyId: ask.companyId,
+                    tapBranchId: ask.branchId,
+                    tapEventCode: ask.event,
+                    tapSrcDocType: ask.srcDocType,
+                    tapSrcDocId: ask.srcDocId,
+                    tapStatus: 'PENDING',
+                    tapIsDeleted: false,
+                },
+                select: { tapId: true },
+            });
+            ids.push(open?.tapId ??
+                (await this.approvals.fileRequest(tx, {
+                    companyId: ask.companyId,
+                    branchId: ask.branchId,
+                    tenantId: ask.tenantId,
+                    accYear: ask.accYear,
+                    event: ask.event,
+                    rule,
+                    amount: ask.amount,
+                    requesterId: ask.requesterId,
+                    deviceId: ask.deviceId,
+                    sessionId: ask.sessionId,
+                    counterId: ask.counterId,
+                    srcDocType: ask.srcDocType,
+                    srcDocId: ask.srcDocId,
+                    srcRefno: ask.srcRefno,
+                    reasonId: null,
+                    note,
+                    payload: { filedBy: 'phone' },
+                })));
+        }
+        return ids;
     }
     async postPipeline(tx, row0, ctx, opts) {
         let row = row0;
@@ -752,6 +815,7 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
             custId: row.srCustId ?? null,
             tenders: refundTendersFromRows(refundRows),
             adjustments: adjustAsksOf(opts.adjustments),
+            replan: opts.replanAdjust ?? null,
             billSort: ms.billSort,
             lock: true,
             unwound: null,
@@ -771,6 +835,7 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
         for (const ask of asks) {
             const v = await this.approvals.assessGate(tx, ask);
             if (v.state === 'REFUSE') {
+                opts.onGateRefused?.({ ask, rule: v.rule });
                 this.approvals.throwApprovalRequired(v.need, ask);
             }
             verdicts.push({ ask, verdict: v });
@@ -784,6 +849,7 @@ let SaleReturnService = SaleReturnService_1 = class SaleReturnService {
         for (const { ask, verdict: v } of verdicts) {
             await this.approvals.settleGate(tx, ask, v);
         }
+        opts.onWarnings?.(g.warnings);
         return fire;
     }
     async lockAndWorkOut(tx, row, ctx) {

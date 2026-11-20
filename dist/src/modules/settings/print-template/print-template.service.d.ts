@@ -10,6 +10,7 @@ export declare class PrintTemplateService {
     private readonly requestContextService;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     getTemplateById(ptlId: string, includeDeletedVersions?: boolean): Promise<PrintTemplatePayload>;
+    private withUserNames;
     listTemplates(query: ListPrintTemplateQueryDto): Promise<PrintTemplateListResult>;
     saveTemplate(dto: SavePrintTemplateDto): Promise<PrintTemplatePayload>;
     softDeleteTemplate(ptlId: string, modifiedBy?: string | null): Promise<PrintTemplateDeleteResult>;

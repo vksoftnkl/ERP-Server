@@ -38,7 +38,38 @@ let PrintTemplateService = class PrintTemplateService {
         if (!template) {
             this.throwNotFound('ptlId', ptlId, 'Print template not found');
         }
-        return (0, print_template_utils_1.toTemplatePayload)(template);
+        return this.withUserNames((0, print_template_utils_1.toTemplatePayload)(template));
+    }
+    async withUserNames(payload) {
+        const ids = [
+            payload.ptlCreatedBy,
+            payload.ptlModifiedBy,
+            ...payload.versions.flatMap((version) => [
+                version.ptvCreatedBy,
+                version.ptvModifiedBy,
+                version.ptvApprovedBy,
+            ]),
+        ].filter((id) => typeof id === 'string' && USER_UUID_PATTERN.test(id));
+        const unique = [...new Set(ids)];
+        const users = unique.length === 0
+            ? []
+            : await this.prisma.userMaster.findMany({
+                where: { usrId: { in: unique } },
+                select: { usrId: true, usrDisplayName: true, usrLoginName: true },
+            });
+        const nameById = new Map(users.map((user) => [user.usrId, user.usrDisplayName?.trim() || user.usrLoginName]));
+        const nameOf = (id) => (id ? (nameById.get(id) ?? null) : null);
+        return {
+            ...payload,
+            ptlCreatedByName: nameOf(payload.ptlCreatedBy),
+            ptlModifiedByName: nameOf(payload.ptlModifiedBy),
+            versions: payload.versions.map((version) => ({
+                ...version,
+                ptvCreatedByName: nameOf(version.ptvCreatedBy),
+                ptvModifiedByName: nameOf(version.ptvModifiedBy),
+                ptvApprovedByName: nameOf(version.ptvApprovedBy),
+            })),
+        };
     }
     async listTemplates(query) {
         const page = query.page ?? module_service_utils_1.DEFAULT_PAGE;
@@ -624,11 +655,11 @@ let PrintTemplateService = class PrintTemplateService {
         let publishedRevId = null;
         for (const plan of plans) {
             if (plan.deletes) {
-                await this.deleteVersion(tx, plan);
+                await this.deleteVersion(tx, template, plan);
                 continue;
             }
             const version = plan.existing
-                ? await this.updateVersion(tx, plan)
+                ? await this.updateVersion(tx, template, plan)
                 : await this.createVersion(tx, template, plan);
             if (plan.datasets) {
                 await this.applyDatasetPlan(tx, version, plan);
@@ -666,10 +697,10 @@ let PrintTemplateService = class PrintTemplateService {
             ptvCreatedBy: this.resolveWriteActor(plan.row.ptvCreatedBy),
         };
         const version = await tx.printTemplateVersion.create({ data });
-        await this.audit(tx, 'insert', VERSION_TABLE_NAME, version.ptvId, `${version.ptvTemplateId} rev ${version.ptvRevNo}`, null, (0, print_template_utils_1.toVersionPayload)(version, null), `Print template revision ${version.ptvRevNo} created as ${version.ptvStatus}`);
+        await this.audit(tx, 'insert', VERSION_TABLE_NAME, version.ptvId, revisionDisplayName(template, version.ptvRevNo), null, (0, print_template_utils_1.toVersionPayload)(version, null), `Print template revision ${version.ptvRevNo} created as ${version.ptvStatus}`);
         return version;
     }
-    async updateVersion(tx, plan) {
+    async updateVersion(tx, template, plan) {
         const existing = plan.existing;
         const row = plan.row;
         const effective = plan.effective;
@@ -728,12 +759,12 @@ let PrintTemplateService = class PrintTemplateService {
             where: { ptvId: existing.ptvId },
             data,
         });
-        await this.audit(tx, plan.publishes ? 'approve' : 'update', VERSION_TABLE_NAME, updated.ptvId, `${updated.ptvTemplateId} rev ${updated.ptvRevNo}`, (0, print_template_utils_1.toVersionPayload)(existing, null), (0, print_template_utils_1.toVersionPayload)(updated, null), plan.publishes
+        await this.audit(tx, plan.publishes ? 'approve' : 'update', VERSION_TABLE_NAME, updated.ptvId, revisionDisplayName(template, updated.ptvRevNo), (0, print_template_utils_1.toVersionPayload)(existing, null), (0, print_template_utils_1.toVersionPayload)(updated, null), plan.publishes
             ? `Print template revision ${updated.ptvRevNo} published`
             : `Print template revision ${updated.ptvRevNo} updated`);
         return updated;
     }
-    async deleteVersion(tx, plan) {
+    async deleteVersion(tx, template, plan) {
         const existing = plan.existing;
         const modifiedOn = new Date();
         const actor = this.resolveWriteActor(plan.row.ptvModifiedBy);
@@ -745,7 +776,7 @@ let PrintTemplateService = class PrintTemplateService {
             where: { ptvId: existing.ptvId },
             data: { ptvIsDeleted: true, ptvModifiedOn: modifiedOn, ptvModifiedBy: actor },
         });
-        await this.audit(tx, 'cancel', VERSION_TABLE_NAME, existing.ptvId, `${existing.ptvTemplateId} rev ${existing.ptvRevNo}`, (0, print_template_utils_1.toVersionPayload)(existing, null), (0, print_template_utils_1.toVersionPayload)(updated, null), `Print template revision ${existing.ptvRevNo} soft deleted with its datasets`);
+        await this.audit(tx, 'cancel', VERSION_TABLE_NAME, existing.ptvId, revisionDisplayName(template, existing.ptvRevNo), (0, print_template_utils_1.toVersionPayload)(existing, null), (0, print_template_utils_1.toVersionPayload)(updated, null), `Print template revision ${existing.ptvRevNo} soft deleted with its datasets`);
     }
     async applyDatasetPlan(tx, version, plan) {
         const set = plan.datasets;
@@ -911,6 +942,7 @@ let PrintTemplateService = class PrintTemplateService {
             modifiedRecord,
             userId: this.resolveAuditActor(),
             notes,
+            skipWhenUnchanged: true,
         }, tx);
     }
     throwBadRequest(message, errors) {
@@ -933,4 +965,8 @@ exports.PrintTemplateService = PrintTemplateService = __decorate([
 const numberOrNull = (value) => value === null || value === undefined ? null : Number(value.toString());
 const numberOr = (value, fallback) => value === null || value === undefined ? fallback : Number(value.toString());
 const toJsonInput = (value) => value === null || value === undefined ? client_1.Prisma.DbNull : value;
+function revisionDisplayName(template, revNo) {
+    return `${template.ptlName} rev ${revNo}`;
+}
+const USER_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 //# sourceMappingURL=print-template.service.js.map

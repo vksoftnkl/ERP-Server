@@ -20,7 +20,7 @@ export declare class SaveCompanyMasterDto {
     compDistrict?: string | null;
     compState?: string | null;
     compStateCode: string;
-    compPin?: number;
+    compPin?: number | null;
     compCountry?: string;
     compRegionAddr1?: string | null;
     compRegionAddr2?: string | null;
@@ -67,4 +67,7 @@ export declare class SaveCompanyMasterDto {
     compLocaleCode?: string;
     compRemarks?: string | null;
     compAuthorizeSignature?: string | null;
+    compUdyamNo?: string | null;
+    compLogo?: string | null;
+    compSignatoryName?: string | null;
 }

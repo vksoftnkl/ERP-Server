@@ -14,5 +14,6 @@ var AuditLogErrorCode;
     AuditLogErrorCode["REVISION_AFTER_REQUIRED"] = "AUDIT_LOG_REVISION_AFTER_REQUIRED";
     AuditLogErrorCode["DATE_INVALID"] = "AUDIT_LOG_DATE_INVALID";
     AuditLogErrorCode["DATE_RANGE_INVALID"] = "AUDIT_LOG_DATE_RANGE_INVALID";
+    AuditLogErrorCode["RIGHT_VIEW"] = "AUDIT_LOG_RIGHT_VIEW";
 })(AuditLogErrorCode || (exports.AuditLogErrorCode = AuditLogErrorCode = {}));
 //# sourceMappingURL=audit-log-error-codes.js.map

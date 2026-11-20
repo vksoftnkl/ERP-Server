@@ -9,21 +9,26 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockReasonsService = exports.SYSTEM_ONLY_REASON_CODES = void 0;
+exports.StockReasonsService = exports.REASON_AUDIT_SCREEN_NAME = exports.SYSTEM_ONLY_REASON_CODES = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_service_utils_2 = require("../../../common/utils/module-service.utils");
 const stock_adjustment_rules_1 = require("./stock-adjustment.rules");
 const stock_error_codes_1 = require("../types/stock-error-codes");
 exports.SYSTEM_ONLY_REASON_CODES = ['DELIVERY_GODOWN'];
+exports.REASON_AUDIT_SCREEN_NAME = 'Stock Reason Master';
+const REASON_AUDIT_TABLE_NAME = 'stock reason master';
 let StockReasonsService = class StockReasonsService {
     prisma;
     requestContextService;
-    constructor(prisma, requestContextService) {
+    auditLogService;
+    constructor(prisma, requestContextService, auditLogService) {
         this.prisma = prisma;
         this.requestContextService = requestContextService;
+        this.auditLogService = auditLogService;
     }
     async pick(query) {
         const kind = query.voucherType;
@@ -147,27 +152,36 @@ let StockReasonsService = class StockReasonsService {
                 ]);
             }
             await this.assertCodeFree(dto.companyId, code, dto.srmId);
-            await this.prisma.$executeRaw `
-        UPDATE stock.stock_reason_master
-           SET srm_code = ${code}, srm_name = ${dto.name.trim()}, srm_direction = ${dto.direction},
-               srm_allowed_txn_types = ${allowed}::text[], srm_require_remarks = ${dto.requireRemarks ?? false},
-               srm_gl_ledger_id = ${dto.glLedgerId ?? null}::uuid, srm_sort_order = ${dto.sortOrder ?? 0},
-               srm_remarks = ${dto.remarks ?? null}, srm_is_active = ${dto.isActive ?? true},
-               srm_modified_on = ${now}, srm_modified_by = ${author}
-         WHERE srm_id = ${dto.srmId}::uuid
-      `;
-            return this.getOne(dto.companyId, dto.srmId);
+            const srmId = dto.srmId;
+            await this.prisma.$transaction(async (tx) => {
+                const before = await this.auditRecordOf(tx, srmId);
+                await tx.$executeRaw `
+          UPDATE stock.stock_reason_master
+             SET srm_code = ${code}, srm_name = ${dto.name.trim()}, srm_direction = ${dto.direction},
+                 srm_allowed_txn_types = ${allowed}::text[], srm_require_remarks = ${dto.requireRemarks ?? false},
+                 srm_gl_ledger_id = ${dto.glLedgerId ?? null}::uuid, srm_sort_order = ${dto.sortOrder ?? 0},
+                 srm_remarks = ${dto.remarks ?? null}, srm_is_active = ${dto.isActive ?? true},
+                 srm_modified_on = ${now}, srm_modified_by = ${author}
+           WHERE srm_id = ${srmId}::uuid
+        `;
+                await this.audit(tx, 'update', srmId, before, 'Stock reason updated');
+            });
+            return this.getOne(dto.companyId, srmId);
         }
         await this.assertCodeFree(dto.companyId, code, null);
-        const [created] = await this.prisma.$queryRaw `
-      INSERT INTO stock.stock_reason_master (
-        srm_company_id, srm_code, srm_name, srm_direction, srm_allowed_txn_types, srm_require_remarks,
-        srm_gl_ledger_id, srm_sort_order, srm_remarks, srm_is_active, srm_created_on, srm_created_by)
-      VALUES (
-        ${dto.companyId}::uuid, ${code}, ${dto.name.trim()}, ${dto.direction}, ${allowed}::text[], ${dto.requireRemarks ?? false},
-        ${dto.glLedgerId ?? null}::uuid, ${dto.sortOrder ?? 0}, ${dto.remarks ?? null}, ${dto.isActive ?? true}, ${now}, ${author})
-      RETURNING srm_id
-    `;
+        const created = await this.prisma.$transaction(async (tx) => {
+            const [row] = await tx.$queryRaw `
+        INSERT INTO stock.stock_reason_master (
+          srm_company_id, srm_code, srm_name, srm_direction, srm_allowed_txn_types, srm_require_remarks,
+          srm_gl_ledger_id, srm_sort_order, srm_remarks, srm_is_active, srm_created_on, srm_created_by)
+        VALUES (
+          ${dto.companyId}::uuid, ${code}, ${dto.name.trim()}, ${dto.direction}, ${allowed}::text[], ${dto.requireRemarks ?? false},
+          ${dto.glLedgerId ?? null}::uuid, ${dto.sortOrder ?? 0}, ${dto.remarks ?? null}, ${dto.isActive ?? true}, ${now}, ${author})
+        RETURNING srm_id
+      `;
+            await this.audit(tx, 'insert', row.srm_id, null, 'Stock reason created');
+            return row;
+        });
         return this.getOne(dto.companyId, created.srm_id);
     }
     async deactivate(dto) {
@@ -180,25 +194,67 @@ let StockReasonsService = class StockReasonsService {
             ]);
         }
         const now = new Date();
+        const srmId = dto.srmId;
         if (dto.reactivate) {
-            await this.prisma.$executeRaw `
-        UPDATE stock.stock_reason_master SET srm_is_active = true, srm_modified_on = ${now}, srm_modified_by = ${author}
-         WHERE srm_id = ${dto.srmId}::uuid
-      `;
-            return this.getOne(dto.companyId, dto.srmId);
+            await this.prisma.$transaction(async (tx) => {
+                const before = await this.auditRecordOf(tx, srmId);
+                await tx.$executeRaw `
+          UPDATE stock.stock_reason_master SET srm_is_active = true, srm_modified_on = ${now}, srm_modified_by = ${author}
+           WHERE srm_id = ${srmId}::uuid
+        `;
+                await this.audit(tx, 'update', srmId, before, 'Stock reason reactivated');
+            });
+            return this.getOne(dto.companyId, srmId);
         }
         if (row.canDelete) {
-            await this.prisma.$executeRaw `
-        UPDATE stock.stock_reason_master SET srm_is_deleted = true, srm_is_active = false, srm_modified_on = ${now}, srm_modified_by = ${author}
-         WHERE srm_id = ${dto.srmId}::uuid
-      `;
-            return { srmId: dto.srmId, deleted: true };
+            await this.prisma.$transaction(async (tx) => {
+                const before = await this.auditRecordOf(tx, srmId);
+                await tx.$executeRaw `
+          UPDATE stock.stock_reason_master SET srm_is_deleted = true, srm_is_active = false, srm_modified_on = ${now}, srm_modified_by = ${author}
+           WHERE srm_id = ${srmId}::uuid
+        `;
+                await this.audit(tx, 'cancel', srmId, before, 'Stock reason deleted');
+            });
+            return { srmId, deleted: true };
         }
-        await this.prisma.$executeRaw `
-      UPDATE stock.stock_reason_master SET srm_is_active = false, srm_modified_on = ${now}, srm_modified_by = ${author}
-       WHERE srm_id = ${dto.srmId}::uuid
+        await this.prisma.$transaction(async (tx) => {
+            const before = await this.auditRecordOf(tx, srmId);
+            await tx.$executeRaw `
+        UPDATE stock.stock_reason_master SET srm_is_active = false, srm_modified_on = ${now}, srm_modified_by = ${author}
+         WHERE srm_id = ${srmId}::uuid
+      `;
+            await this.audit(tx, 'update', srmId, before, 'Stock reason deactivated');
+        });
+        return this.getOne(dto.companyId, srmId);
+    }
+    async auditRecordOf(tx, srmId) {
+        const [row] = await tx.$queryRaw `
+      SELECT srm_id, srm_company_id, srm_code, srm_name, srm_direction, srm_sort_order,
+             srm_allowed_txn_types, srm_gl_ledger_id, srm_require_remarks, srm_remarks,
+             srm_is_active, srm_is_deleted, srm_created_on, srm_created_by
+        FROM stock.stock_reason_master
+       WHERE srm_id = ${srmId}::uuid
     `;
-        return this.getOne(dto.companyId, dto.srmId);
+        if (!row) {
+            return null;
+        }
+        const createdOn = row.srm_created_on;
+        return { ...row, srm_created_on: createdOn instanceof Date ? createdOn.toISOString() : createdOn ?? null };
+    }
+    async audit(tx, action, srmId, before, notes) {
+        const after = await this.auditRecordOf(tx, srmId);
+        await this.auditLogService.logEntityChange({
+            action,
+            tableName: REASON_AUDIT_TABLE_NAME,
+            screenName: exports.REASON_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: srmId,
+            displayName: typeof after?.srm_name === 'string' ? after.srm_name : null,
+            originalRecord: before,
+            modifiedRecord: after,
+            userId: this.requestContextService.getUserId() ?? module_service_utils_2.DEFAULT_ACTOR,
+            notes,
+        }, tx);
     }
     async assertCodeFree(companyId, code, exceptId) {
         const [clash] = await this.prisma.$queryRaw `
@@ -217,7 +273,8 @@ exports.StockReasonsService = StockReasonsService;
 exports.StockReasonsService = StockReasonsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        audit_log_service_1.AuditLogService])
 ], StockReasonsService);
 function toRow(r) {
     return {

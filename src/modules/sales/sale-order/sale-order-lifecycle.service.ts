@@ -58,8 +58,31 @@ import {
 const ORDER_STATUS = { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' } as const;
 /** Sales Order's voucher type id (4): WhatsApp on Post sends when the company's whatsapp.on_post_types lists it. */
 const SO_VOUCHER_TYPE = 4;
+/** The POSTED step's remarks on an order confirmed by the phone upload. */
+const PHONE_CONFIRM_REMARK = 'Confirmed from the phone';
 /** The statuses whose lines hold stock reservations (a DRAFT holds none). */
 const RESERVING_STATUSES: readonly string[] = [ORDER_STATUS.CONFIRMED, 'PARTIAL'];
+
+/**
+ * How `postInTx` confirms. The desktop paths (`/post`, the one-call
+ * save-and-confirm, the order desk merge) pass none: every check applies.
+ */
+export interface SaleOrderPostOptions {
+  /**
+   * The user's decision (2026-11-19): an order uploaded from the phone
+   * (`POST /mobile/orders/create`) is confirmed even when the login holds no
+   * Post right on Sales Order (menu 11), and so is an upload without a token.
+   * ONLY that check is skipped: the status gates, the year, the day, the
+   * salesmen and the reservations are judged exactly as on the desktop. Never
+   * set it on a desktop route.
+   */
+  skipPostRight?: boolean;
+  /**
+   * 'PHONE': the audit row's notes and the POSTED step's remarks say the
+   * order was confirmed from the phone, so the office can tell them apart.
+   */
+  origin?: 'PHONE';
+}
 
 @Injectable()
 export class SaleOrderLifecycleService {
@@ -94,9 +117,12 @@ export class SaleOrderLifecycleService {
 
   /**
    * WhatsApp on Post (whatsapp-plan-v1 §5.2): after the commit, only for an
-   * order this call confirmed (a repeat sends nothing). Never throws.
+   * order this call confirmed (a repeat sends nothing). Never throws. Public
+   * for the phone's order upload (POST /mobile/orders/create), which fires it
+   * the same way after its own commit (user, 2026-11-19), with waOnPost
+   * undefined so the company's whatsapp.on_post_types alone decides.
    */
-  private async whatsappAfterPost(
+  async whatsappAfterPost(
     keys: SaleOrderKeysDto,
     waOnPost: boolean | undefined,
   ): Promise<WaPostBlock | null> {
@@ -306,13 +332,16 @@ export class SaleOrderLifecycleService {
    * the status gates, the right, the day, the reservations, CONFIRMED and the
    * trail. Shared by `/post` and the one-call save-and-confirm. Public for
    * the order desk's merge (`/sale-order-desk/merge`), which confirms the new
-   * order inside the same transaction that closes the old ones.
+   * order inside the same transaction that closes the old ones, and for the
+   * phone's order upload, which passes `options` (see SaleOrderPostOptions).
    */
   async postInTx(
     tx: Prisma.TransactionClient,
     dto: SaleOrderKeysDto,
     now: Date,
+    options: SaleOrderPostOptions = {},
   ): Promise<{ soStatus: string; warnings: ReservationShort[]; confirmedNow?: boolean }> {
+    const fromPhone = options.origin === 'PHONE';
     const order = await this.lock(tx, dto);
     // Already confirmed (CONFIRMED, or the older PARTIAL): answered as it is,
     // a harmless repeat. A save-and-confirm over such an order has moved its
@@ -331,7 +360,8 @@ export class SaleOrderLifecycleService {
       SALES_MENU_ID.SALES_ORDER,
       tx,
     );
-    if (!ctx.rights.post) {
+    // Phone orders skip this one check (user, 2026-11-19: SaleOrderPostOptions).
+    if (!ctx.rights.post && options.skipPostRight !== true) {
       throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
     }
     await assertAccYearWritable(tx, order.soCompanyId, order.soAccYear, 'soAccYear');
@@ -380,6 +410,7 @@ export class SaleOrderLifecycleService {
         ...this.orders.orderAmountsOf(lines),
       },
     });
+    const shortNote = warnings.length ? `${warnings.length} line(s) short on reservation` : null;
     await this.trail(
       tx,
       order,
@@ -388,7 +419,9 @@ export class SaleOrderLifecycleService {
       ORDER_STATUS.CONFIRMED,
       ctx.actor,
       now,
-      warnings.length ? `${warnings.length} line(s) short on reservation` : null,
+      fromPhone
+        ? [PHONE_CONFIRM_REMARK, shortNote].filter((s) => s !== null).join('; ')
+        : shortNote,
     );
     await this.audit.logEntityChange(
       {
@@ -405,7 +438,7 @@ export class SaleOrderLifecycleService {
           reservations: [...reserved.values()],
         },
         userId: ctx.actor,
-        notes: 'Order confirmed',
+        notes: fromPhone ? 'Order confirmed from the phone' : 'Order confirmed',
       },
       tx,
     );

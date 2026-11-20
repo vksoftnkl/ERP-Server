@@ -14,6 +14,8 @@ const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const party_gstin_1 = require("../../../../common/party/party-gstin");
+const employee_master_values_1 = require("../types/employee-master-values");
 const toRequiredTrimmedString = (value) => {
     if (typeof value !== 'string') {
         return value;
@@ -37,25 +39,18 @@ const toOptionalNumber = (value) => {
     }
     return undefined;
 };
-const toNullableNumber = (value) => {
-    if (value === undefined) {
-        return undefined;
-    }
-    if (value === null || value === '') {
-        return null;
+const toCommissionValueText = (value) => {
+    if (value === undefined || value === null) {
+        return value;
     }
     if (typeof value === 'number') {
-        return Number.isFinite(value) ? value : null;
+        return Number.isFinite(value) ? value.toString() : value;
     }
     if (typeof value === 'string') {
         const trimmed = value.trim();
-        if (!trimmed) {
-            return null;
-        }
-        const parsed = Number(trimmed);
-        return Number.isFinite(parsed) ? parsed : null;
+        return trimmed ? trimmed : null;
     }
-    return null;
+    return value;
 };
 class SaveEmployeeMasterDto {
     empId;
@@ -101,6 +96,12 @@ class SaveEmployeeMasterDto {
     empAadharNo;
     empPfNo;
     empEsiNo;
+    empUanNo;
+    empBankName;
+    empBankAccountNo;
+    empBankIfsc;
+    empEmergencyContactName;
+    empEmergencyContactPhone;
     empLoanLedgerId;
     empPhotoUrl;
     empPhoto;
@@ -118,7 +119,12 @@ __decorate([
     __metadata("design:type", String)
 ], SaveEmployeeMasterDto.prototype, "empId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Blank (absent or null) on create = the logged-in company (from the token). On an edit, ' +
+            'null clears it and absent keeps it.',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empCompanyId", void 0);
@@ -128,7 +134,13 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empBranchId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 60, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 60,
+        nullable: true,
+        description: 'Blank on create: made from the name (initials, 3 to 6 letters; RAM2 … when taken: ' +
+            'Suresh Krishna → SKU). Unique among live employees in any case (409 ' +
+            'EMPLOYEE_CODE_DUPLICATE). An edit never makes one; blank clears it.',
+    }),
     (0, dtoDecorators_1.NullableString)(60),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empCode", void 0);
@@ -226,13 +238,26 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empDesignationId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(20),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: employee_master_values_1.EMPLOYMENT_TYPES,
+        nullable: true,
+        description: 'Any case is stored in this spelling. Blank = not stated (null). Else 400 VALIDATION_IS_IN.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => (0, employee_master_values_1.canonicalListValue)(value, employee_master_values_1.EMPLOYMENT_TYPES, null)),
+    (0, class_validator_1.IsIn)([...employee_master_values_1.EMPLOYMENT_TYPES]),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empEmploymentType", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(20),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: employee_master_values_1.EMPLOYEE_STATUSES,
+        nullable: true,
+        description: 'Any case is stored as Working / Resigned. Blank (null or "") = Working; absent on create = ' +
+            'Working, absent on an edit = unchanged. Else 400 VALIDATION_IS_IN.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => (0, employee_master_values_1.canonicalListValue)(value, employee_master_values_1.EMPLOYEE_STATUSES, employee_master_values_1.EMPLOYEE_STATUS_WORKING)),
+    (0, class_validator_1.IsIn)([...employee_master_values_1.EMPLOYEE_STATUSES]),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empStatus", void 0);
 __decorate([
@@ -281,17 +306,28 @@ __decorate([
     __metadata("design:type", Boolean)
 ], SaveEmployeeMasterDto.prototype, "empHasCommission", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(20),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: employee_master_values_1.COMMISSION_TYPES,
+        nullable: true,
+        description: 'Any case is stored in this spelling. Blank = not stated (null). Else 400 VALIDATION_IS_IN.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => (0, employee_master_values_1.canonicalListValue)(value, employee_master_values_1.COMMISSION_TYPES, null)),
+    (0, class_validator_1.IsIn)([...employee_master_values_1.COMMISSION_TYPES]),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empCommissionType", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        example: '2.5',
+        description: 'numeric(12,3): a decimal string or a number, 0 or more, up to 3 decimals (else 400 ' +
+            'VALIDATION_MATCHES). Kept as Prisma.Decimal; blank = null.',
+    }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Transform)(({ value }) => toNullableNumber(value)),
-    (0, class_validator_1.ValidateIf)((_, value) => value !== null && value !== undefined),
-    (0, class_validator_1.IsNumber)({ allowNaN: false, allowInfinity: false }),
-    (0, class_validator_1.Min)(0),
+    (0, class_transformer_1.Transform)(({ value }) => toCommissionValueText(value)),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.Matches)(employee_master_values_1.EMPLOYEE_COMMISSION_VALUE_PATTERN),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empCommissionValue", void 0);
 __decorate([
@@ -346,6 +382,50 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(30),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empEsiNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 20,
+        nullable: true,
+        description: 'UAN (PF universal account no).',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], SaveEmployeeMasterDto.prototype, "empUanNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
+    __metadata("design:type", Object)
+], SaveEmployeeMasterDto.prototype, "empBankName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 50,
+        nullable: true,
+        description: 'Shown as the last 4 only in the history (audit) view.',
+    }),
+    (0, dtoDecorators_1.NullableString)(50),
+    __metadata("design:type", Object)
+], SaveEmployeeMasterDto.prototype, "empBankAccountNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 11,
+        nullable: true,
+        pattern: employee_master_values_1.EMPLOYEE_IFSC_PATTERN.source,
+        example: 'SBIN0001234',
+        description: 'Upper-cased, then 4 letters, a 0 and 6 letters or digits (else 400 VALIDATION_IS_IFSC).',
+    }),
+    (0, party_gstin_1.NullableUpperPattern)(11, 'isIfsc', employee_master_values_1.EMPLOYEE_IFSC_PATTERN, 'an 11-character IFSC (SBIN0001234)'),
+    __metadata("design:type", Object)
+], SaveEmployeeMasterDto.prototype, "empBankIfsc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(200),
+    __metadata("design:type", Object)
+], SaveEmployeeMasterDto.prototype, "empEmergencyContactName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], SaveEmployeeMasterDto.prototype, "empEmergencyContactPhone", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

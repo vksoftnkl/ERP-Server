@@ -22,8 +22,24 @@ export interface MobileCustomerBalance {
   balanceStatus: MobileCustomerBalanceStatus | null;
 }
 
+/**
+ * What the customer's unpaid bills still owe, today, in the login company, all branches: the
+ * Party Outstanding report's "owed" on the Receivable side (its party card's definition, no
+ * group / area / salesman filter). A bill-wise figure, unlike the ledger balance: credits the
+ * customer holds (an advance, a sales return, an unallocated receipt) do not lower it, and a
+ * post-dated cheque counts only from its date. All null when no balance can be read.
+ */
+export interface MobileCustomerOutstanding {
+  /** Σ pending of the customer's DR bills, two decimals, never negative. */
+  outstanding: string | null;
+  /** How many of those bills are still unpaid. */
+  outstandingBills: number | null;
+  /** The bill date (YYYY-MM-DD) of the oldest of them; null when none is unpaid. */
+  oldestBillDate: string | null;
+}
+
 /** One row of GET /mobile/customers/list. */
-export interface MobileCustomerListItem extends MobileCustomerBalance {
+export interface MobileCustomerListItem extends MobileCustomerBalance, MobileCustomerOutstanding {
   cusId: string;
   cusName: string | null;
   cusShort: string | null;
@@ -59,10 +75,14 @@ export interface MobileCustomerListPayload {
   balanceAsOn: string | null;
   /** The financial year the balances come from, null when none were read. */
   accYear: string | null;
+  /** The company the balances and outstanding are read in (the login's), null when none were read. */
+  companyId: string | null;
 }
 
-/** GET /mobile/customers/get: the desktop customer payload plus its balance. */
-export type MobileCustomerDetail = CustomerPayload & MobileCustomerBalance;
+/** GET /mobile/customers/get: the desktop customer payload plus its balance and outstanding. */
+export type MobileCustomerDetail = CustomerPayload &
+  MobileCustomerBalance &
+  MobileCustomerOutstanding;
 
 export interface MobileCustomerOption {
   id: string;
@@ -70,7 +90,8 @@ export interface MobileCustomerOption {
 }
 
 export interface MobileCustomerFormOptions {
-  areas: Array<MobileCustomerOption & { cityName: string | null }>;
+  /** cityId = area_master.arm_city_id (since 2026-11-19, for CITY scheme rows). */
+  areas: Array<MobileCustomerOption & { cityId: string; cityName: string | null }>;
   groups: MobileCustomerOption[];
   priceLevels: Array<{ id: number; name: string }>;
   states: Array<{ code: string; name: string }>;

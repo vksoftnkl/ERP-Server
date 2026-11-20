@@ -288,6 +288,52 @@ describe('SalesStockService — post / cancel', () => {
       expect(decimals.slice(0, 2)).toEqual(['2', '12']);
     });
 
+    it('moves a part unit below the base at the base columns\' 6 places (item master review 11-20 Q1)', async () => {
+      // 1 PC of a 12-pack BOX: to-base 1/12 = 0.083333 as stored on the unit row.
+      const tx = routedTx({
+        units: [
+          {
+            iuc_id: PCS_IUC,
+            iuc_unit_id: 'pc',
+            iuc_base_unit_id: 'box',
+            iuc_to_base_factor: new Prisma.Decimal('0.083333'),
+            base_iuc_id: BOX_IUC,
+          },
+        ],
+        moved: { qty: new Prisma.Decimal(4), rows: 1n },
+      });
+
+      await post(tx, doc({ lines: [line({ itemUnitId: PCS_IUC, qty: 3, freeQty: 1 })] }));
+
+      const decimals = boundValuesOf(tx.$executeRaw, 'INSERT INTO stock.stock_voucher_item')
+        .filter((v) => v instanceof Prisma.Decimal)
+        .map(String);
+      // qty 3 → 0.249999 BOX (was 0.25 at four places), free 1 → 0.083333 (was 0.0833).
+      expect(decimals.slice(0, 4)).toEqual(['3', '0.249999', '1', '0.083333']);
+    });
+
+    it('takes a 0.1 part unit exactly: 1 PC = 0.1 BAG', async () => {
+      const tx = routedTx({
+        units: [
+          {
+            iuc_id: PCS_IUC,
+            iuc_unit_id: 'pc',
+            iuc_base_unit_id: 'bag',
+            iuc_to_base_factor: new Prisma.Decimal('0.1'),
+            base_iuc_id: BOX_IUC,
+          },
+        ],
+        moved: { qty: new Prisma.Decimal(1), rows: 1n },
+      });
+
+      await post(tx, doc({ lines: [line({ itemUnitId: PCS_IUC, qty: 1, toBaseFactor: 0.1 })] }));
+
+      const decimals = boundValuesOf(tx.$executeRaw, 'INSERT INTO stock.stock_voucher_item')
+        .filter((v) => v instanceof Prisma.Decimal)
+        .map(String);
+      expect(decimals.slice(0, 2)).toEqual(['1', '0.1']);
+    });
+
     it('refuses a line whose unit conversion does not exist, before writing anything', async () => {
       const tx = routedTx({ units: [] });
 

@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenItemsService = void 0;
 exports.openReceivableWhere = openReceivableWhere;
+exports.openCreditWhere = openCreditWhere;
 exports.openBillOrder = openBillOrder;
 exports.creditRouting = creditRouting;
 const common_1 = require("@nestjs/common");
@@ -32,6 +33,17 @@ function openReceivableWhere(companyId, partyId) {
         ablIsActive: true,
         ablDrCr: 'DR',
         ablBillType: { in: [...receipt_enum_1.RECEIVABLE_BILL_TYPES] },
+        ablPendingAmount: { gt: 0 },
+    };
+}
+function openCreditWhere(companyId, partyId, side = 'CR') {
+    return {
+        ablCompanyId: companyId,
+        ...(partyId !== undefined ? { ablPartyId: partyId } : {}),
+        ablIsDeleted: false,
+        ablIsActive: true,
+        ablDrCr: side,
+        ablBillType: { in: [...receipt_enum_1.CREDIT_BILL_TYPES] },
         ablPendingAmount: { gt: 0 },
     };
 }
@@ -191,6 +203,27 @@ let OpenItemsService = class OpenItemsService {
             left.ablId.localeCompare(right.ablId) ||
             left.ablAccYear.localeCompare(right.ablAccYear));
     }
+    async listCompanyOpenCredits(companyId) {
+        const credits = await this.prisma.accBillBalance.findMany({
+            where: openCreditWhere(companyId),
+            select: {
+                ablId: true,
+                ablAccYear: true,
+                ablPartyId: true,
+                ablBillType: true,
+                ablDocRefno: true,
+                ablDocDate: true,
+                ablDueDate: true,
+                ablBillAmount: true,
+                ablPendingAmount: true,
+            },
+        });
+        return credits.sort((left, right) => left.ablPartyId.localeCompare(right.ablPartyId) ||
+            left.ablDocDate.getTime() - right.ablDocDate.getTime() ||
+            left.ablDocRefno.localeCompare(right.ablDocRefno) ||
+            left.ablId.localeCompare(right.ablId) ||
+            left.ablAccYear.localeCompare(right.ablAccYear));
+    }
     async loadPostDatedHeld(bills, onDate) {
         if (bills.length === 0) {
             return new Map();
@@ -307,15 +340,7 @@ let OpenItemsService = class OpenItemsService {
     }
     async loadCredits(companyId, partyId, side = 'CR') {
         const credits = await this.prisma.accBillBalance.findMany({
-            where: {
-                ablCompanyId: companyId,
-                ablPartyId: partyId,
-                ablIsDeleted: false,
-                ablIsActive: true,
-                ablDrCr: side,
-                ablBillType: { in: [...receipt_enum_1.CREDIT_BILL_TYPES] },
-                ablPendingAmount: { gt: 0 },
-            },
+            where: openCreditWhere(companyId, partyId, side),
             select: {
                 ablId: true,
                 ablAccYear: true,

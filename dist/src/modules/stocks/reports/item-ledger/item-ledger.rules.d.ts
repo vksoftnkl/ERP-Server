@@ -139,7 +139,7 @@ export declare function rowTypeLabel(type: string, kind: RowKind, otherBucket?: 
 export declare function tileLabel(type: string, kind: RowKind, otherBucket: string | null): string;
 export declare function byTypeLabel(type: string, pairClass: 'LIVE' | 'CANCELLED' | 'AMENDED'): string;
 export declare const SHADOW_DOC_TYPES: readonly ["SALE_BILL", "DELIVERY_CHALLAN", "SALE_RETURN", "DC_RETURN", "GRN", "PURCHASE_BILL", "SHORTAGE_RECEIPT", "PURCHASE_RETURN", "DELIVERY_NOTE"];
-export declare const AMENDABLE_SHADOW_DOC_TYPES: ("DELIVERY_CHALLAN" | "PURCHASE_RETURN" | "SALE_RETURN" | "SALE_BILL" | "DC_RETURN" | "PURCHASE_BILL" | "GRN" | "SHORTAGE_RECEIPT")[];
+export declare const AMENDABLE_SHADOW_DOC_TYPES: ("DELIVERY_CHALLAN" | "PURCHASE_RETURN" | "SALE_BILL" | "SALE_RETURN" | "DC_RETURN" | "PURCHASE_BILL" | "GRN" | "SHORTAGE_RECEIPT")[];
 export declare const SALES_DOC_TYPES: string[];
 export declare const PURCHASE_DOC_TYPES: string[];
 export declare function docKindOf(input: {

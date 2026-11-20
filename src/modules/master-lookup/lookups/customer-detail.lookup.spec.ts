@@ -134,6 +134,37 @@ describe('CustomerDetailLookup (F12 / R2)', () => {
     expect((await lookup.getCustomerDetail(query)).tcs_customer).toBe(expected);
   });
 
+  it("answers the customer's group and its area's city for the promotion rules (D2)", async () => {
+    const GROUP_ID = '019c6f6c-be87-7a11-8905-36092c46b104';
+    const AREA_ID = '019c6f6c-be87-7a11-8905-36092c46b105';
+    const CITY_ID = '019c6f6c-be87-7a11-8905-36092c46b106';
+    prisma.customer.findFirst.mockResolvedValue(
+      customerRow({
+        cusGroupId: GROUP_ID,
+        cusAreaId: AREA_ID,
+        area: { armName: 'Gandhipuram', armDistanceKm: 4, armCityId: CITY_ID },
+      }),
+    );
+
+    const detail = await lookup.getCustomerDetail(query);
+
+    expect(detail).toMatchObject({
+      cust_group_id: GROUP_ID,
+      area_id: AREA_ID,
+      area_name: 'Gandhipuram',
+      city_id: CITY_ID,
+      distance_km: 4,
+    });
+    expect(prisma.customer.findFirst).toHaveBeenCalledWith({
+      where: { cusId: CUS_ID, cusIsDeleted: false },
+      include: { area: { select: { armName: true, armDistanceKm: true, armCityId: true } } },
+    });
+  });
+
+  it('city_id is null when the area row is not there', async () => {
+    expect((await lookup.getCustomerDetail(query)).city_id).toBeNull();
+  });
+
   it('words billed_date from the last POSTED bill, not the stored column (D3)', async () => {
     prisma.$queryRaw.mockResolvedValue([{ d: new Date('2026-10-01T00:00:00Z'), n: 2 }]);
 

@@ -163,6 +163,9 @@ class PrintTemplateVersionPayloadDto {
     ptvCreatedBy;
     ptvModifiedOn;
     ptvModifiedBy;
+    ptvCreatedByName;
+    ptvModifiedByName;
+    ptvApprovedByName;
     ptvIsPublishedRev;
     ptvIsEditable;
     datasets;
@@ -286,6 +289,30 @@ __decorate([
     __metadata("design:type", Object)
 ], PrintTemplateVersionPayloadDto.prototype, "ptvModifiedBy", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'GET /get only: ptvCreatedBy by name (display name, else login name)',
+    }),
+    __metadata("design:type", Object)
+], PrintTemplateVersionPayloadDto.prototype, "ptvCreatedByName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'GET /get only: ptvModifiedBy by name',
+    }),
+    __metadata("design:type", Object)
+], PrintTemplateVersionPayloadDto.prototype, "ptvModifiedByName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'GET /get only: ptvApprovedBy by name',
+    }),
+    __metadata("design:type", Object)
+], PrintTemplateVersionPayloadDto.prototype, "ptvApprovedByName", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({
         example: false,
         description: 'Derived: is this the revision the template currently publishes?',
@@ -327,6 +354,8 @@ class PrintTemplatePayloadDto {
     ptlCreatedBy;
     ptlModifiedOn;
     ptlModifiedBy;
+    ptlCreatedByName;
+    ptlModifiedByName;
     versions;
 }
 exports.PrintTemplatePayloadDto = PrintTemplatePayloadDto;
@@ -430,6 +459,22 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], PrintTemplatePayloadDto.prototype, "ptlModifiedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'GET /get only: ptlCreatedBy by name (display name, else login name)',
+    }),
+    __metadata("design:type", Object)
+], PrintTemplatePayloadDto.prototype, "ptlCreatedByName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'GET /get only: ptlModifiedBy by name',
+    }),
+    __metadata("design:type", Object)
+], PrintTemplatePayloadDto.prototype, "ptlModifiedByName", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         type: PrintTemplateVersionPayloadDto,

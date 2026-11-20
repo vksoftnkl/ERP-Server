@@ -113,6 +113,10 @@ import { MobileOrderModule } from '../mobile-modules/order/mobile-order.module';
 import { MobileVisitModule } from '../mobile-modules/visit/mobile-visit.module';
 import { MobileBillModule } from '../mobile-modules/bill/mobile-bill.module';
 import { MobileReceiptModule } from '../mobile-modules/receipt/mobile-receipt.module';
+import { MobileReturnModule } from '../mobile-modules/return/mobile-return.module';
+import { MobileMeModule } from '../mobile-modules/me/mobile-me.module';
+import { MobileBankModule } from '../mobile-modules/bank/mobile-bank.module';
+import { MobileSchemeModule } from '../mobile-modules/scheme/mobile-scheme.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -706,12 +710,53 @@ export const swaggerModuleDocuments = [
     path: 'mobile-receipts',
     title: 'Mobile Receipts API',
     description:
-      'React Native app, /mobile/receipts/*: options (the branch and the tenders a salesman may ' +
-      "collect with), open-bills (every customer's open bills, paged, in open-items order) and " +
-      'create: the money collected from one customer, saved AND posted in one ' +
-      "call through the desktop's save-and-post; the server fills the open bills oldest first " +
-      '(open-items order) and keeps the rest on account; safe to resend (avhClientUuid)',
+      'React Native app, /mobile/receipts/*: options (the branch, the tenders a salesman may ' +
+      "collect with and the receipt rules), open-bills (every customer's open bills, paged, in " +
+      'open-items order, with PPD steps; withCredits adds the held credits), create: the money ' +
+      "collected from one customer, saved AND posted in one call through the desktop's " +
+      'save-and-post, as the phone settled it (bills moved since Sync adjusted, never refused) or ' +
+      'oldest bills first for older phones; safe to resend (avhClientUuid); and status: what ' +
+      "became of this phone's receipts and cheques since a time",
     include: [MobileReceiptModule],
+  },
+  {
+    path: 'mobile-returns',
+    title: 'Mobile Returns API',
+    description:
+      'React Native app, /mobile/returns/*: options (branch, SALE_RETURN reasons, godowns, return ' +
+      "settings, the login's menu-13 rights), bill-lines (posted bills of the branch over the bill " +
+      "window, every customer, paged, with the desktop's qty left per line), create: one sale return " +
+      'saved through the desktop and posted at once (POSTED, or the DRAFT kept HELD / SENT_BACK); ' +
+      'safe to resend (srClientUuid); delete (a DRAFT the phone sent) and status: what became of ' +
+      "this phone's returns since a time",
+    include: [MobileReturnModule],
+  },
+  {
+    path: 'mobile-me',
+    title: 'Mobile Me API',
+    description:
+      'React Native app, /mobile/me: the signed-in login, its employee (the receipt collector) ' +
+      'and its rights on menus 11 / 12 / 99, keyed by menu id. Not cached',
+    include: [MobileMeModule],
+  },
+  {
+    path: 'mobile-banks',
+    title: 'Mobile Banks API',
+    description:
+      'React Native app, /mobile/banks/list: the banks a phone cheque can be drawn on ' +
+      '(fixed.bank_master, active, by name) for its Bank dropdown, read at Sync and kept for ' +
+      'offline use; the name goes as tdBankName. Needs a registered phone. Not cached',
+    include: [MobileBankModule],
+  },
+  {
+    path: 'mobile-schemes',
+    title: 'Mobile Schemes API',
+    description:
+      'React Native app, /mobile/schemes/active: the promotion schemes of a company that the ' +
+      "phone's offline offer engine can apply by itself (approved, active, auto-apply, no " +
+      'coupon, not ended), each with its live branch, party, item and slab rows, keyed by the ' +
+      'VK Nex column names. Read-only, not cached',
+    include: [MobileSchemeModule],
   },
   {
     path: 'customer-groups',

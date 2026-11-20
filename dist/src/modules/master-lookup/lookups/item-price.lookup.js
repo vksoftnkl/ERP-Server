@@ -8,6 +8,7 @@ const master_lookup_error_codes_1 = require("../types/master-lookup-error-codes"
 const item_price_utils_1 = require("../utils/item-price.utils");
 const price_resolver_1 = require("../../Inventory/items-price-master/price-resolver");
 const price_bucket_service_1 = require("../../Inventory/items-price-master/price-bucket.service");
+const sale_line_price_1 = require("../../Inventory/items-price-master/sale-line-price");
 const stock_voucher_posting_helper_1 = require("../../stocks/stock-voucher/stock-voucher-posting.helper");
 const loading_charge_utils_1 = require("../utils/loading-charge.utils");
 const sale_line_godown_utils_1 = require("../../../common/utils/sale-line-godown.utils");
@@ -27,37 +28,15 @@ class ItemPriceLookup {
         this.settings = settings;
     }
     async resolveQtySlabs(query, iucId, docDate) {
-        if (query.price_level < 1 || query.price_level > 4) {
-            return [];
-        }
-        const rows = await this.prisma.itemQtyPrice.findMany({
-            where: {
-                iqpItemId: query.item_id,
-                iqpItemUnitId: iucId,
-                iqpIsDeleted: false,
-                iqpIsActive: true,
-            },
-            orderBy: [{ iqpFromQty: 'asc' }, { iqpId: 'asc' }],
-        });
-        const ranked = (0, qty_slab_rules_1.slabsFor)(rows.map(qty_slab_rules_1.qtySlabOf), {
+        const ranked = await (0, sale_line_price_1.rankedQtySlabs)(this.prisma, {
+            itemId: query.item_id,
+            iucId,
             companyId: query.company_id ?? null,
             branchId: query.branch_id ?? null,
             partyId: query.customer_id ?? null,
             priceLevel: query.price_level,
             onDate: docDate,
-        });
-        if (!ranked.length) {
-            return [];
-        }
-        if (this.settings) {
-            const effective = await this.settings.resolveEffective({
-                companyId: query.company_id,
-                branchId: query.branch_id,
-            });
-            if (!(0, qty_slab_rules_1.isApplyQtyPricesOn)(effective)) {
-                return [];
-            }
-        }
+        }, this.settings);
         const amount = (value) => (value === null ? null : value.toNumber());
         return ranked.map((slab) => ({
             iqp_id: slab.iqpId,
@@ -170,41 +149,6 @@ class ItemPriceLookup {
         ]);
         return Object.fromEntries(entries);
     }
-    async lineBucketValues(query) {
-        if (!query.lot_id) {
-            return { mrp: query.mrp ?? null, salePrice: query.sale_price ?? null };
-        }
-        const lot = await this.prisma.stockLot.findFirst({
-            where: { sltId: query.lot_id, sltItemId: query.item_id },
-            select: { sltMrp: true, sltSalePrice: true },
-        });
-        if (!lot) {
-            (0, module_service_utils_1.throwMasterNotFound)('Lot not found', 'lot_id', `No lot ${query.lot_id} found for item ${query.item_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.LOT_NOT_FOUND);
-        }
-        return { mrp: (0, module_service_utils_1.toNullableNumber)(lot.sltMrp), salePrice: (0, module_service_utils_1.toNullableNumber)(lot.sltSalePrice) };
-    }
-    pricedBuckets(unitRows, docDate, caller) {
-        const keys = [];
-        for (const row of (0, price_resolver_1.livePriceRows)(unitRows, docDate, caller)) {
-            const key = (0, price_resolver_1.bucketKeyOfRow)(row);
-            if (!(0, price_resolver_1.isHeadlineKey)(key) && !keys.some((known) => (0, price_resolver_1.sameBucket)(known, key))) {
-                keys.push(key);
-            }
-        }
-        return keys
-            .map((key) => {
-            const answer = (0, price_resolver_1.resolveEffectivePrice)(unitRows, key, docDate, caller);
-            return { key, row: answer.row, answer };
-        })
-            .sort((a, b) => (b.key.mrp ?? -1) - (a.key.mrp ?? -1) ||
-            (b.key.salePrice ?? -1) - (a.key.salePrice ?? -1));
-    }
-    provisionalBucket(unitRows, key, docDate, caller) {
-        if (!(0, price_resolver_1.isHeadlineKey)(key)) {
-            return null;
-        }
-        return this.pricedBuckets(unitRows, docDate, caller)[0]?.answer ?? null;
-    }
     async resolveStockBuckets(query, policy, unitRows, docDate, caller) {
         const company = query.company_id ?? null;
         const branch = query.branch_id ?? null;
@@ -236,7 +180,7 @@ class ItemPriceLookup {
             }
         }
         if (!merged.length) {
-            merged.push(...this.pricedBuckets(unitRows, docDate, caller).map(({ key }) => ({ key, qty: 0 })));
+            merged.push(...(0, sale_line_price_1.pricedBuckets)(unitRows, docDate, caller).map(({ key }) => ({ key, qty: 0 })));
         }
         return merged.map(({ key, qty }) => {
             const answer = (0, price_resolver_1.resolveEffectivePrice)(unitRows, key, docDate, caller);
@@ -258,77 +202,62 @@ class ItemPriceLookup {
             };
         });
     }
+    throwPriceMiss(answer, query) {
+        const { item_id, unit_id } = query;
+        switch (answer.reason) {
+            case 'ITEM_NOT_FOUND':
+                return (0, module_service_utils_1.throwMasterNotFound)('Item not found', 'item_id', `No active item found for id ${item_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.ITEM_NOT_FOUND);
+            case 'PRICE_NOT_FOUND':
+                return (0, module_service_utils_1.throwMasterNotFound)('Item price not found', unit_id ? 'unit_id' : 'item_id', unit_id
+                    ? `No active price row found for item ${item_id} and unit ${unit_id}`
+                    : `No active price row configured for item ${item_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.PRICE_NOT_FOUND);
+            case 'LOT_NOT_FOUND':
+                return (0, module_service_utils_1.throwMasterNotFound)('Lot not found', 'lot_id', `No lot ${query.lot_id} found for item ${item_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.LOT_NOT_FOUND);
+            case 'BUCKET_PRICE_NOT_FOUND': {
+                const { key } = answer;
+                const priced = answer.priced.map((k) => k.mrp !== null ? `MRP ${k.mrp}` : `sale price ${k.salePrice}`);
+                return (0, module_service_utils_1.throwMasterNotFound)('Item price not found', key.mrp !== null
+                    ? 'mrp'
+                    : key.salePrice !== null
+                        ? 'sale_price'
+                        : unit_id
+                            ? 'unit_id'
+                            : 'item_id', `No active price row for item ${item_id} at ${key.mrp !== null
+                    ? `MRP ${key.mrp}`
+                    : key.salePrice !== null
+                        ? `sale price ${key.salePrice}`
+                        : 'this unit'}, and no headline row to fall back to` +
+                    (priced.length ? `. Priced: ${priced.join(', ')}.` : '.'), master_lookup_error_codes_1.MasterLookupErrorCode.BUCKET_PRICE_NOT_FOUND);
+            }
+        }
+    }
     async getItemPriceLookup(query) {
         const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
         const priceLevel = query.price_level;
         const regional = query.regional ?? false;
         const docDate = query.doc_date?.slice(0, 10) ?? (0, price_bucket_service_1.todayIso)();
-        const [itemRecord, priceRows] = await Promise.all([
-            this.prisma.itemMaster.findFirst({
-                where: {
-                    itemId: item_id,
-                    ...(branch_id ? { OR: [{ itemBranchId: branch_id }, { itemBranchId: null }] } : {}),
-                    itemIsDeleted: false,
-                },
-            }),
-            this.prisma.itemPriceMaster.findMany({
-                where: {
-                    ipmItemId: item_id,
-                    AND: [
-                        ...(branch_id ? [{ OR: [{ ipmBranchId: branch_id }, { ipmBranchId: null }] }] : []),
-                        ...(company_id ? [{ OR: [{ ipmCompanyId: company_id }, { ipmCompanyId: null }] }] : []),
-                    ],
-                    ipmIsDeleted: false,
-                },
-                include: { itemUnitConversion: { include: { unit: true } } },
-                orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
-            }),
-        ]);
-        if (!itemRecord) {
-            (0, module_service_utils_1.throwMasterNotFound)('Item not found', 'item_id', `No active item found for id ${item_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.ITEM_NOT_FOUND);
+        const answer = await (0, sale_line_price_1.resolveSaleLinePrice)(this.prisma, {
+            itemId: item_id,
+            unitId: unit_id ?? null,
+            companyId: company_id ?? null,
+            branchId: branch_id ?? null,
+            customerId: customer_id ?? null,
+            priceLevel,
+            docDate,
+            mrp: query.mrp ?? null,
+            salePrice: query.sale_price ?? null,
+            lotId: query.lot_id ?? null,
+        });
+        if (!answer.ok) {
+            this.throwPriceMiss(answer, query);
         }
-        const caller = { companyId: company_id ?? null, branchId: branch_id ?? null };
-        const liveRows = (0, price_resolver_1.livePriceRows)(priceRows, docDate, caller);
-        const unitPick = (0, item_price_utils_1.selectUnitRate)(liveRows, itemRecord.itemRetailItem, unit_id);
-        if (!unitPick) {
-            (0, module_service_utils_1.throwMasterNotFound)('Item price not found', unit_id ? 'unit_id' : 'item_id', unit_id
-                ? `No active price row found for item ${item_id} and unit ${unit_id}`
-                : `No active price row configured for item ${item_id}`, master_lookup_error_codes_1.MasterLookupErrorCode.PRICE_NOT_FOUND);
-        }
-        const unitRows = liveRows.filter((row) => row.ipmUcUnitId === unitPick.ipmUcUnitId);
-        const [policy] = await (0, stock_voucher_posting_helper_1.readBucketTrackFlags)(this.prisma, [
-            {
-                itemId: item_id,
-                companyId: company_id ?? itemRecord.itemCompanyId,
-                branchId: branch_id ?? itemRecord.itemBranchId,
-            },
-        ], docDate);
-        const key = (0, stock_voucher_posting_helper_1.bucketKeyFor)(policy, await this.lineBucketValues(query));
-        const resolved = (0, price_resolver_1.resolveEffectivePrice)(unitRows, key, docDate, caller) ??
-            this.provisionalBucket(unitRows, key, docDate, caller);
-        if (!resolved) {
-            const priced = this.pricedBuckets(unitRows, docDate, caller).map(({ key: k }) => k.mrp !== null ? `MRP ${k.mrp}` : `sale price ${k.salePrice}`);
-            (0, module_service_utils_1.throwMasterNotFound)('Item price not found', key.mrp !== null
-                ? 'mrp'
-                : key.salePrice !== null
-                    ? 'sale_price'
-                    : unit_id
-                        ? 'unit_id'
-                        : 'item_id', `No active price row for item ${item_id} at ${key.mrp !== null
-                ? `MRP ${key.mrp}`
-                : key.salePrice !== null
-                    ? `sale price ${key.salePrice}`
-                    : 'this unit'}, and no headline row to fall back to` +
-                (priced.length ? `. Priced: ${priced.join(', ')}.` : '.'), master_lookup_error_codes_1.MasterLookupErrorCode.BUCKET_PRICE_NOT_FOUND);
-        }
-        const rate = resolved.row;
-        const headline = (0, price_resolver_1.resolveEffectivePrice)(unitRows, price_resolver_1.HEADLINE_KEY, docDate, caller);
+        const { item: itemRecord, caller, unitRows, policy, resolved, rate } = answer;
         const godownId = query.godown_id ??
             rate.ipmGodownId ??
             (branch_id ? await (0, sale_line_godown_utils_1.branchDefaultGodownId)(this.prisma, branch_id) : null);
         const unit = rate.itemUnitConversion.unit;
         const rateUnitId = rate.itemUnitConversion.iucUnitId;
-        const [godown, tax, company, custRate, reorder, stockSum, loading] = await Promise.all([
+        const [godown, tax, company, reorder, stockSum, loading] = await Promise.all([
             godownId
                 ? this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } })
                 : Promise.resolve(null),
@@ -338,16 +267,9 @@ class ItemPriceLookup {
                 })
                 : Promise.resolve(null),
             company_id
-                ? this.prisma.company.findFirst({ where: { compId: company_id } })
-                : Promise.resolve(null),
-            customer_id && headline
-                ? this.prisma.custItemRate.findFirst({
-                    where: {
-                        csrUnitRateId: headline.row.ipmId,
-                        csrCustomerId: customer_id,
-                        csrIsDeleted: false,
-                        csrIsActive: true,
-                    },
+                ? this.prisma.company.findFirst({
+                    where: { compId: company_id },
+                    select: { compGstApplicable: true, compNegStkApl: true },
                 })
                 : Promise.resolve(null),
             this.prisma.itemReorder.findFirst({
@@ -371,9 +293,7 @@ class ItemPriceLookup {
             : [];
         const qtySlabs = await this.resolveQtySlabs(query, rate.itemUnitConversion.iucId, docDate);
         const gstApplicable = company_id ? (company?.compGstApplicable ?? false) : true;
-        const basePrice = (0, item_price_utils_1.priceForLevel)(rate, priceLevel);
-        const customerDiscQty = custRate && priceLevel >= 1 && priceLevel <= 4 ? (0, module_service_utils_1.toNumber)(custRate.csrDiscQty) : 0;
-        const salesPrice = basePrice - customerDiscQty;
+        const salesPrice = answer.salesPrice;
         const itemName = regional
             ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)
             : itemRecord.itemNameEn;

@@ -72,6 +72,9 @@ export interface CompanyMasterPayload {
     compLocaleCode: string;
     compRemarks: string | null;
     compAuthorizeSignature: string | null;
+    compUdyamNo: string | null;
+    compLogo: string | null;
+    compSignatoryName: string | null;
     compIsDeleted: boolean;
     compSyncDate: string | null;
     compCreatedOn: string;

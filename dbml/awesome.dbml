@@ -282,6 +282,9 @@ Table acc_ledger_master {
   ledPhone1 String
   ledPhone2 String
   ledWhatsappNo String
+  ledWaLang String [note: 'en | ta (ck_led_wa_lang); NULL = the company setting whatsapp.default_language']
+  ledWaRemindersOffOn DateTime [note: 'Set by the "Stop reminders" tap (or by hand): reminders skipped; cleared only by Allow again']
+  ledWaAllOffOn DateTime [note: 'Set by a typed STOP: every WhatsApp message skipped; cleared only by Allow again']
   ledAddr1 String
   ledAddr2 String
   ledAddr3 String
@@ -4454,6 +4457,8 @@ the e-invoice applicability rows in StatutoryLimit.']
   promotionUsages promotion_usage [not null]
   aatoYears company_aato [not null]
   partyTaxCertificates acc_party_tax_certificate [not null]
+  waConnections wa_connection [not null]
+  waTemplates wa_template [not null]
 }
 
 Table company_aato {
@@ -6374,6 +6379,153 @@ Table vehicle_master {
 ck_veh_no keeps the number in exactly the form the e-way bill portal
 stores it — upper case, no spaces — because a number that differs by a
 space is a number the portal will not match.'
+}
+
+Table wa_connection {
+  wacId String [pk]
+  wacCompanyId String [not null]
+  wacState String [not null, default: 'ACTIVATED', note: 'ACTIVATED | CONNECTING | CONNECTED | DISCONNECTED | SUSPENDED (ck_wac_state).']
+  wacRelayUrl String [not null, note: 'The relay this key belongs to (WA_RELAY_URL at activation).']
+  wacShopCode String [not null]
+  wacInstallId String [not null, note: 'The relay\'s install id (a re-key code returns the same one).']
+  wacKeyEnc String [not null, note: 'gcm:v<n>:iv:tag:ct']
+  wacKeyVersion Int [not null, default: 1, note: '>= 1 (ck_wac_key_ver).']
+  wacKeyPrefix String [not null, note: 'The key\'s first 8 characters, for display.']
+  wacKeyIssuedOn DateTime [not null]
+  wacDisplayName String
+  wacDisplayPhone String
+  wacWabaId String
+  wacPhoneNumberId String
+  wacQuality String [note: 'GREEN / YELLOW / RED / UNKNOWN, as Meta says.']
+  wacMsgLimit Int [note: 'Unique customers per 24 h, as the relay reports; NULL = unknown / unlimited.']
+  wacConnectedOn DateTime
+  wacEventCursor BigInt [not null, default: 0, note: 'The last relay event id applied (GET /v1/events?after=<cursor>).']
+  wacLastPollOn DateTime
+  wacLastPollOkOn DateTime
+  wacLastPollError String
+  wacPollLeaseUntil DateTime [note: 'Only the process holding an unexpired lease pulls events (decision 20).']
+  wacPollLeaseBy String [note: 'pid@host']
+  wacFastPollUntil DateTime
+  wacIsDeleted Boolean [not null, default: false]
+  wacCreatedOn DateTime [default: `now()`, not null]
+  wacCreatedBy String [not null]
+  wacModifiedOn DateTime
+  wacModifiedBy String
+  company companys [not null]
+
+  Note: 'WhatsApp option B: this server\'s link to wa-relay (migration
+20261119100000_whatsapp, plan whatsapp-plan-v1-2026-11-17.md §3.1).
+
+One live row per company on this server; no row = not activated. The
+install key is stored AES-256-GCM encrypted (WA_CRED_KEY, the gcm:v<n>:
+envelope of GstCryptoService), never in clear. NO sync column on purpose:
+the row describes this install\'s link only and must never be pushed to a
+cloud over another install\'s row.'
+}
+
+Table wa_message_log {
+  wmlId String [not null]
+  wmlAccYear String [not null, note: 'THE PARTITION KEY (ck_wml_acc_year: YYYY-YYYY, consecutive years).']
+  wmlCompanyId String [not null]
+  wmlBranchId String [note: 'The document\'s branch; the sender\'s branch for reminders.']
+  wmlKind String [not null, note: 'BILL | ORDER | RECEIPT | REMINDER | TEST (ck_wml_kind).']
+  wmlTrigger String [not null, note: 'ON_POST | MANUAL | BULK | RETRY | TEST (ck_wml_trigger).']
+  wmlBatchId String [note: 'One bulk send.']
+  wmlSrcDocType String [note: 'NULL | SALE_BILL | SALES_ORDER | RECEIPT (ck_wml_src_doc_type).']
+  wmlSrcDocId String [note: 'sb_id / so_id / avh_voucher_id.']
+  wmlSrcAccYear String [note: 'The document\'s own year.']
+  wmlSrcDocRefno String
+  wmlVchrTypeId Int
+  wmlPartyId String [note: 'led_id (one partyId); NULL only for TEST (ck_wml_party).']
+  wmlPartyName String
+  wmlAsOn DateTime [note: 'Reminders: the statement date.']
+  wmlPhone String [note: 'Normalised digits, e.g. 919865322154.']
+  wmlPhoneSource String [note: 'NULL | WHATSAPP | PHONE1 | PHONE2 | TYPED (ck_wml_phone_source).']
+  wmlTemplateName String
+  wmlLangWanted String
+  wmlLangSent String
+  wmlLangNote String [note: 'e.g. "ta not approved yet: sent in English".']
+  wmlParams Json [note: 'The values sent (purged after the retention).']
+  wmlPdfVersionId String [note: 'The print_template_version rendered (no print_log row, decision 16).']
+  wmlPdfBytes Int
+  wmlPdfFilename String
+  wmlStatus String [not null, note: 'SKIPPED | SENDING | SENT | DELIVERED | READ | FAILED (ck_wml_status).']
+  wmlSendingOn DateTime
+  wmlSentOn DateTime
+  wmlDeliveredOn DateTime
+  wmlReadOn DateTime
+  wmlFailedOn DateTime
+  wmlErrorCode String [note: 'A WA_* code; required when SKIPPED / FAILED (ck_wml_error).']
+  wmlMetaErrorCode Int
+  wmlErrorText String
+  wmlMetaMessageId String [note: 'wamid']
+  wmlRelayMsgId String
+  wmlTryNo Int [not null, default: 1, note: '>= 1 (ck_wml_try_no).']
+  wmlRetryOf String [note: 'The earlier try\'s wmlId.']
+  wmlReply String [note: 'NULL | PAID_ALREADY | STOP_REMINDERS | STOP_ALL (ck_wml_reply).']
+  wmlReplyOn DateTime
+  wmlGapOverride Boolean [not null, default: false, note: 'A reminder sent inside the gap, after the confirm.']
+  wmlOverrideReason String
+  wmlCostRate Decimal [note: 'whatsapp.rate_per_message at send time.']
+  wmlCostGstPct Decimal [note: 'whatsapp.rate_gst_percent at send time.']
+  wmlDeviceId String [note: 'As sde_device_id.']
+  wmlUserId String
+  wmlUserName String
+  wmlPurgedOn DateTime
+  wmlIsDeleted Boolean [not null, default: false]
+  wmlSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  wmlCreatedOn DateTime [default: `now()`, not null]
+  wmlCreatedBy String [not null]
+  wmlModifiedOn DateTime
+
+  indexes {
+    (wmlId, wmlAccYear) [pk]
+  }
+
+  Note: 'WhatsApp option B: one row per send try (migration 20261119100000_whatsapp,
+plan §3.1, §5.2). Written by the sends (SENDING / SKIPPED, in their own
+short transaction), updated by the statuses the poller pulls from the relay.
+
+LIST-partitioned by wmlAccYear = the company\'s accounting year on the SEND
+date (public.ensure_acc_year_partitions creates the partitions). Syncs from
+offline sites: uuidv7 PK, no other UNIQUE. Statuses arrive in any order, so
+there is no CHECK across the status columns: SENT < DELIVERED < READ, and
+FAILED replaces only SENDING / SENT. wmlId is also the relay clientRef.
+Retention (whatsapp.log_retention_years) nulls the number, params, Meta
+ids, error text and party name and sets wmlPurgedOn; the counts stay.'
+}
+
+Table wa_template {
+  watId String [pk]
+  watCompanyId String [not null]
+  watName String [not null]
+  watLang String [not null, note: '^[a-z]{2}(_[A-Z]{2})?$ (ck_wat_lang): en, ta, en_US.']
+  watPurpose String [not null, note: 'BILL | ORDER | RECEIPT | REMINDER | TEST (ck_wat_purpose).']
+  watCategory String [note: 'UTILITY / MARKETING / AUTHENTICATION, as Meta files it (Meta may move one).']
+  watStatus String [not null, note: 'APPROVED | PENDING | REJECTED | PAUSED | DISABLED | NOT_SUBMITTED (ck_wat_status).']
+  watReason String
+  watBody String [note: 'The text as submitted (shop name written in).']
+  watParams Json [not null, default: '[]', note: 'The named parameters, in order.']
+  watHeaderKind String [not null, default: 'NONE', note: 'NONE | DOCUMENT (ck_wat_header_kind).']
+  watButtons Json [not null, default: '[]']
+  watStatusOn DateTime [note: 'When Meta last changed the status.']
+  watPulledOn DateTime [default: `now()`, not null, note: 'When this row was last refreshed from the relay.']
+  watCreatedOn DateTime [default: `now()`, not null]
+  company companys [not null]
+
+  indexes {
+    (watCompanyId, watName, watLang) [unique]
+  }
+
+  Note: 'WhatsApp option B: mirror of the relay\'s message templates for one company
+(migration 20261119100000_whatsapp, plan §3.1), refreshed from
+GET /v1/connection: nex_bill_v1, nex_payment_reminder_v1, nex_receipt_v1,
+nex_order_confirm_v1 in en / ta, and hello_world in en_US.
+
+NO sync column on purpose (never pushed to a cloud). The plan\'s
+wat_synced_on is named wat_pulled_on: a timestamp named *synced_on would
+make public.v_sync_tables list this table and the registry expect it as
+the sync column.'
 }
 
 Table pur_supplier_item {
@@ -13555,6 +13707,10 @@ Ref: user_menus.umMenuId > menu_master.menuId
 Ref: vehicle_master.vehTransporterId > transporter_master.trnId [delete: Restrict]
 
 Ref: vehicle_master.vehDriverId > employee_master.empId [delete: Restrict]
+
+Ref: wa_connection.wacCompanyId > companys.compId [delete: Restrict]
+
+Ref: wa_template.watCompanyId > companys.compId [delete: Cascade]
 
 Ref: pur_order.poAgentId > pur_agent.pagId [delete: Restrict]
 

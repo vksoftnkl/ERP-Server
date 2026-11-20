@@ -59,6 +59,24 @@ export class ItemUnitConversionPayloadDto {
     description: 'Name of the linked base unit (resolved on the item composite get endpoint)',
   })
   iuc_base_unit_name?: string | null;
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Item composite get only (item master review 11-20 Q2): true when this row\'s unit can ' +
+      'no longer be re-picked — the base row once any unit row of the item is on a document ' +
+      'line or a stock row (item.item_units_in_use), any other row once IT is. Re-picking it ' +
+      'anyway is a 409 ITEM_UNIT_IN_USE. Factors, weight, flags and remarks stay editable.',
+  })
+  iuc_in_use?: boolean;
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Item composite get only: what uses the row, in a fixed order — stock, stock voucher, ' +
+      'sale bill, sale order, quotation, sale return, delivery challan, challan return, ' +
+      'delivery note, gift redemption, purchase order, GRN, purchase invoice, shortage ' +
+      'receipt, purchase return, accounts voucher. [] when unused.',
+  })
+  iuc_used_by?: string[];
 }
 export class ItemUnitConversionDeleteResultDto {
   @ApiProperty({ format: 'uuid' })

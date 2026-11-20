@@ -34,13 +34,13 @@ let ItemUnitConversionService = class ItemUnitConversionService {
         this.configuredGridSqlService = configuredGridSqlService;
         this.requestContextService = requestContextService;
     }
-    async save(saveItemUnitConversionDto, tx) {
+    async save(saveItemUnitConversionDto, tx, options) {
         const saveItems = Array.isArray(saveItemUnitConversionDto)
             ? saveItemUnitConversionDto
             : [saveItemUnitConversionDto];
         const saveAll = async (client) => {
             await (0, item_child_helper_1.assertItemsLive)(client, saveItems.map((item) => item.iuc_item_id), { field: 'iuc_item_id', code: item_unit_conversion_error_codes_1.ItemUnitConversionErrorCode.ITEM_NOT_LIVE });
-            await this.assertBaseUnitsKept(client, saveItems, Array.isArray(saveItemUnitConversionDto));
+            await this.assertBaseUnitsKept(client, saveItems, Array.isArray(saveItemUnitConversionDto), options?.baseRePick);
             const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(client, saveItems);
             for (const saveItem of baseUnitNormalizedSaveItems) {
                 this.validateItemUnitConversion(saveItem);
@@ -61,13 +61,19 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             throw error;
         }
     }
-    async assertBaseUnitsKept(client, saveItems, indexed) {
+    async assertBaseUnitsKept(client, saveItems, indexed, baseRePick) {
         const itemIds = Array.from(new Set(saveItems.map((saveItem) => saveItem.iuc_item_id)));
         const baseRows = await client.itemUnitConversion.findMany({
             where: { iucItemId: { in: itemIds }, iucIsBaseUnit: true, iucIsDeleted: false },
             select: { iucId: true, iucItemId: true, iucUnitId: true },
         });
-        const baseByItemId = new Map(baseRows.map((row) => [row.iucItemId, { iuc_id: row.iucId, iuc_unit_id: row.iucUnitId }]));
+        const baseByItemId = new Map(baseRows.map((row) => [
+            row.iucItemId,
+            {
+                iuc_id: row.iucId,
+                iuc_unit_id: baseRePick?.iucId === row.iucId ? baseRePick.unitId : row.iucUnitId,
+            },
+        ]));
         saveItems.forEach((saveItem, index) => {
             const base = baseByItemId.get(saveItem.iuc_item_id);
             const change = base && (0, item_base_unit_helper_1.baseUnitChange)(base, saveItem);

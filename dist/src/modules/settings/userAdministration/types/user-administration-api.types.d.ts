@@ -2,6 +2,7 @@ import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResp
 import { UserType } from './user-administration.enum';
 export interface UserAdminErrorDetail extends ModuleApiErrorDetail {
     code: string;
+    loginName?: string;
 }
 export type UserAdminErrorResponse = ModuleApiErrorResponse<UserAdminErrorDetail>;
 export type UserAdminSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
@@ -55,6 +56,7 @@ export interface UserAdminPayload {
     usrEditDate: boolean;
     usrEditEntry: boolean;
     usrEditRate: boolean;
+    usrMaxDiscPerc: string | null;
     usrDesktopLogin: boolean;
     usrWebLogin: boolean;
     usrMobileLogin: boolean;
@@ -73,4 +75,26 @@ export interface UserAdminPayload {
     usrModifiedOn: string | null;
     usrModifiedBy: string | null;
     menus: UserMenuPayload[];
+}
+export interface UserAdminResetPasswordResult {
+    usrId: string;
+    usrLoginName: string;
+    usrMustChangePassword: true;
+    usrPasswordChangedOn: string;
+    generatedPassword: string | null;
+}
+export interface UserAdminUnlockResult {
+    usrId: string;
+    usrIsLocked: false;
+    usrFailedLoginCount: 0;
+    usrLockedOn: null;
+    usrLockedBy: null;
+    changed: boolean;
+}
+export interface UserAdminRestoreResult {
+    usrId: string;
+    usrLoginName: string;
+    usrIsDeleted: false;
+    usrIsActive: false;
+    menuCount: number;
 }

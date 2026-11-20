@@ -6,6 +6,8 @@ type SessionRequest = {
     user?: {
         sid?: string | null;
     };
+    query?: unknown;
+    headers?: Record<string, unknown>;
 };
 export declare class MobileOrderController {
     private readonly mobileOrderService;

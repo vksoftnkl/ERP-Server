@@ -2,6 +2,12 @@
 export interface MobileItemOptions {
   /** Active, live companies: replaces the phone's test companies. */
   companies: MobileCompanyOption[];
+  /**
+   * The active, live branches of those companies (since 2026-11-18), for the
+   * phone's Switch company: per company in the companies' order, then by name
+   * and id. A company with no branch has no row.
+   */
+  branches: MobileBranchOption[];
   itemGroups: MobileSortedOption[];
   brands: MobileSortedOption[];
   /**
@@ -16,6 +22,16 @@ export interface MobileCompanyOption {
   name: string;
   /** comp_city. */
   place: string | null;
+}
+
+export interface MobileBranchOption {
+  /** branch_master.br_id: what an order's soBranchId takes. */
+  id: string;
+  name: string;
+  /** br_comp_id: one of the ids in `companies`. */
+  companyId: string;
+  /** br_is_default. */
+  isDefault: boolean;
 }
 
 export interface MobileSortedOption {
@@ -80,6 +96,12 @@ export interface MobileItem {
   itemGroupName: string | null;
   itemBrandId: string | null;
   itemBrandName: string | null;
+  /**
+   * item_category_id / item_section_id (since 2026-11-19), for the phone's
+   * offer engine to match ITEM_CATEGORY / ITEM_SECTION scheme rows. null = none.
+   */
+  categoryId: string | null;
+  sectionId: string | null;
   allowLoading: boolean;
   allowFreight: boolean;
   allowPromo: boolean;

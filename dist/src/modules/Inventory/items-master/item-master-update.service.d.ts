@@ -19,6 +19,7 @@ export declare class ItemMasterUpdateService {
     private indexUnitConversions;
     private resolveUnitConversionId;
     private syncUnitConversions;
+    private refuseUsedUnitRePicks;
     private syncPrices;
     private payloadBucketSource;
     private syncEanCodes;

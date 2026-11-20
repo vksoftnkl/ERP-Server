@@ -19,7 +19,6 @@ const save_sale_order_item_dto_1 = require("../../../modules/sales/sale-order/dt
 const mobile_item_dto_1 = require("../../item/dto/mobile-item.dto");
 const SERVER_FILLED_HEADER_KEYS = [
     'soId',
-    'soBranchId',
     'soTenantId',
     'soAccYear',
     'soSessionId',
@@ -28,13 +27,13 @@ const SERVER_FILLED_HEADER_KEYS = [
     'soOrderRefno',
     'soStatus',
     'post',
+    'waOnPost',
     'charges',
     'tenders',
     'soCreatedBy',
     'soModifiedBy',
-    'soUserId',
-    'items',
 ];
+const REDECLARED_HEADER_KEYS = ['soBranchId', 'soUserId', 'items'];
 const SERVER_FILLED_LINE_KEYS = [
     'soiId',
     'soiOrderId',
@@ -48,10 +47,14 @@ const SERVER_FILLED_LINE_KEYS = [
 class MobileOrderLineDto extends (0, swagger_1.OmitType)(save_sale_order_item_dto_1.SaveSaleOrderItemDto, SERVER_FILLED_LINE_KEYS) {
 }
 exports.MobileOrderLineDto = MobileOrderLineDto;
-class CreateMobileOrderDto extends (0, swagger_1.OmitType)(save_sale_order_dto_1.SaveSaleOrderDto, SERVER_FILLED_HEADER_KEYS) {
+class CreateMobileOrderDto extends (0, swagger_1.OmitType)(save_sale_order_dto_1.SaveSaleOrderDto, [
+    ...SERVER_FILLED_HEADER_KEYS,
+    ...REDECLARED_HEADER_KEYS,
+]) {
     soClientUuid;
     deviceUid;
     soUserId;
+    soBranchId;
     items;
 }
 exports.CreateMobileOrderDto = CreateMobileOrderDto;
@@ -68,8 +71,8 @@ __decorate([
     (0, swagger_1.ApiProperty)({
         maxLength: mobile_item_dto_1.MOBILE_DEVICE_UID_MAX_LENGTH,
         description: "The phone's registered device uid (fixed.device_master.dev_device_uid). Its device " +
-            "becomes so_device_id, and its branch the order's branch when it belongs to soCompanyId " +
-            "(else the company's default branch).",
+            "becomes so_device_id. Without soBranchId, its branch is also the order's branch when " +
+            "it belongs to soCompanyId (else the company's default branch).",
     }),
     (0, dtoDecorators_1.TrimmedString)(mobile_item_dto_1.MOBILE_DEVICE_UID_MAX_LENGTH),
     (0, class_validator_1.IsNotEmpty)(),
@@ -84,6 +87,22 @@ __decorate([
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], CreateMobileOrderDto.prototype, "soUserId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'The branch the salesman picked for this order (VKSMAN Switch company), saved with the ' +
+            'order on the phone. The order is saved in this branch, whatever branch the phone is ' +
+            'registered to or the salesman has switched to since. It must be an active, not deleted ' +
+            'branch of soCompanyId (the rows of GET /master-lookups/branches/by-company/{soCompanyId}), ' +
+            'else 422 MOBILE_BRANCH_NOT_OF_COMPANY; no other branch is tried instead. Absent (or null): ' +
+            "as before, the phone's branch on the Device List when it belongs to soCompanyId, else " +
+            "the company's default branch, else its only active branch (422 " +
+            'MOBILE_BRANCH_NOT_RESOLVED when none). A resend (same soClientUuid) answers the order ' +
+            'already saved, in the branch it was saved in, whatever branch the resend carries.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], CreateMobileOrderDto.prototype, "soBranchId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ type: [MobileOrderLineDto], minItems: 1, description: 'At least one line' }),
     (0, class_validator_1.IsArray)(),

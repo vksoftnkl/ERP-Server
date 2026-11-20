@@ -1,33 +1,61 @@
 # Mobile · Receipts
 
-Money collected by the salesman, from the React Native app. It is the desktop receipt: the upload
-is saved AND posted by
+Money collected by the salesman, from the React Native app (VKSMAN). It is the desktop receipt
+(menu 99): the upload is saved AND posted by
 [`ReceiptPostingService.saveAndPostInTransaction`](../../modules/accountsModule/receipt/receipt-posting.service.ts),
 the one-call save-and-post of notes 106, inside a transaction of ours that also holds the resend
-check and stamps `avh_client_uuid`.
+check and stamps `avh_client_uuid`. Same allocation engine, same checks, same ledgers, same PDC
+vouchers as a desktop receipt.
 
 - **Routes:** `GET /api/v1/mobile/receipts/options`, `GET /api/v1/mobile/receipts/open-bills`,
-  `POST /api/v1/mobile/receipts/create`. Swagger tag `Mobile · Receipts`, docs page
-  `/api/docs/mobile-receipts`.
+  `POST /api/v1/mobile/receipts/create`, `GET /api/v1/mobile/receipts/status`. Swagger tag
+  `Mobile · Receipts`, docs page `/api/docs/mobile-receipts`. The login itself (its employee and
+  rights) is `GET /api/v1/mobile/me`, in [`../me`](../me/README.md).
 - **Auth:** `/create` needs a token (401 without one); the login must hold the Post right on menu
   99 Receipt (403 `RCT_RIGHT_POST`, the check `/receipts/create` with `post: true` makes). The login
-  is the receipt's user and the audit author. `/open-bills` needs a token too (customer balances;
-  the ledger statement needs a login as well). `/options` is `@OptionalAuth`.
-- **Database:** `accounts.acc_voucher_header.avh_client_uuid` + `ux_avh_client_uuid` (migration
-  `20261118120000_mobile_bills_receipts`). Read and written with raw SQL only.
+  is the receipt's user and the audit author. `/open-bills` and `/status` need a token too.
+  `/options` is `@OptionalAuth`.
+- **Database:** no change for the phone-settled receipt (2026-11-19).
+  `accounts.acc_voucher_header.avh_client_uuid` + `ux_avh_client_uuid` (migration
+  `20261118120000_mobile_bills_receipts`), read and written with raw SQL only.
 
-## The user's rules (2026-11-17)
+## The user's rules
 
-1. **Post at once**, like the bill (a DRAFT upload was considered and dropped by the user on
-   2026-11-17). A refusal saves nothing and is `/receipts/post`'s (`VCH_*`, `ACC_*`, `TENDER_*`).
-2. **Oldest bills first.** The phone sends only the money. The server takes the customer's open
-   bills in the order `/receipts/open-items` returns them (`accounts.receipt_bill_sort`, due date
-   first by default), fills each up to what it owes, until the money runs out, and holds the rest
-   on account (an ADVANCE bill, R7). See [`mobile-receipt-settlement.ts`](mobile-receipt-settlement.ts):
-   it only writes the per-bill figures; the allocation engine splits and checks them as on
-   `/receipts/post`.
+2026-11-17:
 
-## GET /mobile/receipts/options?companyId=&deviceUid=
+1. **Post at once**, like the bill. A refusal saves nothing and is `/receipts/post`'s (`VCH_*`,
+   `ACC_*`, `TENDER_*`).
+2. **Oldest bills first** for a phone that sends only the money: the server takes the customer's
+   open bills in `/receipts/open-items` order (`accounts.receipt_bill_sort`, due date first by
+   default), fills each up to what it owes, and holds the rest on account (an ADVANCE bill, R7).
+   See [`mobile-receipt-settlement.ts`](mobile-receipt-settlement.ts).
+
+2026-11-19 (canvas page "5b · Receipt (new)", all recommended answers):
+
+- The phone may send **its own settlement** (`allocations[]`, `creditsApplied[]`), as the desktop
+  screen keys it: per bill the money and credits, a prompt-payment discount and a round-off.
+- **D1, bills moved since the phone's Sync: never refused for `ACC_BILL_MOVED`.** Under the row
+  lock, before the engine: each line is capped at what its bill can take now (after its discount and
+  round-off); a bill no longer open (paid or cancelled) frees its whole line and drops its discount;
+  each credit is capped at what it still holds (the bills it was to pay give that much back, last
+  line first); the freed money fills the party's open bills in open-items order, then goes on
+  account; a credit never goes on account (cut, last first). Every change is reported in
+  `adjusted[]`. See [`mobile-receipt-plan.ts`](mobile-receipt-plan.ts) `reconcilePhonePlan`.
+- **D4:** a discount must be at most the PPD suggestion (ppd-slab.ts) for that bill on the receipt
+  date, measured on what the bill owes now, or on what the line settles when that is more (a bill
+  paid down since Sync is not refused). Else 422 `MOBILE_RECEIPT_DISCOUNT_ABOVE_PPD`. The slabs are
+  the company's (`loadSettings(companyId)`), as `/receipts/open-items` and `/open-bills` read them.
+  No slabs = no discount.
+- **D5:** round-off at most 0.99 per bill, else 422 `MOBILE_RECEIPT_ROUNDOFF_TOO_BIG`.
+- **D11 (PDC under ON_CLEARING): not built.** The desktop refuses EVERY receipt under
+  `accounts.pdc_posting_mode = ON_CLEARING` (`ReceiptService.assertPostable`, `ACC_PDC_ALLOCATION`,
+  "not built yet"), cheque or not, so there is no desktop rule to post the PDC money on account by.
+  A phone receipt gets the same refusal. `PDC_ON_CLEARING` is reserved in `adjusted[].reason`.
+- **Collector:** `avh_employee_id` = the login's live employee (`user_master.usr_employee_id`). None
+  and `accounts.receipt_salesman_mandatory` on (at the receipt's branch, as the post reads it): 422
+  `MOBILE_RECEIPT_NO_EMPLOYEE`, field `avhEmployeeId`.
+
+## GET /mobile/receipts/options?companyId=&deviceUid=&branchId=
 
 ```json
 {
@@ -36,31 +64,40 @@ check and stamps `avh_client_uuid`.
   "tenders": [
     {
       "tenderId": "…",
-      "typeId": 3,
-      "typeCode": "UPI",
-      "name": "UPI",
-      "shortName": "UPI",
+      "typeId": 5,
+      "typeCode": "CHEQUE",
+      "name": "CHEQUE",
+      "shortName": null,
       "needsRef": true,
-      "refLabel": "UTR No",
+      "refLabel": "Cheque No",
       "isDefault": false,
-      "surchargePerc": "1.000",
-      "surchargeAmount": "0.00"
+      "surchargePerc": "0.000",
+      "surchargeAmount": "0.00",
+      "requiresBank": true
     }
-  ]
+  ],
+  "settings": {
+    "receiptBillSort": "DUE_DATE",
+    "salesmanMandatory": false,
+    "pdcPostingMode": "ON_RECEIPT",
+    "ppdEnabled": false
+  }
 }
 ```
 
-The company's live, active `acc_tender_master` rows for that branch or every branch, in force today
-(`tnd_effective_from` / `_to`), with a ledger, of type CASH, CARD, UPI, WALLET, CHEQUE or BANK
-(never CREDIT, TEMP_CR, LOYALTY, RRN or a gift VOUCHER), in display order. `needsRef` is the
-master's flag (else the type's); a CHEQUE always needs `tdRefNo`, `tdBankName` and
-`tdInstrumentDate`. The surcharge is INSIDE `tdAmount` (notes 107): 200 by UPI at 1% is tdAmount
-202.00, of which 2.00 is surcharge and settles no bill.
+- `branchId` (optional): the branch picked in Switch company; 422 `MOBILE_BRANCH_NOT_OF_COMPANY`
+  when it is not an active branch of the company. Omitted: the device rule (422
+  `MOBILE_BRANCH_NOT_RESOLVED`).
+- Tenders: the company's live, active `acc_tender_master` rows for that branch or every branch, in
+  force today, with a ledger, of **every type the desktop Receipt screen offers**: not CREDIT,
+  LOYALTY, TEMP_CR or an adjust tender (ADJUST / its old name RRN), as NexERP
+  `ReceiptEntry::loadTenderMasters` leaves them out. `requiresBank` = a cheque (it needs
+  `tdBankName`, `tdRefNo`, `tdInstrumentDate`). The surcharge is INSIDE `tdAmount` (notes 107).
+- `settings`: `receiptBillSort` and `ppdEnabled` are the company's (the order `/open-bills` lists and
+  freed money fills in, and the slabs `ppdSchedule` and D4 read); `salesmanMandatory` and
+  `pdcPostingMode` are the receipt branch's (what the post checks).
 
-## GET /mobile/receipts/open-bills?companyId=&page=&pageSize=
-
-Every customer's open bills in the company, paged (`pageSize` 1-500, default 200), for the phone's
-pending-bills screen. Read-only.
+## GET /mobile/receipts/open-bills?companyId=&page=&pageSize=&withCredits=
 
 ```json
 {
@@ -70,36 +107,42 @@ pending-bills screen. Read-only.
       "billId": "…",
       "billAccYear": "2026-2027",
       "billType": "SALES",
-      "docRefno": "bil01300",
-      "docDate": "2026-11-17",
-      "dueDate": "2026-12-17",
-      "billAmount": "1180.00",
-      "pendingAmount": "680.00",
-      "daysOverdue": 0
+      "docRefno": "bil05089",
+      "docDate": "2026-11-19",
+      "dueDate": "2026-11-24",
+      "billAmount": "118.00",
+      "pendingAmount": "68.00",
+      "daysOverdue": 0,
+      "kind": "BILL",
+      "paidAmount": "50.00",
+      "pdcHeld": "0.00",
+      "ppdSchedule": [{ "tillDate": "2026-11-26", "perc": "2.000", "amount": "1.36" }]
     }
   ],
-  "total": 7,
+  "total": 10,
   "page": 1,
   "pageSize": 200,
   "hasMore": false,
   "companyId": "…",
-  "onDate": "2026-11-17"
+  "onDate": "2026-11-19"
 }
 ```
 
-The rows and the order are `/receipts/open-items`'s, through
-`OpenItemsService.listCompanyOpenBills`: the same `openReceivableWhere` (live, active DR bills of a
-receivable type with something pending; `abl_is_deleted` is in it, since a cancelled bill's
-generated status still reads OPEN) and the same `openBillOrder` (`accounts.receipt_bill_sort`)
-within each party. Ordered by party, then that order, then by id, so a page boundary never moves
-between two reads. `daysOverdue` is measured on `onDate`, as open-items measures it. 404
-`MOBILE_COMPANY_NOT_FOUND`.
-
-**Customers only** (the user's call, 2026-11-17). A bill is kept only when its party is a live
-customer: a `sales.customers` row with `cus_id` = the party id and `cus_is_deleted = false`, active
-or not, as `/mobile/customers/list` shows them. A supplier's or any other ledger's receivable (a
-purchase return, an opening balance on a non-customer ledger) is left out. `total` counts the
-customers' bills only, and `hasMore` / the pages are over that same filtered list.
+- Rows and order are `/receipts/open-items`'s (`OpenItemsService.listCompanyOpenBills`): live, active
+  DR bills of a receivable type with something pending, by party, then in `receipt_bill_sort` order,
+  then by id. **Customers only** (the user's call, 2026-11-17). `pageSize` 1-500, default 200.
+- `paidAmount` = `billAmount - pendingAmount`. `pdcHeld` = post-dated cheque money promised against
+  the bill, not yet matured (open-items' figure). `ppdSchedule` = the PPD steps still ahead of
+  `onDate`; for a receipt dated D the phone takes the FIRST step with `tillDate >= D` (none = no
+  discount). Each step's `amount` is exactly ppd-slab's suggestion on that date (on today's
+  pending), the D4 ceiling. `[]` without slabs.
+- **`withCredits=true`** (opt-in, so an older phone's list is unchanged): each customer's held
+  credits follow its bills (`OpenItemsService.listCompanyOpenCredits`, the rows of open-items'
+  credit list, oldest first), with `kind` ADVANCE / SALES_RETURN / OPENING_CR / JOURNAL_CR,
+  `pendingAmount` = what is still held (always > 0), `paidAmount` = what is used, `pdcHeld`
+  "0.00", `daysOverdue` 0, `ppdSchedule` []. **Paging:** `total` and the pages then count the credit
+  rows too, so a page may end mid-party; the order (party, bills, credits, id) is stable between
+  reads.
 
 ## POST /mobile/receipts/create
 
@@ -108,42 +151,54 @@ customers' bills only, and `hasMore` / the pages are over that same filtered lis
 | `avhClientUuid`              | required: the phone's own id for the receipt                                                                                                                                 |
 | `deviceUid`                  | required: the registered phone                                                                                                                                               |
 | `avhCompanyId`, `avhPartyId` | required: the customer id is its ledger id (one partyId)                                                                                                                     |
+| `avhBranchId`                | optional: the Switch company branch (422 `MOBILE_BRANCH_NOT_OF_COMPANY`); omitted = device rule                                                                              |
 | `avhVoucherDate`             | optional, YYYY-MM-DD; today (the database's IST date) when omitted                                                                                                           |
 | `avhUsrRefno`                | optional: the phone's own receipt number, kept as is                                                                                                                         |
+| `avhDocRefno`, `avhDocDate`  | optional: the shop's own receipt no. and date. 409 `VCH_DUP_DOC_REFNO` when a live (not cancelled) receipt of this customer in this year has it (`ux_avh_doc_refno`)         |
 | `avhRemarks`                 | optional                                                                                                                                                                     |
 | `tenders[]`                  | at least one: `tdTenderId`, `tdTenderTypeId`, `tdAmount`, `tdRefNo`, `tdBankName`, `tdInstrumentDate`, `cheque` (`drawerName`, `bankBranch`, `ifsc`, `micr`, `bankLedgerId`) |
+| `allocations[]`              | optional: `billId`, `billAccYear`, `amount` (money + credits on the bill, not the discount or round-off), `discount`, `roundoff`                                             |
+| `creditsApplied[]`           | optional: `billId`, `billAccYear`, `amount`                                                                                                                                  |
+| `onAccount`                  | optional, the phone's figure: informational, never refused on a mismatch                                                                                                     |
 
-Anything else is a 400 `VALIDATION_WHITELIST`: `avhVoucherId`, `avhBranchId`, `avhAccYear`,
-`avhTenantId`, `avhDeviceType`, `avhDeviceId`, `avhSessionId`, `avhUserId`, `avhEmployeeId`,
-`avhDocRefno`, `avhDocDate`, `otherLines`, `allocations`, `creditsApplied`, `otherLineBills`,
-`onAccount`, `post`, `replace`, and on a tender `tdId`, `tdRowNo`, `tdTenderLedgerId`, `tdMdrAmt`,
-`tdSurcharge*`, `tdReceivedAmt`, `tdChangeAmt`, `tdAuthCode`, `tdCardLast4`, `tdPayerVpa`, `tdNotes`.
-A card's last 4 digits go in `tdRefNo`.
+Anything else is a 400 `VALIDATION_WHITELIST`: `avhVoucherId`, `avhAccYear`, `avhTenantId`,
+`avhDeviceType`, `avhDeviceId`, `avhSessionId`, `avhUserId`, `avhEmployeeId`, `otherLines`,
+`otherLineBills`, `post`, `replace`, an allocation's `writeoff` / `writeoffApprovedBy` (a phone
+never writes off), and on a tender `tdId`, `tdRowNo`, `tdTenderLedgerId`, `tdMdrAmt`, `tdSurcharge*`,
+`tdReceivedAmt`, `tdChangeAmt`, `tdAuthCode`, `tdCardLast4`, `tdPayerVpa`, `tdNotes`.
+
+**Which settlement:**
+
+| The body has                                              | The server                                                                                            |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| neither `allocations` nor `creditsApplied` (older phones) | fills the open bills oldest first with the money, exactly as before (rule 2)                          |
+| `allocations` (even `[]`)                                 | posts the phone's settlement, adjusted by D1; `[]` = every rupee on account                           |
+| `creditsApplied` but no `allocations` key                 | money and credits fill the open bills oldest first (`fillAll`); credits the bills cannot take are cut |
+
+A bill or credit named twice is 400 `ACC_INVALID` (the engine's). A named bill that is missing,
+another party's or company's, or of the wrong kind keeps the desktop refusal (`VCH_BILL_*`); a
+cancelled one is D1's (dropped). A phone that allocates more than it collected gets the engine's
+400 `VCH_UNBALANCED`. A receipt with no instrument (credits only) is refused: the DTO needs one
+tender, and the desktop post refuses one without (`ACC_NO_TENDER`, "a journal, not a receipt").
 
 ### What the server fills
 
-| Field             | From                                                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| branch            | as the bill (422 `MOBILE_BRANCH_NOT_RESOLVED`)                                                                                        |
-| acc year          | the financial year holding the date (422 `MOBILE_NO_FISCAL_YEAR`)                                                                     |
-| device            | `avhDeviceType` MOBILE, `avhDeviceId` = the phone's `dev_id` (403 `MOBILE_DEVICE_*`)                                                  |
-| user              | the login                                                                                                                             |
-| `tdRowNo`         | the instrument's position, 1, 2, …                                                                                                    |
-| allocations       | the open bills, oldest first, under the row lock the post takes (rule 2)                                                              |
-| onAccount         | what is left; the post raises it as one ADVANCE bill                                                                                  |
-| `avh_client_uuid` | `avhClientUuid`: on the receipt's own header only, never its post-dated cheque vouchers or a reversal; on create only, after the save |
+| Field             | From                                                                                                     |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| branch            | `avhBranchId`, else as the bill (422 `MOBILE_BRANCH_NOT_RESOLVED`)                                       |
+| acc year          | the financial year holding the date (422 `MOBILE_NO_FISCAL_YEAR`)                                        |
+| device            | `avhDeviceType` MOBILE, `avhDeviceId` = the phone's `dev_id` (403 `MOBILE_DEVICE_*`)                     |
+| user              | the login                                                                                                |
+| collector         | `avhEmployeeId` = [the login's live employee], or none (422 `MOBILE_RECEIPT_NO_EMPLOYEE` when mandatory) |
+| `tdRowNo`         | the instrument's position, 1, 2, …                                                                       |
+| settlement        | see the table above, decided under the row lock between the draft save and the post                      |
+| onAccount         | what is left (the server's figure wins)                                                                  |
+| `avh_client_uuid` | `avhClientUuid`, on the receipt's own header only, never its post-dated cheque vouchers or a reversal    |
 
-The money the bills can take is the instruments less the CR other-ledger lines the draft save
-seeded from them (the surcharge). No credit the customer holds is spent, and no prompt-payment
-discount is given.
+The desktop change this needed: `ReceiptSettlementOf` (the callback `saveAndPostInTransaction`
+calls between the draft and the post) may now answer `creditsApplied` too.
 
-## Resend safety
-
-As the bill: an advisory lock on (`receipt`, company, client uuid), a look-up in any year and any
-state, `duplicate: true` with nothing written, 409 `MOBILE_CLIENT_UUID_REUSED` for another
-customer, and a client-uuid unique clash answered as a resend.
-
-## Answer
+## Answer (create, and a resend)
 
 ```json
 {
@@ -151,36 +206,131 @@ customer, and a client-uuid unique clash answered as a resend.
   "avhCompanyId": "…",
   "avhBranchId": "…",
   "avhAccYear": "2026-2027",
-  "avhVoucherRefno": "RCT00042",
-  "avhUsrRefno": "A1B2/RC/2627/00001",
-  "avhVoucherDate": "2026-11-17",
-  "avhDocAmount": "707.00",
+  "avhVoucherRefno": "rct00129",
+  "avhUsrRefno": "ZT-MOBRC-132057",
+  "avhVoucherDate": "2026-11-19",
+  "avhDocAmount": "36.00",
   "avhVoucherStatus": "POSTED",
   "allocations": [
     {
       "billId": "…",
       "billAccYear": "2026-2027",
-      "docRefno": "bil01300",
-      "amount": "300.00",
+      "docRefno": "bil05090",
+      "amount": "118.00",
+      "discount": "0.00",
+      "roundoff": "0.00",
       "pendingAmount": "0.00"
     }
   ],
-  "onAccount": "0.00",
+  "onAccount": "18.00",
   "duplicate": false,
-  "avhIsDeleted": false
+  "avhIsDeleted": false,
+  "creditsApplied": [
+    {
+      "billId": "…",
+      "billAccYear": "2026-2027",
+      "docRefno": "rct00126",
+      "amount": "100.00",
+      "pendingAmount": "0.00"
+    }
+  ],
+  "pdcVouchers": [],
+  "adjusted": [
+    {
+      "billId": "…",
+      "billAccYear": "2026-2027",
+      "docRefno": "bil05089",
+      "planned": "68.00",
+      "applied": "0.00",
+      "reason": "BILL_SETTLED"
+    },
+    {
+      "billId": "…",
+      "billAccYear": "2026-2027",
+      "docRefno": "rct00126",
+      "planned": "150.00",
+      "applied": "100.00",
+      "reason": "CREDIT_REDUCED"
+    }
+  ],
+  "employeeId": null
 }
 ```
 
-`allocations` and `onAccount` are what the receipt settles NOW: a resend of a receipt the office
-has cancelled reads `CANCELLED` with no allocation and nothing on account. Errors are the
-desktop's, shaped by `ReceiptExceptionFilter`, plus the `MOBILE_*` codes. The write interceptor
-announces `receipts`, the desktop receipt list's own resource.
+- `allocations` / `creditsApplied` / `onAccount` are what the receipt settles NOW (read from
+  `/receipts/get`'s payload): a bill's `amount` is its money and credits, `discount` and `roundoff`
+  apart; a receipt the office cancelled answers empty lists.
+- `pdcVouchers`: each post-dated cheque's own voucher (`chequeDate` = its date).
+- `adjusted`: the phone's plan against what the receipt settles now, for a fresh upload and a resend
+  alike (`adjustedAgainstPlan`): BILL_SETTLED (nothing posted on the bill), BILL_REDUCED (less money,
+  discount or round-off), CREDIT_REDUCED; `PDC_ON_CLEARING` is reserved (D11). Empty for an older
+  phone and once the receipt is cancelled. A bill that got MORE (freed money) is not listed; it is in
+  `allocations`.
+- `employeeId`: the collector on the receipt (`avh_employee_id[1]`).
+
+## GET /mobile/receipts/status?companyId=&deviceUid=&since=&page=&pageSize=
+
+```json
+{
+  "items": [
+    {
+      "avhClientUuid": "…",
+      "avhVoucherId": "…",
+      "avhAccYear": "2026-2027",
+      "avhVoucherRefno": "rct00126",
+      "avhVoucherStatus": "CANCELLED",
+      "cancelledOn": "2026-11-19T07:52:22.630Z",
+      "cancelReason": "ZT MOBILE RECEIPT TEST 132057",
+      "pdc": [
+        {
+          "voucherId": "…",
+          "voucherRefno": "rct00127",
+          "instrumentNo": "Z132057",
+          "chequeDate": "2026-11-29",
+          "amount": "50.00",
+          "status": "CANCELLED",
+          "houseStatus": "CANCELLED",
+          "isPostDated": true
+        }
+      ],
+      "updatedOn": "2026-11-19T07:52:22.630Z"
+    }
+  ],
+  "total": 10,
+  "page": 1,
+  "pageSize": 200,
+  "hasMore": false,
+  "companyId": "…",
+  "asOf": "2026-11-19T07:47:10.249Z"
+}
+```
+
+This phone's receipts: a client uuid and `avh_device_id` = the phone's `dev_id` (403
+`MOBILE_DEVICE_*` for an unknown phone). `updatedOn` = the latest of the header's created /
+modified / status times and its cheques'; `since` keeps those at or after it (inclusive), oldest
+change first, then by id. A receipt's cheques are found as `receipt-cheque-links.ts` finds them
+(the receipt's voucher or its own PDC vouchers, or the tender row they came in on). `status`:
+HELD (register HELD or DEPOSITED), CLEARED, BOUNCED, CANCELLED (RETURNED, CANCELLED, REPLACED);
+`houseStatus` is `apd_status` as is. `asOf` = the read's time less five minutes (a posting
+transaction stamps its times when it starts and may run two minutes): send it back as `since`; a
+few rows come twice, never one missed.
+
+## Resend safety
+
+As the bill: an advisory lock on (`receipt`, company, client uuid), a look-up in any year and any
+state, `duplicate: true` with nothing written (the answer read back from the database, `adjusted`
+included), 409 `MOBILE_CLIENT_UUID_REUSED` for another customer, and a client-uuid unique clash
+answered as a resend. A `ux_avh_doc_refno` clash that slips past the check is the same 409
+`VCH_DUP_DOC_REFNO`.
 
 ## Tests
 
 - Unit: [`dto/mobile-receipt.dto.spec.ts`](dto/mobile-receipt.dto.spec.ts),
   [`mobile-receipt-settlement.spec.ts`](mobile-receipt-settlement.spec.ts),
-  [`mobile-receipt.service.spec.ts`](mobile-receipt.service.spec.ts) (the right, the settlement
-  through the post's callback, the stamp, a resend, a reused uuid, open-bills paging).
+  [`mobile-receipt-plan.spec.ts`](mobile-receipt-plan.spec.ts) (D1, D4, D5, credits, fillAll,
+  adjusted), [`mobile-receipt-ppd.spec.ts`](mobile-receipt-ppd.spec.ts),
+  [`mobile-receipt.service.spec.ts`](mobile-receipt.service.spec.ts) (older phones, collector,
+  branch, shop number, the phone plan, `allocations: []`, resend, open-bills with credits),
+  [`mobile-receipt-status.service.spec.ts`](mobile-receipt-status.service.spec.ts).
 - HTTP, live dev DB: `test/mobile-bills-receipts-http.e2e-spec.ts` (with the bills). It grants
   tester1 menu 99 and cancels every receipt it posts.

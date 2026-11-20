@@ -8,15 +8,14 @@ import { MOBILE_DEVICE_UID_MAX_LENGTH } from '../../item/dto/mobile-item.dto';
 
 /**
  * Header keys the server fills or the phone never sends: the scope and number
- * (branch, year, device, slno / refno), the till session, the lifecycle
- * (status, post: a phone order is saved DRAFT and confirmed in the office),
- * the charge and tender arrays (no advance money from a phone), the audit
- * names (the login is the author), and soUserId / items, declared fresh below
- * (a redeclared prop keeps the base's Swagger `required`).
+ * (year, device, slno / refno), the till session, the lifecycle (status, post:
+ * the server confirms every phone order itself, since 2026-11-19, and
+ * waOnPost: the phone path sends no WhatsApp on Post), the charge and tender
+ * arrays (no advance money from a phone) and the audit names (the login is
+ * the author). Sending one is a 400 VALIDATION_WHITELIST.
  */
 const SERVER_FILLED_HEADER_KEYS = [
   'soId',
-  'soBranchId',
   'soTenantId',
   'soAccYear',
   'soSessionId',
@@ -25,13 +24,20 @@ const SERVER_FILLED_HEADER_KEYS = [
   'soOrderRefno',
   'soStatus',
   'post',
+  'waOnPost',
   'charges',
   'tenders',
   'soCreatedBy',
   'soModifiedBy',
-  'soUserId',
-  'items',
 ] as const;
+
+/**
+ * Header keys the phone may send, with rules of its own, so they are omitted
+ * from the desktop DTO and declared fresh below: a redeclared prop keeps the
+ * base's Swagger `required` (memory dto-redeclare-keeps-base-swagger), and
+ * `declare` would drop the validation.
+ */
+const REDECLARED_HEADER_KEYS = ['soBranchId', 'soUserId', 'items'] as const;
 
 /** Line keys the order fills from its own header, or that only an update sends. */
 const SERVER_FILLED_LINE_KEYS = [
@@ -51,9 +57,13 @@ export class MobileOrderLineDto extends OmitType(SaveSaleOrderItemDto, SERVER_FI
 /**
  * POST /mobile/orders/create: one order with its lines, in the desktop
  * /sale-orders/create shape (so* / soi*) without the keys the server fills.
- * Sending one of those is a 400 VALIDATION_WHITELIST.
+ * Sending one of those is a 400 VALIDATION_WHITELIST. soBranchId is optional
+ * here (the desktop requires it): absent = the server picks the branch.
  */
-export class CreateMobileOrderDto extends OmitType(SaveSaleOrderDto, SERVER_FILLED_HEADER_KEYS) {
+export class CreateMobileOrderDto extends OmitType(SaveSaleOrderDto, [
+  ...SERVER_FILLED_HEADER_KEYS,
+  ...REDECLARED_HEADER_KEYS,
+] as const) {
   @ApiProperty({
     format: 'uuid',
     description:
@@ -67,8 +77,8 @@ export class CreateMobileOrderDto extends OmitType(SaveSaleOrderDto, SERVER_FILL
     maxLength: MOBILE_DEVICE_UID_MAX_LENGTH,
     description:
       "The phone's registered device uid (fixed.device_master.dev_device_uid). Its device " +
-      "becomes so_device_id, and its branch the order's branch when it belongs to soCompanyId " +
-      "(else the company's default branch).",
+      "becomes so_device_id. Without soBranchId, its branch is also the order's branch when " +
+      "it belongs to soCompanyId (else the company's default branch).",
   })
   @TrimmedString(MOBILE_DEVICE_UID_MAX_LENGTH)
   @IsNotEmpty()
@@ -82,6 +92,22 @@ export class CreateMobileOrderDto extends OmitType(SaveSaleOrderDto, SERVER_FILL
   })
   @OptionalUuid()
   soUserId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'The branch the salesman picked for this order (VKSMAN Switch company), saved with the ' +
+      'order on the phone. The order is saved in this branch, whatever branch the phone is ' +
+      'registered to or the salesman has switched to since. It must be an active, not deleted ' +
+      'branch of soCompanyId (the rows of GET /master-lookups/branches/by-company/{soCompanyId}), ' +
+      'else 422 MOBILE_BRANCH_NOT_OF_COMPANY; no other branch is tried instead. Absent (or null): ' +
+      "as before, the phone's branch on the Device List when it belongs to soCompanyId, else " +
+      "the company's default branch, else its only active branch (422 " +
+      'MOBILE_BRANCH_NOT_RESOLVED when none). A resend (same soClientUuid) answers the order ' +
+      'already saved, in the branch it was saved in, whatever branch the resend carries.',
+  })
+  @OptionalUuid()
+  soBranchId?: string;
 
   @ApiProperty({ type: [MobileOrderLineDto], minItems: 1, description: 'At least one line' })
   @IsArray()

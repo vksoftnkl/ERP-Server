@@ -183,9 +183,7 @@ let ChargeMasterService = class ChargeMasterService {
             chgApplyOn: saveChargeMasterDto.chgApplyOn,
             chgLedgerCode: saveChargeMasterDto.chgLedgerCode,
             chgCreatedOn: now,
-            chgCreatedBy: saveChargeMasterDto.chgCreatedBy ?? actor,
-            chgModifiedOn: now,
-            chgModifiedBy: saveChargeMasterDto.chgModifiedBy ?? actor,
+            chgCreatedBy: actor,
         };
         this.applyOptionalFields(data, saveChargeMasterDto);
         data.chgCode = normalizedCode;
@@ -258,7 +256,7 @@ let ChargeMasterService = class ChargeMasterService {
                     chgApplyOn: saveChargeMasterDto.chgApplyOn,
                     chgLedgerCode: saveChargeMasterDto.chgLedgerCode,
                     chgModifiedOn: new Date(),
-                    chgModifiedBy: saveChargeMasterDto.chgModifiedBy ?? actor,
+                    chgModifiedBy: actor,
                 };
                 this.applyOptionalFields(data, saveChargeMasterDto);
                 data.chgCode = nextCode;

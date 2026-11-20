@@ -69,8 +69,12 @@ export interface CustomerDetail {
   gst_type: string | null;
   state_code: string;
   state_name: string;
+  /** cus_group_id: the customer's group (CUSTOMER_GROUP promotion rules). */
+  cust_group_id: string;
   area_id: string;
   area_name: string | null;
+  /** The area's arm_city_id (CITY promotion rules); null only if the area row is missing. */
+  city_id: string | null;
   distance_km: number | null;
   cust_phone1: string | null;
   debit_days: number;

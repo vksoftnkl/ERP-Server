@@ -43,11 +43,11 @@ describe('CreateMobileOrderDto', () => {
     await expect(refusals(ORDER, CreateMobileOrderDto)).resolves.toEqual([]);
   });
 
-  it.each(['soBranchId', 'soAccYear', 'soDeviceId', 'soOrderRefno', 'soStatus', 'post', 'tenders'])(
+  it.each(['soAccYear', 'soDeviceId', 'soOrderRefno', 'soStatus', 'post', 'waOnPost', 'tenders'])(
     'refuses the server-filled %s',
     async (key) => {
       const errors = await refusals(
-        { ...ORDER, [key]: key === 'post' ? true : 'x' },
+        { ...ORDER, [key]: key === 'post' || key === 'waOnPost' ? true : 'x' },
         CreateMobileOrderDto,
       );
       expect(errors).toContainEqual(expect.objectContaining({ code: 'VALIDATION_WHITELIST' }));
@@ -74,6 +74,23 @@ describe('CreateMobileOrderDto', () => {
 
   it('soUserId is optional', async () => {
     await expect(refusals({ ...ORDER, soUserId: UUID }, CreateMobileOrderDto)).resolves.toEqual([]);
+  });
+
+  it('soBranchId (the picked branch) is an optional uuid; null or blank = not sent', async () => {
+    await expect(refusals({ ...ORDER, soBranchId: UUID }, CreateMobileOrderDto)).resolves.toEqual(
+      [],
+    );
+    for (const absent of [null, '']) {
+      const dto = (await pipe.transform(
+        { ...ORDER, soBranchId: absent },
+        { type: 'body', metatype: CreateMobileOrderDto },
+      )) as CreateMobileOrderDto;
+      expect(dto.soBranchId).toBeUndefined();
+    }
+    const fields = (await refusals({ ...ORDER, soBranchId: 'branch-1' }, CreateMobileOrderDto)).map(
+      (e) => e.field,
+    );
+    expect(fields).toEqual(['soBranchId']);
   });
 });
 

@@ -10,6 +10,7 @@ export declare class CompanyMasterErrorResponseDto {
 export declare class CompanySeededMainBranchDto {
     brId: string;
     brName: string;
+    brCode: string | null;
     gdlId: string;
     gdlName: string;
 }
@@ -82,6 +83,9 @@ export declare class CompanyMasterPayloadDto {
     compLocaleCode: string;
     compRemarks: string | null;
     compAuthorizeSignature: string | null;
+    compUdyamNo: string | null;
+    compLogo: string | null;
+    compSignatoryName: string | null;
     compIsDeleted: boolean;
     compSyncDate: string | null;
     compCreatedOn: string;

@@ -1,8 +1,12 @@
+import { Prisma, UserMenus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { SaveUserAdministrationDto } from './dto/save-user-administration.dto';
-import { UserAdminPayload } from './types/user-administration-api.types';
+import { ResetUserPasswordDto, SaveUserAdministrationDto } from './dto/save-user-administration.dto';
+import { UserAdminPayload, UserAdminResetPasswordResult, UserAdminRestoreResult, UserAdminUnlockResult } from './types/user-administration-api.types';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare const USER_ADMIN_MENU_ID = 58;
+export declare const MIN_ADMIN_PASSWORD_LENGTH = 4;
+export declare const GENERATED_PASSWORD_LENGTH = 8;
 export declare class UserAdministrationService {
     private readonly prisma;
     private readonly auditLogService;
@@ -15,8 +19,15 @@ export declare class UserAdministrationService {
         usrId: string;
         deleted: true;
     }>;
+    resetPassword(dto: ResetUserPasswordDto): Promise<UserAdminResetPasswordResult>;
+    unlock(usrId: string): Promise<UserAdminUnlockResult>;
+    restore(usrId: string): Promise<UserAdminRestoreResult>;
+    private reviveDeletedRights;
+    private throwRestoreLoginTaken;
+    private actorLoginName;
     private createUser;
     private updateUser;
+    private assertRight;
     private assertMayGiveRole;
     private assertMayTouch;
     private replaceUserMenus;
@@ -24,9 +35,17 @@ export declare class UserAdministrationService {
     private ensureEmployeeLinkable;
     private applyPin;
     private applyOptionalUserFields;
+    private auditDisplayName;
+    private toAuditRecord;
+    private menuNamesOf;
+    private menuRightsOf;
+    private updateNotes;
     private toPayload;
     private toPayloadWithoutMenus;
     private toMenuPayload;
     private handleWriteError;
     private throwNotFound;
 }
+export declare function describeMenuRightsChange(before: readonly UserMenus[], after: readonly UserMenus[], menuNames: ReadonlyMap<number, string>): string;
+export declare function generatePassword(length?: number): string;
+export declare function parseMaxDiscPerc(value: unknown): Prisma.Decimal | null | undefined;

@@ -14,6 +14,8 @@ const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const public_decorator_1 = require("../../../common/decorators/public.decorator");
 const optional_auth_decorator_1 = require("../../../common/decorators/optional-auth.decorator");
+const password_change_allowed_decorator_1 = require("../../../common/decorators/password-change-allowed.decorator");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const auth_epoch_service_1 = require("../../app-version/services/auth-epoch.service");
 const auth_session_service_1 = require("../auth-session.service");
@@ -25,12 +27,14 @@ let AccessTokenGuard = class AccessTokenGuard {
     authSessionService;
     requestContextService;
     authEpoch;
-    constructor(reflector, tokenService, authSessionService, requestContextService, authEpoch) {
+    prisma;
+    constructor(reflector, tokenService, authSessionService, requestContextService, authEpoch, prisma) {
         this.reflector = reflector;
         this.tokenService = tokenService;
         this.authSessionService = authSessionService;
         this.requestContextService = requestContextService;
         this.authEpoch = authEpoch;
+        this.prisma = prisma;
     }
     async canActivate(context) {
         const isPublic = this.reflector.getAllAndOverride(public_decorator_1.IS_PUBLIC_KEY, [
@@ -59,7 +63,26 @@ let AccessTokenGuard = class AccessTokenGuard {
         this.requestContextService.setCompanyId(request.user.company_id);
         this.requestContextService.setBranchId(request.user.branch_id);
         this.requestContextService.setDeviceId(request.user.device_id);
+        if (request.user.pwc === true && !this.isPasswordChangeAllowed(context)) {
+            await this.assertPasswordChanged(request.user.sub);
+        }
         return true;
+    }
+    async assertPasswordChanged(usrId) {
+        const user = await this.prisma.userMaster.findUnique({
+            where: { usrId },
+            select: { usrMustChangePassword: true },
+        });
+        if (user?.usrMustChangePassword === false) {
+            return;
+        }
+        throw new common_1.ForbiddenException((0, auth_error_codes_1.authErrorBody)('Your password was reset: change it before you go on', 'authorization', auth_error_codes_1.AuthErrorCode.PASSWORD_CHANGE_REQUIRED));
+    }
+    isPasswordChangeAllowed(context) {
+        return (this.reflector.getAllAndOverride(password_change_allowed_decorator_1.PASSWORD_CHANGE_ALLOWED_KEY, [
+            context.getHandler(),
+            context.getClass(),
+        ]) === true);
     }
     isOptionalAuth(context) {
         return (this.reflector.getAllAndOverride(optional_auth_decorator_1.IS_OPTIONAL_AUTH_KEY, [
@@ -86,6 +109,7 @@ exports.AccessTokenGuard = AccessTokenGuard = __decorate([
         token_service_1.TokenService,
         auth_session_service_1.AuthSessionService,
         request_context_service_1.RequestContextService,
-        auth_epoch_service_1.AuthEpochService])
+        auth_epoch_service_1.AuthEpochService,
+        prisma_service_1.PrismaService])
 ], AccessTokenGuard);
 //# sourceMappingURL=access-token.guard.js.map

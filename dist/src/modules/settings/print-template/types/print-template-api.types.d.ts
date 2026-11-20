@@ -58,6 +58,9 @@ export interface PrintTemplateVersionPayload {
     ptvCreatedBy: string | null;
     ptvModifiedOn: string | null;
     ptvModifiedBy: string | null;
+    ptvCreatedByName?: string | null;
+    ptvModifiedByName?: string | null;
+    ptvApprovedByName?: string | null;
     ptvIsPublishedRev: boolean;
     ptvIsEditable: boolean;
     datasets: PrintTemplateDatasetPayload[];
@@ -86,6 +89,8 @@ export interface PrintTemplatePayload {
     ptlCreatedBy: string | null;
     ptlModifiedOn: string | null;
     ptlModifiedBy: string | null;
+    ptlCreatedByName?: string | null;
+    ptlModifiedByName?: string | null;
     versions: PrintTemplateVersionPayload[];
 }
 export interface PrintTemplateListResult {

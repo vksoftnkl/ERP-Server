@@ -1,5 +1,6 @@
 export interface MobileItemOptions {
     companies: MobileCompanyOption[];
+    branches: MobileBranchOption[];
     itemGroups: MobileSortedOption[];
     brands: MobileSortedOption[];
     priceLevels: MobilePriceLevelOption[];
@@ -8,6 +9,12 @@ export interface MobileCompanyOption {
     id: string;
     name: string;
     place: string | null;
+}
+export interface MobileBranchOption {
+    id: string;
+    name: string;
+    companyId: string;
+    isDefault: boolean;
 }
 export interface MobileSortedOption {
     id: string;
@@ -48,6 +55,8 @@ export interface MobileItem {
     itemGroupName: string | null;
     itemBrandId: string | null;
     itemBrandName: string | null;
+    categoryId: string | null;
+    sectionId: string | null;
     allowLoading: boolean;
     allowFreight: boolean;
     allowPromo: boolean;

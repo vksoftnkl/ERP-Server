@@ -2,15 +2,8 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { ItemPriceLookupQueryDto } from '../dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from '../dto/item-price-refresh-query.dto';
 import { ItemPriceLookupPayload, ItemUnitCyclePayload } from '../types/master-lookup-api.types';
-export interface QtyPriceSettingReader {
-    resolveEffective(scope: {
-        companyId?: string;
-        branchId?: string;
-    }): Promise<ReadonlyArray<{
-        asdKey: string;
-        value: string | null;
-    }>>;
-}
+import { type QtyPriceSettingReader } from '../../Inventory/items-price-master/sale-line-price';
+export type { QtyPriceSettingReader };
 export declare class ItemPriceLookup {
     private readonly prisma;
     private readonly settings?;
@@ -21,9 +14,7 @@ export declare class ItemPriceLookup {
     private resolveLoadingCharge;
     private resolveFreightCharge;
     private resolveTaxLedgers;
-    private lineBucketValues;
-    private pricedBuckets;
-    private provisionalBucket;
     private resolveStockBuckets;
+    private throwPriceMiss;
     getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload>;
 }

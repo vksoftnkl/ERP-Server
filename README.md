@@ -99,18 +99,23 @@ HTTPS_KEY_PATH=certs/server.key
 3. Restart the app and use:
 - `https://localhost:3010/api/v1`
 
-### Phone port (VKSMAN salesman app)
+### Phones over plain HTTP (VKSMAN salesman app)
 
-The salesman phones can't trust a self-made certificate, so they sync over plain HTTP on a
-second port:
+The salesman phones can't trust a self-made certificate, so they sync over plain HTTP. They
+use the same port as everyone else (`PORT`, e.g. `http://<server-ip>:3011/api/v1`). The
+HTTPS port reads each connection's first byte: a TLS handshake goes to HTTPS, anything else
+goes to plain HTTP. Turn it on with:
 
 ```bash
-MOBILE_HTTP_PORT=3012
+PHONE_HTTP_ENABLED=true
 ```
 
-Only `GET /api/v1/health`, `POST /api/v1/auth/login` and `/api/v1/mobile/*` answer there
-(`PHONE_HTTP_ROUTES` in `src/main.ts`); every other route is a 404. Leave it empty or `0` to
-turn it off. Allow the port through the server PC's firewall (`sudo ufw allow 3012/tcp`).
+Over plain HTTP, only the phone's routes answer: `GET /api/v1/health`,
+`POST /api/v1/auth/login`, `/api/v1/mobile/*`, the ledger-statement vouchers report and the
+fiscal-years-by-company lookup (`PHONE_HTTP_ROUTES` in `src/common/phone-http/phone-http.ts`).
+Every other route is a 404 `HTTP_404`, so the desktop and web clients stay on HTTPS. Without
+`HTTPS_ENABLED` the port is plain HTTP anyway and serves every route. This replaces the old
+second port `MOBILE_HTTP_PORT` (3012). Remove it from `.env` and close 3012 in the firewall.
 
 ## API endpoints
 

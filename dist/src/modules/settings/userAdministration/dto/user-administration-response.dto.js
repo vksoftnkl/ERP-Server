@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UserAdminSuccessDeleteDto = exports.UserAdminSuccessSingleDto = exports.UserAdminDeleteResultDto = exports.UserAdminPayloadDto = exports.UserMenuPayloadDto = exports.UserAdminErrorResponseDto = exports.UserAdminErrorFieldDto = void 0;
+exports.UserAdminSuccessRestoreDto = exports.UserAdminSuccessUnlockDto = exports.UserAdminSuccessResetPasswordDto = exports.UserAdminRestoreResultDto = exports.UserAdminUnlockResultDto = exports.UserAdminResetPasswordResultDto = exports.UserAdminSuccessDeleteDto = exports.UserAdminSuccessSingleDto = exports.UserAdminDeleteResultDto = exports.UserAdminPayloadDto = exports.UserMenuPayloadDto = exports.UserAdminErrorResponseDto = exports.UserAdminErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const user_administration_enum_1 = require("../types/user-administration.enum");
 class UserAdminErrorFieldDto {
@@ -190,6 +190,7 @@ class UserAdminPayloadDto {
     usrEditDate;
     usrEditEntry;
     usrEditRate;
+    usrMaxDiscPerc;
     usrDesktopLogin;
     usrWebLogin;
     usrMobileLogin;
@@ -311,9 +312,18 @@ __decorate([
     __metadata("design:type", Boolean)
 ], UserAdminPayloadDto.prototype, "usrEditEntry", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)(),
+    (0, swagger_1.ApiProperty)({ description: 'Screen label "Allow rate / discount change" (review step 6)' }),
     __metadata("design:type", Boolean)
 ], UserAdminPayloadDto.prototype, "usrEditRate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        example: '12.50',
+        description: 'Max discount % on a Sale Bill (each line and the bill discount); null = no limit',
+    }),
+    __metadata("design:type", Object)
+], UserAdminPayloadDto.prototype, "usrMaxDiscPerc", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
@@ -435,4 +445,159 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: UserAdminDeleteResultDto }),
     __metadata("design:type", UserAdminDeleteResultDto)
 ], UserAdminSuccessDeleteDto.prototype, "data", void 0);
+class UserAdminResetPasswordResultDto {
+    usrId;
+    usrLoginName;
+    usrMustChangePassword;
+    usrPasswordChangedOn;
+    generatedPassword;
+}
+exports.UserAdminResetPasswordResultDto = UserAdminResetPasswordResultDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], UserAdminResetPasswordResultDto.prototype, "usrId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], UserAdminResetPasswordResultDto.prototype, "usrLoginName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true, description: 'Always true: the user changes it at the next login' }),
+    __metadata("design:type", Boolean)
+], UserAdminResetPasswordResultDto.prototype, "usrMustChangePassword", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'date-time' }),
+    __metadata("design:type", String)
+], UserAdminResetPasswordResultDto.prototype, "usrPasswordChangedOn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        example: 'k7Hq2mXa',
+        description: 'Only when generate: true — the new password, answered this ONCE (never stored, logged or ' +
+            'audited; nobody can read it back). null when the administrator typed it.',
+    }),
+    __metadata("design:type", Object)
+], UserAdminResetPasswordResultDto.prototype, "generatedPassword", void 0);
+class UserAdminUnlockResultDto {
+    usrId;
+    usrIsLocked;
+    usrFailedLoginCount;
+    usrLockedOn;
+    usrLockedBy;
+    changed;
+}
+exports.UserAdminUnlockResultDto = UserAdminUnlockResultDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], UserAdminUnlockResultDto.prototype, "usrId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], UserAdminUnlockResultDto.prototype, "usrIsLocked", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], UserAdminUnlockResultDto.prototype, "usrFailedLoginCount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, nullable: true, example: null }),
+    __metadata("design:type", void 0)
+], UserAdminUnlockResultDto.prototype, "usrLockedOn", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: String, nullable: true, example: null }),
+    __metadata("design:type", void 0)
+], UserAdminUnlockResultDto.prototype, "usrLockedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'false = it was neither locked nor counting failed logins: nothing changed, no audit row',
+    }),
+    __metadata("design:type", Boolean)
+], UserAdminUnlockResultDto.prototype, "changed", void 0);
+class UserAdminRestoreResultDto {
+    usrId;
+    usrLoginName;
+    usrIsDeleted;
+    usrIsActive;
+    menuCount;
+}
+exports.UserAdminRestoreResultDto = UserAdminRestoreResultDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], UserAdminRestoreResultDto.prototype, "usrId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], UserAdminRestoreResultDto.prototype, "usrLoginName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], UserAdminRestoreResultDto.prototype, "usrIsDeleted", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false, description: 'A restored user always comes back INACTIVE' }),
+    __metadata("design:type", Boolean)
+], UserAdminRestoreResultDto.prototype, "usrIsActive", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 12,
+        description: 'How many menu rights rows came back: exactly the ones the delete removed (a row of a ' +
+            'menu that is no longer active is left out)',
+    }),
+    __metadata("design:type", Number)
+], UserAdminRestoreResultDto.prototype, "menuCount", void 0);
+class UserAdminSuccessResetPasswordDto {
+    success;
+    message;
+    data;
+}
+exports.UserAdminSuccessResetPasswordDto = UserAdminSuccessResetPasswordDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], UserAdminSuccessResetPasswordDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Password reset' }),
+    __metadata("design:type", String)
+], UserAdminSuccessResetPasswordDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: UserAdminResetPasswordResultDto }),
+    __metadata("design:type", UserAdminResetPasswordResultDto)
+], UserAdminSuccessResetPasswordDto.prototype, "data", void 0);
+class UserAdminSuccessUnlockDto {
+    success;
+    message;
+    data;
+}
+exports.UserAdminSuccessUnlockDto = UserAdminSuccessUnlockDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], UserAdminSuccessUnlockDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'User unlocked' }),
+    __metadata("design:type", String)
+], UserAdminSuccessUnlockDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: UserAdminUnlockResultDto }),
+    __metadata("design:type", UserAdminUnlockResultDto)
+], UserAdminSuccessUnlockDto.prototype, "data", void 0);
+class UserAdminSuccessRestoreDto {
+    success;
+    message;
+    data;
+}
+exports.UserAdminSuccessRestoreDto = UserAdminSuccessRestoreDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], UserAdminSuccessRestoreDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'User restored' }),
+    __metadata("design:type", String)
+], UserAdminSuccessRestoreDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: UserAdminRestoreResultDto }),
+    __metadata("design:type", UserAdminRestoreResultDto)
+], UserAdminSuccessRestoreDto.prototype, "data", void 0);
 //# sourceMappingURL=user-administration-response.dto.js.map

@@ -120,12 +120,18 @@ export const POST_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
 
 /**
  * Decides a receipt's bill-wise settlement off the draft `saveAndPostInTransaction`
- * has just saved, inside the same transaction.
+ * has just saved, inside the same transaction. `creditsApplied`, when the
+ * callback answers it, replaces the body's (the mobile upload caps the
+ * phone's credits at what each still holds under the row lock); left out, the
+ * body's credits post as sent.
  */
 export type ReceiptSettlementOf = (
   tx: Prisma.TransactionClient,
   saved: ReceiptDraftPayload,
-) => Promise<Pick<PostReceiptDto, 'allocations' | 'onAccount'>>;
+) => Promise<
+  Pick<PostReceiptDto, 'allocations' | 'onAccount'> &
+    Partial<Pick<PostReceiptDto, 'creditsApplied'>>
+>;
 
 /** Notes 106: a one-call post needs onAccount, the figure that proves both sides read the same receipt. */
 function requireOnAccount(dto: SaveDraftReceiptDto): void {
@@ -212,10 +218,11 @@ export class ReceiptPostingService {
    *
    * `settle`, when given, decides `allocations` and `onAccount` off the draft
    * just saved (the phone sends only the money, and the server fills the open
-   * bills in /receipts/open-items order). It runs between the draft and the
-   * post, so it sees the tender rows and the seeded other-ledger lines the
-   * post will read. Without it the body's own figures are the instruction,
-   * exactly as on `/receipts/create` with `post: true`.
+   * bills in /receipts/open-items order), and `creditsApplied` too when it
+   * answers one. It runs between the draft and the post, so it sees the tender
+   * rows and the seeded other-ledger lines the post will read. Without it the
+   * body's own figures are the instruction, exactly as on `/receipts/create`
+   * with `post: true`.
    */
   async saveAndPostInTransaction(
     tx: Prisma.TransactionClient,
@@ -231,7 +238,7 @@ export class ReceiptPostingService {
     const { post: _post, onAccount, otherLineBills, ...draft } = dto;
     void _post;
     const saved = await this.receiptService.saveInTransaction(tx, draft, draftActor);
-    const settlement = settle
+    const settlement: Awaited<ReturnType<ReceiptSettlementOf>> = settle
       ? await settle(tx, saved)
       : { allocations: dto.allocations ?? [], onAccount: onAccount as number };
     return this.postInTransaction(
@@ -242,7 +249,7 @@ export class ReceiptPostingService {
         avhBranchId: dto.avhBranchId,
         avhAccYear: dto.avhAccYear,
         allocations: settlement.allocations,
-        creditsApplied: dto.creditsApplied ?? [],
+        creditsApplied: settlement.creditsApplied ?? dto.creditsApplied ?? [],
         otherLineBills: otherLineBills ?? [],
         onAccount: settlement.onAccount,
       },

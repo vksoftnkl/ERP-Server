@@ -40,6 +40,8 @@ interface ItemRow {
   itg_name: string | null;
   item_brand_id: string | null;
   brand_name: string | null;
+  item_category_id: string | null;
+  item_section_id: string | null;
   item_allow_loading: boolean;
   item_allow_freight: boolean;
   item_allow_promo: boolean;
@@ -108,6 +110,12 @@ export function unitPriceAnswer<R extends ItemPriceMaster>(
   return null;
 }
 
+/** The companies GET /mobile/items/options lists, and whose branches it lists. */
+const LISTED_COMPANY = {
+  compIsDeleted: false,
+  compIsActive: true,
+} satisfies Prisma.CompanyWhereInput;
+
 /**
  * The phone's reads of the item masters for the order screen. Read-only:
  * nothing here writes, and no cost price leaves the server (salesmen's phones
@@ -118,11 +126,25 @@ export class MobileItemService {
   constructor(private readonly prisma: PrismaService) {}
 
   async options(): Promise<MobileItemOptions> {
-    const [companies, groups, brands, levels] = await Promise.all([
+    const [companies, branches, groups, brands, levels] = await Promise.all([
       this.prisma.company.findMany({
-        where: { compIsDeleted: false, compIsActive: true },
+        where: LISTED_COMPANY,
         select: { compId: true, compName: true, compCity: true },
         orderBy: [{ compName: 'asc' }, { compId: 'asc' }],
+      }),
+      // VKSMAN's Switch company picks a branch from these (2026-11-18): the
+      // phone syncs over plain HTTP, where only /mobile/* is served, so it
+      // cannot call /master-lookups/branches/by-company. The same rows and the
+      // same order as that route, per company in the companies' order.
+      this.prisma.branchMaster.findMany({
+        where: { brIsDeleted: false, brIsActive: true, company: LISTED_COMPANY },
+        select: { brId: true, brName: true, brCompId: true, brIsDefault: true },
+        orderBy: [
+          { company: { compName: 'asc' } },
+          { brCompId: 'asc' },
+          { brName: 'asc' },
+          { brId: 'asc' },
+        ],
       }),
       this.prisma.itemGroupMaster.findMany({
         where: { itgIsDeleted: false, itgIsActive: true },
@@ -140,8 +162,19 @@ export class MobileItemService {
         orderBy: { iplId: 'asc' },
       }),
     ]);
+    // Two reads, so a company switched off in between could leave its
+    // branches behind: keep only those of a company listed above.
+    const listed = new Set(companies.map((c) => c.compId));
     return {
       companies: companies.map((c) => ({ id: c.compId, name: c.compName, place: c.compCity })),
+      branches: branches
+        .filter((b) => listed.has(b.brCompId))
+        .map((b) => ({
+          id: b.brId,
+          name: b.brName,
+          companyId: b.brCompId,
+          isDefault: b.brIsDefault === true,
+        })),
       itemGroups: groups.map((g) => ({ id: g.itgId, name: g.itgName, position: g.itgSort })),
       brands: brands.map((b) => ({ id: b.brand_id, name: b.brand_name, position: b.brand_sort })),
       priceLevels: levels.map((l) => ({ id: l.iplId, name: l.iplName })),
@@ -175,6 +208,7 @@ export class MobileItemService {
       this.prisma.$queryRaw<ItemRow[]>`
         SELECT i.item_id, i.item_code, i.item_name_en, i.item_name_ta,
                i.item_group_id, g.itg_name, i.item_brand_id, b.brand_name,
+               i.item_category_id, i.item_section_id,
                i.item_allow_loading, i.item_allow_freight, i.item_allow_promo,
                i.item_incl_tax, i.item_hsn_code, i.item_default_tax_id,
                t.tax_rate_perc
@@ -279,6 +313,9 @@ export class MobileItemService {
       itemGroupName: row.itg_name,
       itemBrandId: row.item_brand_id,
       itemBrandName: row.brand_name,
+      // The phone's offer engine matches ITEM_CATEGORY / ITEM_SECTION scheme rows by these.
+      categoryId: row.item_category_id,
+      sectionId: row.item_section_id,
       allowLoading: row.item_allow_loading,
       allowFreight: row.item_allow_freight,
       allowPromo: row.item_allow_promo,

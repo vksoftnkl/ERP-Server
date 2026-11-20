@@ -69,7 +69,14 @@ function buildModuleFetchers(prisma) {
             orderBy: [{ edName: 'asc' }, { edId: 'asc' }],
         }), (row) => (0, lookup_option_utils_1.toOption)(row.edId, row.edName)),
         employees: simpleFetcher(() => prisma.employeeMaster.findMany({
-            where: { empIsDeleted: false, empIsActive: true },
+            where: {
+                empIsDeleted: false,
+                empIsActive: true,
+                OR: [
+                    { empStatus: null },
+                    { NOT: { empStatus: { equals: 'Resigned', mode: 'insensitive' } } },
+                ],
+            },
             select: { empId: true, empName: true },
             orderBy: [{ empName: 'asc' }, { empId: 'asc' }],
         }), (row) => (0, lookup_option_utils_1.toOption)(row.empId, row.empName)),

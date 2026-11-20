@@ -32,6 +32,7 @@ export declare class GodownsMasterService {
     private getParentName;
     private getBranchName;
     private getActiveLocationOrThrow;
+    private shortFromName;
     private assertBranchLive;
     private assertBranchChangeAllowed;
     private validateParentAssignment;

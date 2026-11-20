@@ -5,6 +5,8 @@ import {
   escapeLike,
   filterSql,
   MobileCustomerService,
+  outstandingScope,
+  outstandingSql,
   searchSql,
 } from './mobile-customer.service';
 import type { PrismaService } from '../../database/prisma/prisma.service';
@@ -33,6 +35,9 @@ const listRow = (overrides: Record<string, unknown> = {}) => ({
   cus_is_active: true,
   cus_credit_amt_limit: new Prisma.Decimal(100000),
   bal: new Prisma.Decimal('124500.5'),
+  owed: new Prisma.Decimal('130250'),
+  owed_bills: 3,
+  oldest_date: '2026-09-08',
   ...overrides,
 });
 
@@ -83,6 +88,39 @@ describe('mobile customer SQL helpers', () => {
     );
     expect(sql.sql).toContain('accounts.acc_opening_balance');
     expect(sql.sql).toContain('accounts.acc_vouchers');
+    expect(sql.values).toEqual(
+      expect.arrayContaining([COMPANY, '2026-2027', '2026-11-16', CUS_ID]),
+    );
+  });
+
+  it('reads no outstanding without a scope', () => {
+    expect(outstandingSql(null, null).sql).toContain('WHERE false');
+  });
+
+  it("outstanding = the Party Outstanding report's owed, as its party card reads it", () => {
+    const scope = { companyId: COMPANY, accYear: '2026-2027', branchId: null, asOn: '2026-11-16' };
+    expect(outstandingScope(scope, CUS_ID, '2026-11-16')).toEqual(
+      expect.objectContaining({
+        companyId: COMPANY,
+        asOn: '2026-11-16',
+        today: '2026-11-16',
+        fyName: '2026-2027',
+        branchId: null,
+        side: 'RECEIVABLE',
+        owedSide: 'DR',
+        group: null,
+        areaId: null,
+        salesmanId: null,
+        partyId: CUS_ID,
+        deductPdc: false,
+      }),
+    );
+    const sql = outstandingSql(scope, CUS_ID);
+    // The report's own chain (bills pending on D, per party), not a copy of it.
+    expect(sql.sql).toContain('accounts.acc_bill_balance');
+    expect(sql.sql).toContain('accounts.acc_bill_adjustment');
+    expect(sql.sql).toContain('pf.owed');
+    expect(sql.sql).toContain('FROM pf');
     expect(sql.values).toEqual(
       expect.arrayContaining([COMPANY, '2026-2027', '2026-11-16', CUS_ID]),
     );
@@ -139,6 +177,9 @@ describe('MobileCustomerService', () => {
           cusCreditAmtLimit: '100000.00',
           balance: { amount: '124500.50', side: 'DR' },
           balanceStatus: 'OVER_LIMIT',
+          outstanding: '130250.00',
+          outstandingBills: 3,
+          oldestBillDate: '2026-09-08',
         }),
       ],
       counts: { all: 3, outstanding: 1, unregistered: 2, inactive: 1 },
@@ -148,7 +189,28 @@ describe('MobileCustomerService', () => {
       hasMore: true,
       balanceAsOn: '2026-11-16',
       accYear: '2026-2027',
+      companyId: COMPANY,
     });
+  });
+
+  it('a customer with nothing open: outstanding 0.00, no bills, no oldest date', async () => {
+    queryRaw
+      .mockResolvedValueOnce([{ name: '2026-2027', today: '2026-11-16' }])
+      .mockResolvedValueOnce([
+        listRow({ bal: new Prisma.Decimal(-500), owed: null, owed_bills: null, oldest_date: null }),
+      ]);
+
+    const out = await service.list({});
+
+    expect(out.items[0]).toEqual(
+      expect.objectContaining({
+        balance: { amount: '500.00', side: 'CR' },
+        balanceStatus: 'ADVANCE',
+        outstanding: '0.00',
+        outstandingBills: 0,
+        oldestBillDate: null,
+      }),
+    );
   });
 
   it('returns counts and no items for a page past the end', async () => {
@@ -176,9 +238,18 @@ describe('MobileCustomerService', () => {
     const out = await service.list({});
 
     expect(queryRaw).toHaveBeenCalledTimes(1);
-    expect(out.items[0]).toEqual(expect.objectContaining({ balance: null, balanceStatus: null }));
+    expect(out.items[0]).toEqual(
+      expect.objectContaining({
+        balance: null,
+        balanceStatus: null,
+        outstanding: null,
+        outstandingBills: null,
+        oldestBillDate: null,
+      }),
+    );
     expect(out.balanceAsOn).toBeNull();
     expect(out.accYear).toBeNull();
+    expect(out.companyId).toBeNull();
   });
 
   it('adds the balance to the desktop get payload, 0 when the ledger has no books', async () => {
@@ -189,6 +260,7 @@ describe('MobileCustomerService', () => {
     });
     queryRaw
       .mockResolvedValueOnce([{ name: '2026-2027', today: '2026-11-16' }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
     const out = await service.getById(CUS_ID);
@@ -199,6 +271,50 @@ describe('MobileCustomerService', () => {
         cusId: CUS_ID,
         balance: { amount: '0.00', side: 'DR' },
         balanceStatus: 'SETTLED',
+        outstanding: '0.00',
+        outstandingBills: 0,
+        oldestBillDate: null,
+      }),
+    );
+  });
+
+  it("adds the customer's outstanding to get, read for that customer only", async () => {
+    customerService.getById.mockResolvedValue({ cusId: CUS_ID, cusCreditAmtLimit: 0 });
+    queryRaw
+      .mockResolvedValueOnce([{ name: '2026-2027', today: '2026-11-16' }])
+      .mockResolvedValueOnce([{ bal: new Prisma.Decimal('8450') }])
+      .mockResolvedValueOnce([
+        { owed: new Prisma.Decimal('12350'), owed_bills: 2, oldest_date: '2026-10-01' },
+      ]);
+
+    const out = await service.getById(CUS_ID);
+
+    expect(out).toEqual(
+      expect.objectContaining({
+        balance: { amount: '8450.00', side: 'DR' },
+        outstanding: '12350.00',
+        outstandingBills: 2,
+        oldestBillDate: '2026-10-01',
+      }),
+    );
+    // The third read is the report's chain narrowed to this one customer.
+    const inner = queryRaw.mock.calls[2][1] as Prisma.Sql;
+    expect(inner.sql).toContain('accounts.acc_bill_balance');
+    expect(inner.values).toContain(CUS_ID);
+  });
+
+  it('get without a company: no balance and no outstanding', async () => {
+    companyId = null;
+    customerService.getById.mockResolvedValue({ cusId: CUS_ID, cusCreditAmtLimit: 0 });
+
+    const out = await service.getById(CUS_ID);
+
+    expect(out).toEqual(
+      expect.objectContaining({
+        balance: null,
+        outstanding: null,
+        outstandingBills: null,
+        oldestBillDate: null,
       }),
     );
   });
@@ -208,5 +324,51 @@ describe('MobileCustomerService', () => {
 
     await expect(service.getById(CUS_ID)).rejects.toThrow('CUSTOMER_NOT_FOUND');
     expect(queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe('MobileCustomerService.formOptions', () => {
+  const AREA_ID = '019c6f6c-be87-7a11-8905-36092c46e201';
+  const CITY_ID = '019c6f6c-be87-7a11-8905-36092c46e202';
+
+  function build() {
+    const areaFind = jest
+      .fn()
+      .mockResolvedValue([
+        { armId: AREA_ID, armName: 'Bus Stand', armCityId: CITY_ID, city: { ctmName: 'Namakkal' } },
+      ]);
+    const prisma = {
+      areaMaster: { findMany: areaFind },
+      custGroup: { findMany: jest.fn().mockResolvedValue([{ cgrId: 'g1', cgrName: 'Retail' }]) },
+      itemPriceLevel: { findMany: jest.fn().mockResolvedValue([{ iplId: 1, iplName: 'WS' }]) },
+      stateCode: {
+        findMany: jest.fn().mockResolvedValue([{ stateCode: '33', stateName: 'Tamil Nadu' }]),
+      },
+    } as unknown as PrismaService;
+    const context = { getCompanyId: () => null } as unknown as RequestContextService;
+    const service = new MobileCustomerService(prisma, context, {} as unknown as CustomerService);
+    return { service, areaFind };
+  }
+
+  it("areas carry the beat's city id (arm_city_id) for CITY scheme rows", async () => {
+    const { service, areaFind } = build();
+
+    const options = await service.formOptions();
+
+    expect(options.areas).toEqual([
+      { id: AREA_ID, name: 'Bus Stand', cityId: CITY_ID, cityName: 'Namakkal' },
+    ]);
+    expect(areaFind).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { armIsDeleted: false, armIsActive: true },
+        select: {
+          armId: true,
+          armName: true,
+          armCityId: true,
+          city: { select: { ctmName: true } },
+        },
+      }),
+    );
+    expect(options.groups).toEqual([{ id: 'g1', name: 'Retail' }]);
   });
 });

@@ -70,6 +70,10 @@ export enum ItemErrorCode {
    *  item_base_unit_id, another row marked base, the base row's unit, or the base row left out
    *  of unit_conversions (notes 138 A1). */
   BASE_UNIT_LOCKED = 'ITEM_BASE_UNIT_LOCKED',
+  /** 409: a unit conversion row's unit was re-picked (same iuc_id, another unit) while it is
+   *  used — any row of the item for the base row, that row itself for any other row — so old
+   *  bills, orders, purchases and stock would read the new unit (item master review 11-20 Q2). */
+  UNIT_IN_USE = 'ITEM_UNIT_IN_USE',
   /** The item cannot move to this company while another company holds its stock or prices (notes 137 C3). */
   COMPANY_MOVE_BLOCKED = 'ITEM_COMPANY_MOVE_BLOCKED',
   /** item_brand_id names no item brand (the column has no foreign key, notes 137 B9). */

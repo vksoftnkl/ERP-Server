@@ -178,6 +178,18 @@ model SaleReturn {
   /// the refund cap (D48).
   srVoucherShareAmt     Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_voucher_share_amt")
 
+  // ── Mobile upload (20261120170000_mobile_sale_returns) ──────────────────
+  /// The phone's own id for a return uploaded from the mobile app
+  /// (/mobile/returns/create). A resend with the same (company, client uuid)
+  /// answers the return already saved, or re-saves its DRAFT; NULL on desktop
+  /// returns. The year is in ux_sr_client_uuid only because a unique index on
+  /// a partitioned table must hold the partition key: the server checks across
+  /// years under a lock. Written with raw SQL by the mobile module, on the
+  /// uploaded return's own row only.
+  srClientUuid          String?   @db.Uuid                             @map("sr_client_uuid")
+  /// The phone's own number (D12). srUsrRefno keeps its desktop meaning.
+  srMobileRefno         String?   @db.VarChar(30)                      @map("sr_mobile_refno")
+
   // Relations
   bill                  SaleBill?          @relation("SaleReturnBill",       fields: [srBillId, srBillAccYear], references: [sbId, sbAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_bill")
   customer              Customer           @relation("SaleReturnCustomer",   fields: [srCustId],      references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_cust")
@@ -197,6 +209,7 @@ model SaleReturn {
   @@unique([srCompanyId, srBranchId, srAccYear, srReturnRefno], map: "ux_sr_refno")
   /// Numbers are per DEVICE (D16; 20261113160000 replaced ux_sr_counter_slno).
   @@unique([srCompanyId, srBranchId, srAccYear, srDeviceId, srReturnSlno], map: "ux_sr_device_slno")
+  @@unique([srCompanyId, srClientUuid, srAccYear], map: "ux_sr_client_uuid")
 
   // Partial indexes are DB-only: ix_sr_company_branch_date, ix_sr_bill,
   // ix_sr_cust, and FK-covering ix_sr_pos_state / ix_sr_reason / ix_sr_driver

@@ -20,6 +20,7 @@ import { throwBadRequest } from '../../common/utils/module-shared.utils';
 import { AuditLogErrorCode, type AuditLogErrorDetail } from './types/audit-log-error-codes';
 import type { AuditReadScope } from './audit-log-access.service';
 import { stylesheetDigest } from './audit-text-digest';
+import { itemChildDisplayName } from './audit-item-history';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^\d+$/;
 const DEFAULT_PAGE = 1;
@@ -528,7 +529,7 @@ export class AuditLogService {
     const includeTotal = queryDto.include_total === true; // opt-in to avoid COUNT(*)
 
     // ── 2. Build WHERE clause ──────────────────────────────────────────────────
-    const where = await this.buildWhereClause(queryDto);
+    const { where, compositeHistory } = await this.buildWhereClause(queryDto);
     if (scope?.screenIds) {
       // AND, so no other filter can widen it.
       where.AND = [...this.whereAndOf(where), { logScreenId: { in: scope.screenIds } }];
@@ -557,7 +558,18 @@ export class AuditLogService {
     ]);
 
     // ── 5. Prepare records once; derive lookup keys in the same pass ───────────
-    const preparedRecords = records.map((r) => this.prepareAuditLogListRecord(r));
+    // Item master review 11-20 (Q12 step 1): a composite record's History (the
+    // Item and its unit / price / barcode / reorder rows) skips "update" rows
+    // that changed nothing — every card save used to write one for the header.
+    // Paging still walks the stored rows (next_cursor below), so none is lost.
+    const preparedRecords = records
+      .map((r) => this.prepareAuditLogListRecord(r))
+      .filter(
+        (prepared) =>
+          !compositeHistory ||
+          prepared.record.logAction !== 'update' ||
+          !this.isEmptyChange(prepared.changedFields),
+      );
 
     // Extract unique IDs in one pass — avoids iterating arrays multiple times
     const userIds = [
@@ -601,9 +613,13 @@ export class AuditLogService {
 
   // ─── Extracted: WHERE builder ─────────────────────────────────────────────────
 
+  /**
+   * `compositeHistory`: the call is a History button on a composite screen (Item
+   * Master), whose trail spans its child screens.
+   */
   private async buildWhereClause(
     queryDto: ListAuditLogQueryDto,
-  ): Promise<Prisma.AuditLogWhereInput> {
+  ): Promise<{ where: Prisma.AuditLogWhereInput; compositeHistory: boolean }> {
     const where: Prisma.AuditLogWhereInput = {};
 
     if (queryDto.action?.trim()) {
@@ -614,16 +630,17 @@ export class AuditLogService {
         | 'cancel';
     }
 
-    if (queryDto.screen_id !== undefined) {
-      where.logScreenId = queryDto.screen_id;
-    }
-
     // screen_name + record_pk are resolved together: on a composite screen the
     // record's trail spans the parent screen and its child screens.
     // AND (not OR) so the scope filter can't be widened by the `search` OR below.
-    const recordScopeFilter = await this.buildRecordScopeFilter(queryDto);
-    if (recordScopeFilter) {
-      where.AND = [recordScopeFilter];
+    const recordScope = await this.buildRecordScopeFilter(queryDto);
+    // A composite trail names its own screen id inside its parent branch: at the
+    // top level it would drop every child row (item master review 11-20, Q12).
+    if (queryDto.screen_id !== undefined && !recordScope?.composite) {
+      where.logScreenId = queryDto.screen_id;
+    }
+    if (recordScope) {
+      where.AND = [recordScope.filter];
     }
 
     // ── Date range ──────────────────────────────────────────────────────────────
@@ -659,7 +676,7 @@ export class AuditLogService {
       ];
     }
 
-    return where;
+    return { where, compositeHistory: recordScope?.composite ?? false };
   }
 
   /**
@@ -671,14 +688,14 @@ export class AuditLogService {
    */
   private async buildRecordScopeFilter(
     queryDto: ListAuditLogQueryDto,
-  ): Promise<Prisma.AuditLogWhereInput | null> {
+  ): Promise<{ filter: Prisma.AuditLogWhereInput; composite: boolean } | null> {
     const screenName = queryDto.screen_name?.trim();
     const recordPk = queryDto.record_pk?.trim();
     const screenFilter: Prisma.AuditLogWhereInput = screenName
       ? { auditScreen: { is: { screenName } } }
       : {};
     if (!recordPk) {
-      return screenName ? screenFilter : null;
+      return screenName ? { filter: screenFilter, composite: false } : null;
     }
     // The Qt History buttons ask by screen_id; the same-screen widening needs the name.
     const expandScreenName =
@@ -690,14 +707,21 @@ export class AuditLogService {
     const ownPkFilter: Prisma.AuditLogWhereInput['logPk'] = expandSameScreen
       ? { in: [...new Set([recordPk, ...(await expandSameScreen(this.prisma, recordPk))])] }
       : recordPk;
-    const relatedScreens = screenName
-      ? RELATED_AUDIT_SCREENS_BY_SCREEN_NAME.get(screenName)
+    // Item master review 11-20 (Q12): by the name the screen_id resolves to as
+    // well — the Qt History asks by screen_id=25 and used to get the header only.
+    const relatedScreens = expandScreenName
+      ? RELATED_AUDIT_SCREENS_BY_SCREEN_NAME.get(expandScreenName)
       : undefined;
     // Child PKs are looked up by a UUID parent id; anything else can only be
     // the parent screen's own key.
     if (!relatedScreens || !UUID_PATTERN.test(recordPk)) {
-      return { ...screenFilter, logPk: ownPkFilter };
+      return { filter: { ...screenFilter, logPk: ownPkFilter }, composite: false };
     }
+    // The parent's own rows, on the screen the call named (by id and/or name).
+    const ownScreenFilter: Prisma.AuditLogWhereInput = {
+      ...screenFilter,
+      ...(queryDto.screen_id !== undefined ? { logScreenId: queryDto.screen_id } : {}),
+    };
     const relatedFilters = await Promise.all(
       relatedScreens.map(async (relatedScreen): Promise<Prisma.AuditLogWhereInput | null> => {
         const childPks = await relatedScreen.findChildPks(this.prisma, recordPk);
@@ -711,12 +735,15 @@ export class AuditLogService {
       }),
     );
     return {
-      OR: [
-        { ...screenFilter, logPk: ownPkFilter },
-        ...relatedFilters.filter(
-          (relatedFilter): relatedFilter is Prisma.AuditLogWhereInput => relatedFilter !== null,
-        ),
-      ],
+      filter: {
+        OR: [
+          { ...ownScreenFilter, logPk: ownPkFilter },
+          ...relatedFilters.filter(
+            (relatedFilter): relatedFilter is Prisma.AuditLogWhereInput => relatedFilter !== null,
+          ),
+        ],
+      },
+      composite: true,
     };
   }
   private async screenNameOf(screenId: number): Promise<string | null> {
@@ -1112,7 +1139,10 @@ export class AuditLogService {
     const originalRecord = forView(preparedRecord.originalRecord);
     const modifiedRecord = forView(preparedRecord.modifiedRecord);
     const changedFields = forView(preparedRecord.changedFields);
+    // Item master review 11-20 (Q12): an item's unit / price / barcode / reorder
+    // row reads by its unit, not by the stored "<item>:<unit row>:…" ids.
     const displayName =
+      itemChildDisplayName(screenName, modifiedRecord ?? originalRecord) ??
       this.normalizeOptionalText(record.logDisplayName) ??
       this.findAuditDisplayName(modifiedRecord) ??
       this.findAuditDisplayName(originalRecord);
