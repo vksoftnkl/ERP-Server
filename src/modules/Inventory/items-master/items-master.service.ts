@@ -289,9 +289,9 @@ export class ItemsMasterService {
       ean_codes,
       reorders,
     });
-    // Item master review 11-20 Q2 — what the card may still re-pick: the base
-    // row's unit only while nothing of the item is used, any other row's while
-    // that row is unused (ItemMasterUpdateService.refuseUsedUnitRePicks).
+    // Item master review 11-20 Q2 — which unit rows are used, and by what: the
+    // card's confirm names it before a re-pick (allowed either way since
+    // 2026-11-21, user: "allow to change").
     return {
       ...named,
       item: { ...named.item, item_units_in_use: inUse.itemUsed },
@@ -1193,9 +1193,8 @@ export class ItemsMasterService {
       if (base) {
         const sent = saveItemDto.item_base_unit_id;
         // Item master review 11-20 Q2: the composite save may re-pick the base
-        // row's unit on the same row; the header follows it. Whether the item
-        // is unused enough for that is decided by the unit sync right after
-        // (409 ITEM_UNIT_IN_USE), in this same transaction.
+        // row's unit on the same row; the header follows it (allowed whether
+        // the item is used or not since 2026-11-21).
         const rePicked = options.childrenFollow
           ? baseRowRePick(base, options.unitConversions)
           : null;

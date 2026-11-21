@@ -655,26 +655,13 @@ describe('ItemsMasterService composite endpoints', () => {
       });
     };
 
-    it("refuses the base row's unit re-picked once the item is used (409 ITEM_UNIT_IN_USE)", async () => {
-      usage([{ iuc_id: OTHER_IUC_ID, used_by: 'sale bill' }]);
-      await expect(
-        service.saveComposite(
-          update({
-            item_base_unit_id: OTHER_UNIT_ID,
-            unit_conversions: [{ iuc_id: IUC_ID, iuc_unit_id: OTHER_UNIT_ID }],
-          }),
-        ),
-      ).rejects.toMatchObject({
-        status: 409,
-        response: {
-          errors: [{ field: 'unit_conversions.0.iuc_unit_id', code: 'ITEM_UNIT_IN_USE' }],
-        },
-      });
-      expect(unitConversionService.save).not.toHaveBeenCalled();
-    });
-
-    it("re-picks the base row's unit on the same row while the item was never used", async () => {
-      usage([]);
+    // User 2026-11-21 ("allow to change"): used or not, the same row takes the
+    // new unit; the card asks first. Both ways must save the same.
+    it.each([
+      ['while the item was never used', []],
+      ['once the item is used (allowed since 2026-11-21)', [{ iuc_id: OTHER_IUC_ID, used_by: 'sale bill' }]],
+    ])("re-picks the base row's unit on the same row %s", async (_when, rows) => {
+      usage(rows);
       unitConversionService.findByItemId.mockResolvedValue([
         ...storedRows(),
         {
@@ -750,24 +737,17 @@ describe('ItemsMasterService composite endpoints', () => {
           ],
         });
 
-      it('is refused while that row is used, naming what uses it', async () => {
-        unitConversionService.findByItemId.mockResolvedValue(stored());
-        usage([
-          { iuc_id: OTHER_IUC_ID, used_by: 'stock' },
-          { iuc_id: OTHER_IUC_ID, used_by: 'sale bill' },
-        ]);
-        const error = await service.saveComposite(rePick()).catch((caught: unknown) => caught);
-        expect(error).toMatchObject({
-          status: 409,
-          response: {
-            errors: [{ field: 'unit_conversions.1.iuc_unit_id', code: 'ITEM_UNIT_IN_USE' }],
-          },
-        });
-        expect(JSON.stringify(error)).toContain('(stock, sale bill)');
-        expect(unitConversionService.save).not.toHaveBeenCalled();
-      });
-
-      it('is saved on the same row while unused, its price kept on that row', async () => {
+      // User 2026-11-21: saved on the same row whether it is used or not.
+      it.each([
+        ['while unused (another row is used)', [{ iuc_id: IUC_ID, used_by: 'stock' }]],
+        [
+          'while used (allowed since 2026-11-21)',
+          [
+            { iuc_id: OTHER_IUC_ID, used_by: 'stock' },
+            { iuc_id: OTHER_IUC_ID, used_by: 'sale bill' },
+          ],
+        ],
+      ])('is saved on the same row %s, its price kept on that row', async (_when, rows) => {
         // updateItem and the sync read the stored rows; the sync's re-read sees the new unit.
         unitConversionService.findByItemId
           .mockResolvedValueOnce(stored())
@@ -776,8 +756,7 @@ describe('ItemsMasterService composite endpoints', () => {
             storedRows()[0],
             { ...stored()[1], iuc_unit_id: NEW_UNIT_ID },
           ]);
-        // Another item's unit row being in use changes nothing here.
-        usage([{ iuc_id: IUC_ID, used_by: 'stock' }]);
+        usage(rows);
 
         await service.saveComposite(rePick());
 

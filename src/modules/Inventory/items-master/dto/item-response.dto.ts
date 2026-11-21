@@ -215,9 +215,9 @@ export class ItemPayloadDto {
     type: Boolean,
     description:
       'Composite get only (item master review 11-20 Q2): true once any unit row of the item, ' +
-      'live or removed, is on a document line or a stock row. While false the base row\'s unit ' +
-      'may still be re-picked on the same row (iuc_id kept); once true that save is a 409 ' +
-      'ITEM_UNIT_IN_USE.',
+      'live or removed, is on a document line or a stock row. Information for the card\'s confirm: ' +
+      'since 2026-11-21 the base row\'s unit may be re-picked either way (iuc_id kept), and every ' +
+      'document and stock row then reads the new unit.',
   })
   item_units_in_use?: boolean;
 }

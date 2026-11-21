@@ -26,10 +26,7 @@ import { ItemUnitConversionPayload } from '../item-unit-conversion/types/item-un
 import { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
 import { ItemEanCodePayload } from '../items-ean-code-master/types/item-ean-code-api.types';
 import { ItemReorderPayload } from '../items-reorder-master/types/item-reorder-api.types';
-import {
-  throwInventoryBadRequest,
-  throwInventoryConflict,
-} from 'src/common/utils/module-service.utils';
+import { throwInventoryBadRequest } from 'src/common/utils/module-service.utils';
 import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils';
 import { ItemErrorCode } from './types/item-error-codes';
 import {
@@ -37,7 +34,6 @@ import {
   baseUnitChange,
   refuseBaseUnitChange,
 } from '../utils/item-base-unit.helper';
-import { rowUnitLock, unitRowsInUse } from '../utils/item-unit-in-use.helper';
 
 export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item' | 'scheduled_prices'>;
 
@@ -279,14 +275,12 @@ export class ItemMasterUpdateService {
    * not be left out (notes 138 A1, item-base-unit.helper) — refused before
    * anything is written, naming the payload row.
    *
-   * ITEM MASTER REVIEW 11-20 Q2 (user: recommended). A row re-picked to another
-   * unit BY ITS OWN iuc_id keeps the id — and with it every bill, stock row,
-   * price and barcode that points at it — so:
-   *  - the base row may be re-picked only while the WHOLE item has never been
-   *    used (no stock, no document line on any of its units, removed ones
-   *    included); every row then follows the new base unit;
-   *  - any other row only while that row itself is unused;
-   *  - else 409 ITEM_UNIT_IN_USE on `unit_conversions.<i>.iuc_unit_id`.
+   * A row re-picked to another unit BY ITS OWN iuc_id keeps the id — and with
+   * it every bill, stock row, price and barcode that points at it, which all
+   * read the new unit from then on. Allowed on any row, used or not (user
+   * 2026-11-21: "allow to change", reversing the 11-20 Q2 lock; the card asks
+   * first and names what uses the row — GET's iuc_in_use / iuc_used_by). A
+   * re-picked base row gives every row, and the header, the new base unit.
    * A unit dropped and another added (no iuc_id) is a remove + add, as before:
    * old documents keep the removed row and read its old unit.
    */
@@ -314,7 +308,6 @@ export class ItemMasterUpdateService {
         ? existing.find((row) => row.iuc_id === child.iuc_id)
         : existingByKey.get(child.iuc_unit_id),
     );
-    await this.refuseUsedUnitRePicks(itemId, children, matches, tx);
     const newBaseUnitId = storedBase ? baseRowRePick(storedBase, children) : null;
     // From here on the lock reads the base row with the unit this save may give it.
     const base =
@@ -373,55 +366,6 @@ export class ItemMasterUpdateService {
       );
     }
     return this.itemUnitConversionService.findByItemId(itemId, tx);
-  }
-
-  /**
-   * Item master review 11-20 Q2 / point 11 — refuses, before anything is written,
-   * a stored row re-picked to another unit while it is used (item-unit-in-use
-   * .helper: the base row once anything of the item is used, another row once it
-   * is). The usage query runs only when the save re-picks something.
-   */
-  private async refuseUsedUnitRePicks(
-    itemId: string,
-    children: ReadonlyArray<CompositeItemUnitConversionDto>,
-    matches: ReadonlyArray<ItemUnitConversionPayload | undefined>,
-    tx: Prisma.TransactionClient,
-  ): Promise<void> {
-    const rePicks = children
-      .map((child, index) => ({ child, index, match: matches[index] }))
-      .filter(
-        (
-          entry,
-        ): entry is {
-          child: CompositeItemUnitConversionDto;
-          index: number;
-          match: ItemUnitConversionPayload;
-        } => entry.match !== undefined && entry.child.iuc_unit_id !== entry.match.iuc_unit_id,
-      );
-    if (rePicks.length === 0) {
-      return;
-    }
-    const inUse = await unitRowsInUse(tx, itemId);
-    for (const { child, index, match } of rePicks) {
-      const lock = rowUnitLock(inUse, match);
-      if (!lock.locked) {
-        continue;
-      }
-      const usedBy = lock.usedBy.join(', ');
-      throwInventoryConflict<InventoryErrorDetail>('This unit is already used', [
-        {
-          field: `unit_conversions.${index}.iuc_unit_id`,
-          code: ItemErrorCode.UNIT_IN_USE,
-          message: match.iuc_is_base_unit
-            ? `Unit conversion ${match.iuc_id} is the item's base row and the item is already ` +
-              `used (${usedBy}); its unit stays ${match.iuc_unit_id}. To count stock in another ` +
-              'unit, make this item inactive and create a new one.'
-            : `Unit conversion ${match.iuc_id} (unit ${match.iuc_unit_id}) is already used ` +
-              `(${usedBy}); its unit cannot change to ${child.iuc_unit_id}, or those documents ` +
-              'would read the new unit. Add the new unit as another row instead.',
-        },
-      ]);
-    }
   }
 
   /**
