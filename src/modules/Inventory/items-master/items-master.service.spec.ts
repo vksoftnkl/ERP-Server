@@ -184,7 +184,7 @@ const savedRows = (mock: jest.Mock): Array<Record<string, unknown>> =>
 describe('ItemsMasterService composite endpoints', () => {
   let service: ItemsMasterService;
   let prisma: PrismaMock;
-  let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
+  let auditLogService: Pick<AuditLogService, 'logEntityChange' | 'logDocumentRevision'>;
   let requestContextService: {
     [K in 'getUserId' | 'getCompanyId']: jest.Mock<ReturnType<RequestContextService[K]>, []>;
   };
@@ -240,7 +240,11 @@ describe('ItemsMasterService composite endpoints', () => {
         callback(prisma as unknown as Prisma.TransactionClient),
     );
 
-    auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
+    auditLogService = {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+      // History step 2 (2026-11-21): one "Item Revision" row per composite save.
+      logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 1 }),
+    };
     requestContextService = {
       getUserId: jest.fn().mockReturnValue(USER_ID),
       // Unscoped (super-admin) token, so item_company_id comes from the body.
@@ -363,6 +367,20 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(savedRows(reorderService.save)).toEqual([
       expect.objectContaining({ ir_item_id: ITEM_ID, ir_min_level: 5 }),
     ]);
+
+    // History step 2 (2026-11-21): ONE "Item Revision" row for the whole save, in its
+    // transaction — a create has no "before"; the "after" holds the header and the lines.
+    expect(auditLogService.logDocumentRevision).toHaveBeenCalledTimes(1);
+    const [revision, revisionTx] = (auditLogService.logDocumentRevision as jest.Mock).mock.calls[0] as [
+      { after: { header: { item_id: string }; lines: Array<{ section: string }> } },
+      unknown,
+    ];
+    expect(revision).toMatchObject({ screenName: 'Item Revision', tableName: 'item_master', docId: ITEM_ID, before: null });
+    expect(revision.after.header.item_id).toBe(ITEM_ID);
+    expect(revision.after.lines.map((l) => l.section)).toEqual(
+      expect.arrayContaining(['Unit', 'Price', 'Barcode', 'Reorder']),
+    );
+    expect(revisionTx).toBeDefined();
 
     // Response assembles the item plus all child collections
     expect(result.item.item_id).toBe(ITEM_ID);
@@ -748,6 +766,9 @@ describe('ItemsMasterService composite endpoints', () => {
           ],
         ],
       ])('is saved on the same row %s, its price kept on that row', async (_when, rows) => {
+        // The revision's "before" (getComposite, read before the save) would take one
+        // of the unit-row answers queued below for the save itself.
+        jest.spyOn(service, 'getComposite').mockRejectedValue(new Error('no before in this test'));
         // updateItem and the sync read the stored rows; the sync's re-read sees the new unit.
         unitConversionService.findByItemId
           .mockResolvedValueOnce(stored())

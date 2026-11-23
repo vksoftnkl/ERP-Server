@@ -31,6 +31,8 @@ export const AUDIT_SCREEN_MENUS: ReadonlyMap<string, readonly number[]> = new Ma
       ['Item Colour Master', [292]],
       // Item Master and the child rows its History pulls in (one item, one trail).
       ['Item Master', [29]],
+      // History step 2 (2026-11-21): one revision per item save (screen 170).
+      ['Item Revision', [29]],
       ['Item Unit Conversion Master', [29]],
       ['Item Price Master', [29]],
       ['Item EAN Code Master', [29]],

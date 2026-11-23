@@ -13,6 +13,12 @@ import { ItemMasterUpdateService } from './item-master-update.service';
 import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
 import { assertNoLiveReferences, type LiveReference } from '../utils/master-tree.helper';
 import { baseRowRePick, refuseBaseUnitChange } from '../utils/item-base-unit.helper';
+import {
+  ITEM_REVISION_SCREEN_NAME,
+  ITEM_REVISION_TABLE,
+  itemRevisionSnapshot,
+  sameRevision,
+} from './item-revision';
 import { rowUnitLock, unitRowsInUse } from '../utils/item-unit-in-use.helper';
 import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import type { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
@@ -219,6 +225,9 @@ export class ItemsMasterService {
    * conversion row for — rolls the whole save back, item included.
    */
   async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
+    // History step 2 (2026-11-21): the whole item BEFORE this save, read before
+    // anything is touched — the revision row's "before" (null on a create).
+    const before = dto.item_id ? await this.getComposite(dto.item_id).catch(() => null) : null;
     return this.prisma.$transaction(async (tx) => {
       const saved = dto.item_id
         ? await this.updateItem(dto, tx, {
@@ -243,8 +252,43 @@ export class ItemsMasterService {
         await this.assertCompanyMove(tx, saved.before, saved.payload.item_company_id);
       }
       const item = await this.alignBaseUnit(tx, saved.payload, dto, children.unit_conversions);
-      return { item, ...children, scheduled_prices };
+      const result = { item, ...children, scheduled_prices };
+      await this.writeItemRevision(tx, before, result);
+      return result;
     }, COMPOSITE_TRANSACTION_OPTIONS);
+  }
+
+  /**
+   * History step 2 (user 2026-11-21: "history as a revision, easy to track"):
+   * ONE audit row per item save under "Item Revision" (screen 170), holding
+   * the whole item before and after — header and every unit, price, barcode
+   * and reorder row (item-revision.ts) — numbered per item (log_rev_no). In
+   * the save's transaction, so a revision exists exactly when the save does.
+   * A save that changed nothing writes none. The names are read from the
+   * other masters, which this save does not touch.
+   */
+  private async writeItemRevision(
+    tx: Prisma.TransactionClient,
+    before: ItemCompositePayload | null,
+    saved: ItemCompositePayload,
+  ): Promise<void> {
+    const after = itemRevisionSnapshot(await this.resolveCompositeNames(saved));
+    const was = before ? itemRevisionSnapshot(before) : null;
+    if (sameRevision(was, after)) {
+      return;
+    }
+    await this.auditLogService.logDocumentRevision(
+      {
+        screenName: ITEM_REVISION_SCREEN_NAME,
+        tableName: ITEM_REVISION_TABLE,
+        docId: saved.item.item_id,
+        displayName: saved.item.item_name_en,
+        before: was,
+        after,
+        branchId: saved.item.item_branch_id ?? null,
+      },
+      tx,
+    );
   }
   async getById(itemId: string): Promise<ItemPayload> {
     const record = await this.prisma.itemMaster.findFirst({
