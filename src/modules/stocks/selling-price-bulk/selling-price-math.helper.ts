@@ -68,3 +68,34 @@ export function recomputeLevel(
     marginPerc: costRate > 0 && priceWot > 0 ? round(((priceWot - costWot) / priceWot) * 100) : 0,
   };
 }
+
+/**
+ * The item card's NEAREST Round Off step (ItemPriceRule::roundToStep, Qt): the value and the
+ * steps in it read to a millionth first, so float noise cannot tip an exact half; step 0 = none.
+ */
+export function roundToStep(value: number, step: number): number {
+  if (!(step > 0)) {
+    return value;
+  }
+  const v = Math.round(value * 1e6) / 1e6;
+  const steps = Math.round((v / step) * 1e6) / 1e6;
+  return Math.round(steps) * step;
+}
+
+/**
+ * Change Selling Price P1, decision 20 — a sent markup % is kept as typed when it is the rule
+ * of the price: cost (tax inclusive) × (1 + % ÷ 100), rounded to the R.Off step, lands within
+ * 0.005 of the price (the item card's load check). Otherwise the server's recompute stands:
+ * the price still wins. No cost, no keeping.
+ */
+export function markupReproduces(
+  costRate: number,
+  markupPerc: number,
+  step: number,
+  price: number,
+): boolean {
+  if (!(costRate > 0) || !Number.isFinite(markupPerc)) {
+    return false;
+  }
+  return Math.abs(roundToStep(costRate * (1 + markupPerc / 100), step) - price) < 0.005;
+}

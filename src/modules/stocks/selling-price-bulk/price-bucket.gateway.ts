@@ -9,14 +9,25 @@ import {
 } from '../stock-voucher/stock-voucher-posting.helper';
 import type { ScopeResolution } from './selling-price-scope.helper';
 import {
+  StockCostReader,
+  mrpLotCostLateral,
+  stockCostColumns,
+  type BranchStockCost,
+  type StockCostProbe,
+} from './stock-cost.reader';
+import {
+  type BelowCostRule,
   type CostBasis,
   type PagedResult,
   type PriceLevel,
+  type PriceLineKind,
   type PriceScope,
   type PriceSource,
+  type PriceVerdict,
   type SellingPriceNoStockRow,
   type SellingPriceProblem,
 } from './types/selling-price-bulk.types';
+import { StockErrorCode } from '../types/stock-error-codes';
 
 /** What §3's grid is filtered by. All optional but the company and branch. */
 export interface ListSellingPricesArgs {
@@ -39,6 +50,54 @@ export interface ListSellingPricesArgs {
   activeOnly: boolean;
   limit: number;
   offset: number;
+  /** Change Selling Price P1 — only items with a NO_PRICE line (limit / offset count items). */
+  unpricedOnly?: boolean;
+}
+
+/**
+ * Change Selling Price P1 (plan 2026-11-23 §4.1 / §7.1) — one LINE of the grid as the
+ * database answers it: the old grid record (prices of the row that answers: the line itself,
+ * or the headline on a NO_PRICE line) plus what the line is and the item's facts.
+ */
+export interface PriceLineRecord extends PriceGridRecord {
+  lineKind: PriceLineKind;
+  /** The line's own cost; null on NO_PRICE and an unpriced HEADLINE. */
+  lineCost: number | null;
+  lineCostWot: number | null;
+  stockCost: number | null;
+  stockCostWot: number | null;
+  stockCostBasis: 'MRP' | 'ITEM' | null;
+  profitType: string;
+  companyId: string | null;
+  companyName: string | null;
+  branchId: string | null;
+  branchName: string | null;
+  unitFactor: number;
+  unitSlNo: number;
+  isDefaultUnit: boolean;
+  itemGroupName: string | null;
+  trackPresetName: string | null;
+  trackMrp: boolean;
+  trackSalePrice: boolean;
+  itemCompanyId: string | null;
+  itemStockQty: number;
+  itemStockUnit: string | null;
+  /** The line's own ipm_price_a..d_markup_perc (the card's typed %); null when not the line's own. */
+  storedMarkups: [number | null, number | null, number | null, number | null];
+}
+
+/** P1 §4.9 — a price row as Back to all branches reads it, locked. */
+export interface LockedOwnLine {
+  ipmId: string;
+  companyId: string | null;
+  branchId: string | null;
+  itemId: string;
+  uomId: string;
+  keyMrp: number;
+  keySp: number;
+  isDeleted: boolean;
+  itemName: string;
+  unitName: string | null;
 }
 
 /** The bucket the opening picker SEEDS a line with — 19q Q6's price columns. */
@@ -137,6 +196,24 @@ export interface RowCost {
    * (applyPurchasePrices), so a new branch / bucket row keeps the prices in force.
    */
   prices?: [number, number, number, number];
+  /** Change Selling Price P1 — the unit's name and to-base factor (messages, the branch check). */
+  unitName?: string | null;
+  unitFactor?: number;
+  /**
+   * P1 A1 — the LINE's own cost: `ipm_cost_price` / `ipm_cost_wot` / `ipm_round_off` of the
+   * row of THIS key in force at the branch (its own, else the All branches one). Null when the
+   * key has no line of its own (the resolver fell back to the headline, or to nothing).
+   */
+  lineCost?: number | null;
+  lineCostWot?: number | null;
+  lineRoundOff?: number | null;
+  /**
+   * P1 A3 — the STOCK cost (stock-cost.reader.ts): this MRP's landing cost, else the branch
+   * average, × the unit factor. Null when the branch has neither — never the price row's.
+   */
+  stockCost?: number | null;
+  stockCostWot?: number | null;
+  stockCostBasis?: 'MRP' | 'ITEM' | null;
 }
 
 /** One level's write, after §5.1's server recompute. */
@@ -177,6 +254,101 @@ export interface BucketPriceCandidate {
   costRate: number;
   costWot: number;
   actor: string;
+  /**
+   * Change Selling Price P1, A3 option C — the cost Q26 judges below cost against: the HIGHER
+   * of the line's own cost (costRate, what the line stores) and the stock cost. Absent = costRate.
+   */
+  judgeCost?: number;
+  /** P1 — the stock cost judged beside the line cost; null / absent when there is none. */
+  stockCost?: number | null;
+  /** P1 — the unit's name, for the problem's words. */
+  unitName?: string | null;
+}
+
+/** Notes 119 — the code each Q26 verdict is refused / asked with. */
+const PRICE_VERDICT_CODE: Readonly<Record<PriceVerdict, StockErrorCode>> = {
+  ABOVE_MRP: StockErrorCode.PRICE_ABOVE_MRP,
+  BELOW_MIN: StockErrorCode.PRICE_BELOW_MIN,
+  BELOW_COST: StockErrorCode.PRICE_BELOW_COST,
+};
+
+/** Two decimals, as the wording shows money (`540.00`). */
+function money(value: number): string {
+  return round2(value).toFixed(2);
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** A level's short name (WS, RET), else "Price A".."Price D". */
+function levelLabel(level: number, names?: ReadonlyMap<number, string>): string {
+  return names?.get(level) ?? `Price ${'ABCD'[level - 1] ?? level}`;
+}
+
+/** The wording's placeholders every price problem carries (P1 handover: level … n). */
+function paramsOf(
+  candidate: BucketPriceCandidate,
+  level: number,
+  price: number,
+  names: ReadonlyMap<number, string> | undefined,
+  extra: Record<string, string | number>,
+): Record<string, string | number> {
+  return {
+    level: levelLabel(level, names),
+    price: money(price),
+    ...extra,
+    ...(candidate.unitName ? { unit: candidate.unitName } : {}),
+    ...(candidate.mrp !== null ? { mrp: money(candidate.mrp) } : {}),
+    ...(candidate.itemName ? { item: candidate.itemName } : {}),
+    n: candidate.lineNo,
+  };
+}
+
+/**
+ * P1 §4.7, A3 option C — a price under the judged cost (the higher of the line's own cost
+ * and the stock cost). `rule` names the higher one only when BOTH are known (above 0):
+ * LINE_COST "below the last purchase cost 500.00 (stock cost 450.00)", STOCK_COST the other
+ * way round; with one cost the plain "below the cost" wording, exactly as before.
+ */
+function belowCostOf(
+  candidate: BucketPriceCandidate,
+  level: number,
+  price: number,
+  names?: ReadonlyMap<number, string>,
+): { text: string; fields: Partial<SellingPriceProblem> } {
+  const judgeCost = candidate.judgeCost ?? candidate.costRate;
+  const lineCost = candidate.costRate > 0 ? candidate.costRate : null;
+  const stockCost =
+    candidate.stockCost !== undefined && candidate.stockCost !== null && candidate.stockCost > 0
+      ? candidate.stockCost
+      : null;
+  const rule: BelowCostRule | undefined =
+    lineCost !== null && stockCost !== null
+      ? lineCost >= stockCost
+        ? 'LINE_COST'
+        : 'STOCK_COST'
+      : undefined;
+  const text =
+    rule === 'LINE_COST'
+      ? `${price} is below the last purchase cost ${money(lineCost!)} (stock cost ${money(stockCost!)}).`
+      : rule === 'STOCK_COST'
+        ? `${price} is below the stock cost ${money(stockCost!)} (last purchase cost ${money(lineCost!)}).`
+        : `${price} is below the cost ${judgeCost}.`;
+  return {
+    text,
+    fields: {
+      ...(rule ? { rule } : {}),
+      cost: round2(judgeCost),
+      lineCost: lineCost === null ? null : round2(lineCost),
+      stockCost: stockCost === null ? null : round2(stockCost),
+      params: paramsOf(candidate, level, price, names, {
+        cost: money(judgeCost),
+        ...(lineCost !== null ? { lineCost: money(lineCost) } : {}),
+        ...(stockCost !== null ? { stockCost: money(stockCost) } : {}),
+      }),
+    },
+  };
 }
 
 
@@ -243,36 +415,18 @@ function effectivePriceLateral(args: {
  * probe per item × MRP, however many unit rows join back to it.
  */
 function mrpCostCte(args: { companyId: string; branchId: string; pairs: Prisma.Sql }): Prisma.Sql {
+  // The lateral body is StockCostReader's (stock-cost.reader.ts): one definition of a lot's
+  // cost for the branch on screen and for the other branches (P1 C5 / C6).
   return Prisma.sql`
     mrp_cost AS (
       SELECT k.item_id, k.mrp, mc.cost_rate, mc.cost_rate_wot
         FROM (${args.pairs}) k
-        LEFT JOIN LATERAL (
-          WITH lots AS (
-            SELECT b.sbl_lot_id                                   AS lot_id,
-                   GREATEST(SUM(b.sbl_on_hand_qty), 0)            AS qty,
-                   SUM(b.sbl_stock_value)                         AS value,
-                   SUM(b.sbl_stock_value_wot)                     AS value_wot,
-                   MAX(b.sbl_avg_cost_rate)                       AS rate,
-                   MAX(b.sbl_avg_cost_rate_wot)                   AS rate_wot
-              FROM stock.stock_balance b
-              JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
-             WHERE b.sbl_company_id = ${args.companyId}::uuid
-               AND b.sbl_branch_id  = ${args.branchId}::uuid
-               AND b.sbl_item_id    = k.item_id
-               AND slt.slt_key_mrp  = k.mrp
-               AND b.sbl_is_deleted = false
-             GROUP BY b.sbl_lot_id
-          )
-          SELECT CASE WHEN SUM(l.qty) > 0
-                      THEN SUM(l.value) FILTER (WHERE l.qty > 0) / SUM(l.qty)
-                      ELSE AVG(l.rate) FILTER (WHERE l.rate <> 0) END         AS cost_rate,
-                 CASE WHEN SUM(l.qty) > 0
-                      THEN SUM(l.value_wot) FILTER (WHERE l.qty > 0) / SUM(l.qty)
-                      ELSE AVG(l.rate_wot) FILTER (WHERE l.rate_wot <> 0) END AS cost_rate_wot
-            FROM lots l
-          HAVING count(*) > 0
-        ) mc ON true
+        LEFT JOIN LATERAL ${mrpLotCostLateral({
+          companyId: Prisma.sql`${args.companyId}::uuid`,
+          branchId: Prisma.sql`${args.branchId}::uuid`,
+          itemId: Prisma.raw('k.item_id'),
+          mrp: Prisma.raw('k.mrp'),
+        })} mc ON true
     )
   `;
 }
@@ -671,6 +825,12 @@ export class PriceBucketGateway {
       return [];
     }
     const saveCost = costColumns({ mc: 'mc', sic: 'sic', p: 'p', factor: 'k.iuc_to_base_factor' });
+    // P1 — the stock cost alone (A3), and the line's own cost when the resolver answered the
+    // row of THIS key (A1), apart from the stock-first cost the save stored until now.
+    const stock = stockCostColumns({ mc: 'mc', sic: 'sic', factor: 'k.iuc_to_base_factor' });
+    const keyMrp = Prisma.raw('CASE WHEN k.track_mrp AND k.mrp > 0 THEN k.mrp END');
+    const keySp = Prisma.raw('CASE WHEN k.track_sp AND k.sp > 0 THEN k.sp END');
+    const exact = Prisma.sql`(p.ipm_id IS NOT NULL AND p.ipm_key_mrp = COALESCE(${keyMrp}, -1) AND p.ipm_key_sp = COALESCE(${keySp}, -1))`;
     const found = await tx.$queryRaw<
       Array<{
         ord: bigint;
@@ -688,6 +848,14 @@ export class PriceBucketGateway {
         priceB: Prisma.Decimal | null;
         priceC: Prisma.Decimal | null;
         priceD: Prisma.Decimal | null;
+        unitName?: string | null;
+        unitFactor?: Prisma.Decimal | null;
+        lineCost?: Prisma.Decimal | null;
+        lineCostWot?: Prisma.Decimal | null;
+        lineRoundOff?: Prisma.Decimal | null;
+        stockCost?: Prisma.Decimal | null;
+        stockCostWot?: Prisma.Decimal | null;
+        stockCostBasis?: 'MRP' | 'ITEM' | null;
       }>
     >`
       WITH q AS (
@@ -701,7 +869,7 @@ export class PriceBucketGateway {
       ),
       keyed AS (
         SELECT q.*, i.item_code, i.item_name_en, iuc.iuc_id IS NOT NULL AS uom_belongs,
-               iuc.iuc_to_base_factor,
+               iuc.iuc_to_base_factor, iuc.iuc_unit_id,
                COALESCE(stp.stp_track_mrp, false)        AS track_mrp,
                COALESCE(stp.stp_track_sale_price, false) AS track_sp
           FROM q
@@ -735,8 +903,17 @@ export class PriceBucketGateway {
              COALESCE(p.ipm_min_price, 0) AS "minPrice",
              p.ipm_id IS NOT NULL AS "hasPrice",
              p.ipm_sales_price_a AS "priceA", p.ipm_sales_price_b AS "priceB",
-             p.ipm_sales_price_c AS "priceC", p.ipm_sales_price_d AS "priceD"
+             p.ipm_sales_price_c AS "priceC", p.ipm_sales_price_d AS "priceD",
+             u.unit_name          AS "unitName",
+             k.iuc_to_base_factor AS "unitFactor",
+             CASE WHEN ${exact} THEN p.ipm_cost_price END AS "lineCost",
+             CASE WHEN ${exact} THEN p.ipm_cost_wot   END AS "lineCostWot",
+             CASE WHEN ${exact} THEN p.ipm_round_off  END AS "lineRoundOff",
+             ${stock.rate}  AS "stockCost",
+             ${stock.wot}   AS "stockCostWot",
+             ${stock.basis} AS "stockCostBasis"
         FROM keyed k
+        LEFT JOIN inventory.item_unit_master u ON u.unit_id = k.iuc_unit_id
         -- Notes 75: an MRP bucket is costed by its own MRP's stock, as the grid
         -- showed it — the below-cost check and ipm_cost_price use that figure.
         LEFT JOIN mrp_cost mc
@@ -749,8 +926,8 @@ export class PriceBucketGateway {
         ${effectivePriceLateral({
           itemId: Prisma.raw('k.item_id'),
           uomId: Prisma.raw('k.uom_id'),
-          mrp: Prisma.raw('CASE WHEN k.track_mrp AND k.mrp > 0 THEN k.mrp END'),
-          salePrice: Prisma.raw('CASE WHEN k.track_sp AND k.sp > 0 THEN k.sp END'),
+          mrp: keyMrp,
+          salePrice: keySp,
           companyId,
           branchId,
           onDate: daySql(onDate),
@@ -758,9 +935,19 @@ export class PriceBucketGateway {
        ORDER BY k.ord
     `;
     const byOrd = new Map(found.map((row) => [Number(row.ord), row]));
+    const orNull = (value: Prisma.Decimal | null | undefined) =>
+      value === null || value === undefined ? null : toNumber(value);
     return rows.map((_, index) => {
       const row = byOrd.get(index + 1);
       return {
+        unitName: row?.unitName ?? null,
+        unitFactor: orNull(row?.unitFactor) ?? 1,
+        lineCost: orNull(row?.lineCost),
+        lineCostWot: orNull(row?.lineCostWot),
+        lineRoundOff: orNull(row?.lineRoundOff),
+        stockCost: orNull(row?.stockCost),
+        stockCostWot: orNull(row?.stockCostWot),
+        stockCostBasis: row?.stockCostBasis ?? null,
         itemCode: row?.itemCode ?? null,
         itemName: row?.itemName ?? '',
         uomBelongs: row?.uomBelongs ?? false,
@@ -800,16 +987,27 @@ export class PriceBucketGateway {
   validateRows(
     candidates: readonly BucketPriceCandidate[],
     storedMinPrices: readonly number[],
-    opts: { activeLevels?: readonly number[] } = {},
+    opts: {
+      activeLevels?: readonly number[];
+      /** P1 — level ordinal → short name (WS, RET), for the problems' params. */
+      levelNames?: ReadonlyMap<number, string>;
+    } = {},
   ): SellingPriceProblem[] {
+    // No `this` in here: the purchase spec runs it detached (PriceBucketGateway.prototype).
     const problems: SellingPriceProblem[] = [];
     const judged = opts.activeLevels ? new Set(opts.activeLevels) : null;
     candidates.forEach((candidate, index) => {
       const minPrice = candidate.minPrice ?? storedMinPrices[index] ?? 0;
+      // P1, A3 option C — the HIGHER of the line's own cost and the stock cost.
+      const judgeCost = candidate.judgeCost ?? candidate.costRate;
       for (const level of candidate.levels) {
         if (judged && (!judged.has(level.level) || !(level.price > 0))) {
           continue;
         }
+        const below =
+          judgeCost > 0 && level.price < judgeCost
+            ? belowCostOf(candidate, level.level, level.price, opts.levelNames)
+            : null;
         const verdict =
           candidate.mrp !== null && level.price > candidate.mrp
             ? {
@@ -821,11 +1019,8 @@ export class PriceBucketGateway {
                   verdict: 'BELOW_MIN' as const,
                   text: `${level.price} is below the minimum price ${minPrice}.`,
                 }
-              : candidate.costRate > 0 && level.price < candidate.costRate
-                ? {
-                    verdict: 'BELOW_COST' as const,
-                    text: `${level.price} is below the cost ${candidate.costRate}.`,
-                  }
+              : below
+                ? { verdict: 'BELOW_COST' as const, text: below.text }
                 : null;
         if (verdict) {
           problems.push({
@@ -840,11 +1035,148 @@ export class PriceBucketGateway {
             // Prefixed with the item: a problem list rendered against a grid
             // of four hundred rows is only useful if each line names its row.
             message: candidate.itemName ? `${candidate.itemName}: ${verdict.text}` : verdict.text,
+            code: PRICE_VERDICT_CODE[verdict.verdict],
+            ...(verdict.verdict === 'BELOW_COST' && below ? below.fields : {}),
           });
         }
       }
     });
     return problems;
+  }
+
+  /**
+   * Change Selling Price P1 §4.7 (C6, O10) — an All branches line judged at every OTHER
+   * branch that reads it (StockCostReader.otherBranches: stock on hand for the key, no own
+   * line, a stock cost). A branch is named only where ITS stock cost is the higher cost —
+   * above the line's own cost — and the price is under it: a price under the line cost is the
+   * same at every branch and was reported once, at the branch on screen. One problem per
+   * level priced above 0 (and active, when `activeLevels` is given) per branch, verdict
+   * BELOW_COST, rule BRANCHES.
+   */
+  branchProblems(
+    candidates: readonly BucketPriceCandidate[],
+    branches: readonly (readonly BranchStockCost[])[],
+    opts: { activeLevels?: readonly number[]; levelNames?: ReadonlyMap<number, string> } = {},
+  ): SellingPriceProblem[] {
+    const problems: SellingPriceProblem[] = [];
+    const judged = opts.activeLevels ? new Set(opts.activeLevels) : null;
+    candidates.forEach((candidate, index) => {
+      for (const branch of branches[index] ?? []) {
+        if (!(branch.stockCost > candidate.costRate)) {
+          continue;
+        }
+        for (const level of candidate.levels) {
+          if (!(level.price > 0) || (judged && !judged.has(level.level))) {
+            continue;
+          }
+          if (!(level.price < branch.stockCost)) {
+            continue;
+          }
+          const name = levelLabel(level.level, opts.levelNames);
+          const text = `${name} ${money(level.price)} is below the stock cost at ${branch.branchName} (${money(branch.stockCost)}).`;
+          problems.push({
+            lineNo: candidate.lineNo,
+            itemId: candidate.itemId,
+            itemCode: candidate.itemCode,
+            itemName: candidate.itemName,
+            uomId: candidate.uomId,
+            bucketId: candidate.bucketId,
+            level: level.level,
+            verdict: 'BELOW_COST',
+            message: candidate.itemName ? `${candidate.itemName}: ${text}` : text,
+            code: PRICE_VERDICT_CODE.BELOW_COST,
+            rule: 'BRANCHES',
+            cost: round2(branch.stockCost),
+            lineCost: candidate.costRate > 0 ? round2(candidate.costRate) : null,
+            stockCost: round2(branch.stockCost),
+            branchId: branch.branchId,
+            branchName: branch.branchName,
+            params: paramsOf(candidate, level.level, level.price, opts.levelNames, {
+              cost: money(branch.stockCost),
+              stockCost: money(branch.stockCost),
+              ...(candidate.costRate > 0 ? { lineCost: money(candidate.costRate) } : {}),
+              branch: branch.branchName,
+            }),
+          });
+        }
+      }
+    });
+    return problems;
+  }
+
+  /** P1 §4.7 — StockCostReader.otherBranches, in the caller's transaction. */
+  otherBranchStockCosts(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    args: {
+      companyId: string;
+      excludeBranchId: string;
+      onDate?: string;
+      probes: readonly StockCostProbe[];
+    },
+  ): Promise<BranchStockCost[][]> {
+    return StockCostReader.otherBranches(client, args);
+  }
+
+  /** P1 — the four selling levels' short names (else names) and whether each is active. */
+  async priceLevels(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  ): Promise<Array<{ level: number; name: string; active: boolean }>> {
+    const rows = await client.$queryRaw<
+      Array<{ id: number; name: string | null; short: string | null; active: boolean | null }>
+    >`
+      SELECT price_lvl_id::int AS id, price_lvl_name AS name, price_lvl_short AS short,
+             (price_lvl_is_active IS TRUE AND "price_lvl_isDeleted" IS NOT TRUE) AS active
+        FROM fixed.price_levels
+       WHERE price_lvl_id BETWEEN 1 AND 4`;
+    const byId = new Map(rows.map((row) => [Number(row.id), row]));
+    return [1, 2, 3, 4].map((level) => {
+      const row = byId.get(level);
+      return {
+        level,
+        name: row?.short?.trim() || row?.name?.trim() || `Price ${'ABCD'[level - 1]}`,
+        active: row?.active === true,
+      };
+    });
+  }
+
+  /** P1 — br_short, else br_name, per branch id (lower-cased keys). */
+  async branchLabels(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    ids: readonly string[],
+  ): Promise<Map<string, string>> {
+    if (!ids.length) {
+      return new Map();
+    }
+    const rows = await client.$queryRaw<Array<{ id: string; label: string }>>`
+      SELECT br_id::text AS id, COALESCE(NULLIF(btrim(br_short), ''), br_name) AS label
+        FROM public.branch_master
+       WHERE br_id = ANY(${[...ids]}::uuid[])`;
+    return new Map(rows.map((row) => [row.id.toLowerCase(), row.label]));
+  }
+
+  /** P1 — tax_name per tax id (the item row's "GST 5 %"). */
+  async taxNames(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    ids: readonly string[],
+  ): Promise<Map<string, string>> {
+    if (!ids.length) {
+      return new Map();
+    }
+    const rows = await client.$queryRaw<Array<{ id: string; name: string }>>`
+      SELECT tax_id::text AS id, tax_name AS name
+        FROM inventory.tax_rate_master
+       WHERE tax_id = ANY(${[...ids]}::uuid[])`;
+    return new Map(rows.map((row) => [row.id.toLowerCase(), row.name]));
+  }
+
+  /** P1 — the user's own branch (user_master.usr_branch_id), for a login with no device branch. */
+  async userBranchId(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    userId: string,
+  ): Promise<string | null> {
+    const [row] = await client.$queryRaw<Array<{ branchId: string | null }>>`
+      SELECT usr_branch_id::text AS "branchId" FROM public.user_master WHERE usr_id = ${userId}::uuid`;
+    return typeof row?.branchId === 'string' ? row.branchId : null;
   }
 
   /**
@@ -1238,6 +1570,460 @@ export class PriceBucketGateway {
       mrp: row.mrp === null ? null : toNumber(row.mrp),
       salePrice: row.salePrice === null ? null : toNumber(row.salePrice),
     }));
+  }
+
+  /**
+   * Change Selling Price P1 (plan 2026-11-23 §4.1) — the grid's LINES for a page of ITEMS
+   * (a page never splits an item). Per live unit of each item, in this order:
+   *   * the HEADLINE (key -1/-1), always — the "other MRPs" line of an MRP item; priced or
+   *     not (no row: bucketId null);
+   *   * every MRP / "sold at" line in force at the branch, stock or none — one per key, the
+   *     resolver's winner (the branch's own line before the All branches one, company before
+   *     shared); keys the item's policy does not track are left out (the save would blank them
+   *     into the headline);
+   *   * NO_PRICE: stock at the branch whose key has no line of its own — priced by the
+   *     headline (what it sells at today), as today's grid prices it.
+   * A HEADLINE with no row and stock on hand is a NO_PRICE line too. `unpricedOnly` keeps
+   * the items with at least one NO_PRICE line. Ordered by item name, unit order, headline
+   * first, then MRP / sale price.
+   */
+  async listPriceLines(args: ListSellingPricesArgs): Promise<{
+    items: PriceLineRecord[];
+    meta: { limit: number; offset: number; count: number; lines: number };
+  }> {
+    const key = bucketKeySql({
+      trackMrp: Prisma.raw('pol.track_mrp'),
+      trackSalePrice: Prisma.raw('pol.track_sp'),
+      mrp: Prisma.raw('b.sbl_mrp'),
+      salePrice: Prisma.raw('b.sbl_sale_price'),
+    });
+    const gridCost = costColumns({ mc: 'mc', sic: 'sic', p: 'p', factor: 'un.factor' });
+    const stock = stockCostColumns({ mc: 'mc', sic: 'sic', factor: 'un.factor' });
+    const co = args.companyId;
+    const br = args.branchId;
+    const exact = Prisma.raw(
+      '(p.ipm_id IS NOT NULL AND p.ipm_key_mrp = k.key_mrp AND p.ipm_key_sp = k.key_sp)',
+    );
+    const rows = await this.prisma.$queryRaw<
+      Array<
+        GridSqlRow & {
+          pageItems: bigint;
+          keyMrp: Prisma.Decimal;
+          keySp: Prisma.Decimal;
+          exact: boolean;
+          lineCost: Prisma.Decimal | null;
+          lineCostWot: Prisma.Decimal | null;
+          stockCost: Prisma.Decimal | null;
+          stockCostWot: Prisma.Decimal | null;
+          stockCostBasis: 'MRP' | 'ITEM' | null;
+          profitType: string;
+          companyId: string | null;
+          companyName: string | null;
+          branchName: string | null;
+          unitFactor: Prisma.Decimal | null;
+          unitSlNo: number | null;
+          isDefaultUnit: boolean | null;
+          itemGroupName: string | null;
+          trackPresetName: string | null;
+          trackMrp: boolean;
+          trackSalePrice: boolean;
+          itemCompanyId: string | null;
+          itemStockQty: Prisma.Decimal | null;
+          itemStockUnit: string | null;
+          markupA: Prisma.Decimal | null;
+          markupB: Prisma.Decimal | null;
+          markupC: Prisma.Decimal | null;
+          markupD: Prisma.Decimal | null;
+        }
+      >
+    >`
+      WITH items AS (
+        SELECT i.item_id, i.item_code, i.item_name_en, i.item_group_id, i.item_default_barcode,
+               i.item_company_id, i.item_track_preset_id
+          FROM inventory.item_master i
+         WHERE i.item_is_deleted = false
+           AND (i.item_company_id IS NULL OR i.item_company_id = ${co}::uuid)
+           AND (i.item_branch_id  IS NULL OR i.item_branch_id  = ${br}::uuid)
+           AND (${args.itemGroupId ?? null}::uuid IS NULL OR i.item_group_id = ${args.itemGroupId ?? null}::uuid)
+           AND (${args.itemBrandId ?? null}::uuid IS NULL OR i.item_brand_id = ${args.itemBrandId ?? null}::uuid)
+           AND (${args.itemSectionId ?? null}::uuid IS NULL OR i.item_section_id = ${args.itemSectionId ?? null}::uuid)
+           AND (${args.supplierId ?? null}::uuid IS NULL OR i.item_supplier_id = ${args.supplierId ?? null}::uuid)
+           AND (${args.itemId ?? null}::uuid IS NULL OR i.item_id = ${args.itemId ?? null}::uuid)
+           ${this.popupFilter(args)}
+      ),
+      pol AS (
+        SELECT items.item_id,
+               COALESCE(stp.stp_track_mrp, false)        AS track_mrp,
+               COALESCE(stp.stp_track_sale_price, false) AS track_sp
+          FROM items
+          ${effectivePolicyLateral({
+            companyId: Prisma.sql`${co}::uuid`,
+            branchId: Prisma.sql`${br}::uuid`,
+            itemId: Prisma.raw('items.item_id'),
+            itemGroupId: Prisma.raw('items.item_group_id'),
+            onDate: Prisma.raw('CURRENT_DATE'),
+          })}
+      ),
+      stock AS (
+        SELECT b.sbl_item_id AS item_id,
+               ${key.mrp}       AS mrp,
+               ${key.salePrice} AS sp,
+               SUM(b.sbl_on_hand_qty) AS qty
+          FROM stock.stock_balance b
+          JOIN pol ON pol.item_id = b.sbl_item_id
+         WHERE b.sbl_company_id = ${co}::uuid
+           AND b.sbl_branch_id  = ${br}::uuid
+           AND b.sbl_bucket     = 'SALEABLE'
+           AND b.sbl_is_deleted = false
+         GROUP BY 1, 2, 3
+        HAVING SUM(b.sbl_on_hand_qty) <> 0
+      ),
+      page AS (
+        SELECT items.item_id
+          FROM items
+         WHERE ${args.unpricedOnly === true} = false
+            OR EXISTS (
+                 SELECT 1
+                   FROM stock st
+                   JOIN inventory.item_unit_conversion iuc
+                     ON iuc.iuc_item_id = st.item_id AND iuc.iuc_is_deleted = false
+                  WHERE st.item_id = items.item_id
+                    AND NOT EXISTS (
+                          SELECT 1
+                            FROM inventory.item_price_master p
+                           WHERE p.ipm_item_id    = st.item_id
+                             AND p.ipm_uc_unit_id = iuc.iuc_id
+                             AND p.ipm_is_deleted = false
+                             AND CURRENT_DATE BETWEEN p.ipm_effective_from AND p.ipm_effective_to
+                             AND (p.ipm_company_id IS NULL OR p.ipm_company_id = ${co}::uuid)
+                             AND (p.ipm_branch_id  IS NULL OR p.ipm_branch_id  = ${br}::uuid)
+                             AND p.ipm_key_mrp = COALESCE(st.mrp, -1)
+                             AND p.ipm_key_sp  = COALESCE(st.sp, -1)))
+         ORDER BY items.item_name_en, items.item_id
+         LIMIT ${args.limit} OFFSET ${args.offset}
+      ),
+      units AS (
+        SELECT iuc.iuc_id, iuc.iuc_item_id AS item_id, iuc.iuc_unit_slno,
+               iuc.iuc_to_base_factor AS factor, iuc.iuc_is_default_unit, u.unit_name
+          FROM page
+          JOIN inventory.item_unit_conversion iuc
+            ON iuc.iuc_item_id = page.item_id AND iuc.iuc_is_deleted = false
+          LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+      ),
+      keys AS (
+        SELECT un.iuc_id, un.item_id, (-1)::numeric AS key_mrp, (-1)::numeric AS key_sp
+          FROM units un
+        UNION
+        SELECT un.iuc_id, un.item_id, p.ipm_key_mrp, p.ipm_key_sp
+          FROM units un
+          JOIN pol ON pol.item_id = un.item_id
+          JOIN inventory.item_price_master p
+            ON p.ipm_item_id    = un.item_id
+           AND p.ipm_uc_unit_id = un.iuc_id
+           AND p.ipm_is_deleted = false
+           AND CURRENT_DATE BETWEEN p.ipm_effective_from AND p.ipm_effective_to
+           AND (p.ipm_company_id IS NULL OR p.ipm_company_id = ${co}::uuid)
+           AND (p.ipm_branch_id  IS NULL OR p.ipm_branch_id  = ${br}::uuid)
+         WHERE (p.ipm_key_mrp <> -1 OR p.ipm_key_sp <> -1)
+           AND (p.ipm_key_mrp = -1 OR pol.track_mrp)
+           AND (p.ipm_key_sp  = -1 OR pol.track_sp)
+        UNION
+        SELECT un.iuc_id, un.item_id, COALESCE(st.mrp, -1), COALESCE(st.sp, -1)
+          FROM units un
+          JOIN stock st ON st.item_id = un.item_id
+      ),
+      ${mrpCostCte({
+        companyId: co,
+        branchId: br,
+        pairs: Prisma.sql`SELECT DISTINCT item_id, key_mrp AS mrp FROM keys WHERE key_mrp <> -1`,
+      })},
+      item_stock AS (
+        SELECT st.item_id, SUM(st.qty) AS qty FROM stock st GROUP BY st.item_id
+      ),
+      shown_unit AS (
+        SELECT DISTINCT ON (un.item_id) un.item_id, un.unit_name, un.factor
+          FROM units un
+         ORDER BY un.item_id, un.iuc_is_default_unit DESC NULLS LAST, (un.factor = 1) DESC, un.iuc_unit_slno
+      )
+      SELECT (SELECT count(*) FROM page)  AS "pageItems",
+             items.item_id                AS "itemId",
+             items.item_code              AS "itemCode",
+             items.item_default_barcode   AS "barcode",
+             items.item_name_en           AS "itemName",
+             un.iuc_id                    AS "uomId",
+             un.unit_name                 AS "unitName",
+             COALESCE(st.qty, 0) / NULLIF(un.factor, 0) AS "stockQty",
+             NULLIF(k.key_mrp, -1)        AS "mrp",
+             NULLIF(k.key_sp, -1)         AS "salePrice",
+             k.key_mrp                    AS "keyMrp",
+             k.key_sp                     AS "keySp",
+             ${exact}                     AS "exact",
+             p.p_is_bucket                AS "priceIsBucket",
+             p.ipm_branch_id              AS "priceBranchId",
+             p.ipm_id                     AS "bucketId",
+             p.ipm_max_price              AS "maxPrice",
+             ${gridCost.rate}             AS "costRate",
+             ${gridCost.wot}              AS "costWot",
+             ${gridCost.basis}            AS "costBasis",
+             p.ipm_min_price              AS "minPrice",
+             p.ipm_round_off              AS "roundOff",
+             p.ipm_sales_price_a          AS "priceA",
+             p.ipm_sales_price_b          AS "priceB",
+             p.ipm_sales_price_c          AS "priceC",
+             p.ipm_sales_price_d          AS "priceD",
+             CASE WHEN ${exact} THEN p.ipm_cost_price END AS "lineCost",
+             CASE WHEN ${exact} THEN p.ipm_cost_wot   END AS "lineCostWot",
+             CASE WHEN ${exact} THEN p.ipm_price_a_markup_perc END AS "markupA",
+             CASE WHEN ${exact} THEN p.ipm_price_b_markup_perc END AS "markupB",
+             CASE WHEN ${exact} THEN p.ipm_price_c_markup_perc END AS "markupC",
+             CASE WHEN ${exact} THEN p.ipm_price_d_markup_perc END AS "markupD",
+             ${stock.rate}                AS "stockCost",
+             ${stock.wot}                 AS "stockCostWot",
+             ${stock.basis}               AS "stockCostBasis",
+             COALESCE(NULLIF(btrim(p.ipm_profit_type), ''), 'By User') AS "profitType",
+             CASE WHEN ${exact}
+                  THEN COALESCE(p.ipm_company_id,
+                                CASE WHEN items.item_company_id = ${co}::uuid THEN items.item_company_id END)
+                  ELSE ${co}::uuid END   AS "companyId",
+             cmp.comp_label               AS "companyName",
+             CASE WHEN ${exact} THEN brn.br_label END AS "branchName",
+             un.factor                    AS "unitFactor",
+             un.iuc_unit_slno             AS "unitSlNo",
+             un.iuc_is_default_unit       AS "isDefaultUnit",
+             grp.itg_name                 AS "itemGroupName",
+             spt.spt_name                 AS "trackPresetName",
+             pol.track_mrp                AS "trackMrp",
+             pol.track_sp                 AS "trackSalePrice",
+             items.item_company_id        AS "itemCompanyId",
+             COALESCE(ist.qty, 0) / NULLIF(su.factor, 0) AS "itemStockQty",
+             su.unit_name                 AS "itemStockUnit"
+        FROM keys k
+        JOIN units un ON un.iuc_id = k.iuc_id
+        JOIN items    ON items.item_id = k.item_id
+        JOIN pol      ON pol.item_id = k.item_id
+        LEFT JOIN stock st
+               ON st.item_id = k.item_id AND COALESCE(st.mrp, -1) = k.key_mrp AND COALESCE(st.sp, -1) = k.key_sp
+        LEFT JOIN mrp_cost mc ON mc.item_id = k.item_id AND mc.mrp = k.key_mrp AND k.key_mrp <> -1
+        LEFT JOIN stock.stock_item_cost sic
+               ON sic.sic_company_id = ${co}::uuid
+              AND sic.sic_branch_id  = ${br}::uuid
+              AND sic.sic_item_id    = k.item_id
+              AND sic.sic_is_deleted = false
+        LEFT JOIN item_stock ist ON ist.item_id = k.item_id
+        LEFT JOIN shown_unit su  ON su.item_id = k.item_id
+        LEFT JOIN inventory.item_group_master grp ON grp.itg_id = items.item_group_id
+        LEFT JOIN stock.stock_track_preset spt
+               ON spt.spt_id = COALESCE(items.item_track_preset_id, grp.itg_track_preset_id)
+        ${effectivePriceLateral({
+          itemId: Prisma.raw('k.item_id'),
+          uomId: Prisma.raw('k.iuc_id'),
+          mrp: Prisma.raw('NULLIF(k.key_mrp, -1)'),
+          salePrice: Prisma.raw('NULLIF(k.key_sp, -1)'),
+          companyId: co,
+          branchId: br,
+          onDate: Prisma.raw('CURRENT_DATE'),
+        })}
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(NULLIF(btrim(c.comp_short), ''), c.comp_name) AS comp_label
+            FROM public.companys c
+           WHERE c.comp_id = CASE WHEN ${exact}
+                                  THEN COALESCE(p.ipm_company_id,
+                                                CASE WHEN items.item_company_id = ${co}::uuid THEN items.item_company_id END)
+                                  ELSE ${co}::uuid END
+        ) cmp ON true
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(NULLIF(btrim(b.br_short), ''), b.br_name) AS br_label
+            FROM public.branch_master b
+           WHERE b.br_id = p.ipm_branch_id
+        ) brn ON true
+       ORDER BY items.item_name_en, items.item_id, un.iuc_unit_slno, un.iuc_id,
+                (k.key_mrp <> -1 OR k.key_sp <> -1), k.key_mrp, k.key_sp
+    `;
+    const amount = (value: Prisma.Decimal | null | undefined) =>
+      value === null || value === undefined ? null : toNumber(value);
+    const items: PriceLineRecord[] = rows.map((row) => {
+      const headlineKey = toNumber(row.keyMrp) === -1 && toNumber(row.keySp) === -1;
+      const stockQty = amount(row.stockQty) ?? 0;
+      const lineKind: PriceLineKind = row.exact
+        ? headlineKey
+          ? 'HEADLINE'
+          : toNumber(row.keySp) !== -1
+            ? 'SOLD_AT'
+            : 'MRP'
+        : headlineKey && stockQty === 0
+          ? 'HEADLINE'
+          : 'NO_PRICE';
+      return {
+        ...this.toGridRecord(row),
+        lineKind,
+        lineCost: amount(row.lineCost),
+        lineCostWot: amount(row.lineCostWot),
+        stockCost: amount(row.stockCost),
+        stockCostWot: amount(row.stockCostWot),
+        stockCostBasis: row.stockCostBasis,
+        profitType: row.profitType,
+        companyId: row.companyId,
+        companyName: row.companyName,
+        branchId: row.exact ? row.priceBranchId : null,
+        branchName: row.exact ? row.branchName : null,
+        unitFactor: amount(row.unitFactor) ?? 1,
+        unitSlNo: row.unitSlNo ?? 0,
+        isDefaultUnit: row.isDefaultUnit === true,
+        itemGroupName: row.itemGroupName,
+        trackPresetName: row.trackPresetName,
+        trackMrp: row.trackMrp,
+        trackSalePrice: row.trackSalePrice,
+        itemCompanyId: row.itemCompanyId,
+        itemStockQty: amount(row.itemStockQty) ?? 0,
+        itemStockUnit: row.itemStockUnit,
+        storedMarkups: [
+          amount(row.markupA),
+          amount(row.markupB),
+          amount(row.markupC),
+          amount(row.markupD),
+        ],
+      };
+    });
+    const count = rows.length ? Number(rows[0].pageItems) : 0;
+    return { items, meta: { limit: args.limit, offset: args.offset, count, lines: items.length } };
+  }
+
+  /**
+   * P1 §4.9 — the row Back to all branches names, locked, with its item and unit names.
+   * Null when there is no such row at all (deleted rows are answered: the card rewrites
+   * lines, and the caller finds the live one by key).
+   */
+  async lockPriceRow(tx: Prisma.TransactionClient, ipmId: string): Promise<LockedOwnLine | null> {
+    const [row] = await tx.$queryRaw<
+      Array<{
+        ipmId: string;
+        companyId: string | null;
+        branchId: string | null;
+        itemId: string;
+        uomId: string;
+        keyMrp: Prisma.Decimal;
+        keySp: Prisma.Decimal;
+        isDeleted: boolean;
+        itemName: string | null;
+        unitName: string | null;
+      }>
+    >`
+      SELECT p.ipm_id         AS "ipmId",
+             p.ipm_company_id AS "companyId",
+             p.ipm_branch_id  AS "branchId",
+             p.ipm_item_id    AS "itemId",
+             p.ipm_uc_unit_id AS "uomId",
+             p.ipm_key_mrp    AS "keyMrp",
+             p.ipm_key_sp     AS "keySp",
+             p.ipm_is_deleted AS "isDeleted",
+             i.item_name_en   AS "itemName",
+             u.unit_name      AS "unitName"
+        FROM inventory.item_price_master p
+        LEFT JOIN inventory.item_master i ON i.item_id = p.ipm_item_id
+        LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = p.ipm_uc_unit_id
+        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+       WHERE p.ipm_id = ${ipmId}::uuid
+       FOR UPDATE OF p
+    `;
+    return row
+      ? {
+          ...row,
+          keyMrp: toNumber(row.keyMrp),
+          keySp: toNumber(row.keySp),
+          itemName: row.itemName ?? '',
+        }
+      : null;
+  }
+
+  /**
+   * P1 §4.9 / Q5 — the branch's own live rows of one key that are in force today or start
+   * later (the line and its scheduled rows), oldest first, locked. History (ended before
+   * today) is not touched.
+   */
+  async liveOwnRowsOfKey(
+    tx: Prisma.TransactionClient,
+    line: Pick<LockedOwnLine, 'companyId' | 'branchId' | 'itemId' | 'uomId' | 'keyMrp' | 'keySp'>,
+  ): Promise<Array<{ ipmId: string; effectiveFrom: string }>> {
+    return tx.$queryRaw<Array<{ ipmId: string; effectiveFrom: string }>>`
+      SELECT p.ipm_id AS "ipmId", p.ipm_effective_from::text AS "effectiveFrom"
+        FROM inventory.item_price_master p
+       WHERE p.ipm_company_id IS NOT DISTINCT FROM ${line.companyId}::uuid
+         AND p.ipm_branch_id  = ${line.branchId}::uuid
+         AND p.ipm_item_id    = ${line.itemId}::uuid
+         AND p.ipm_uc_unit_id = ${line.uomId}::uuid
+         AND p.ipm_key_mrp    = ${line.keyMrp}::numeric
+         AND p.ipm_key_sp     = ${line.keySp}::numeric
+         AND p.ipm_is_deleted = false
+         AND p.ipm_effective_to >= CURRENT_DATE
+       ORDER BY p.ipm_effective_from, p.ipm_id
+       FOR UPDATE OF p
+    `;
+  }
+
+  /**
+   * P1 §4.9 — what would price the unit at the branch today once `excludeIds` are gone: the
+   * resolver's answer (the exact key before the headline, the branch before the chain, the
+   * company before shared) over the remaining live rows. Null = nothing (BACK_NOTHING_LEFT).
+   */
+  async priceAfterRemoval(
+    tx: Prisma.TransactionClient,
+    args: {
+      companyId: string;
+      branchId: string;
+      itemId: string;
+      uomId: string;
+      keyMrp: number;
+      keySp: number;
+      excludeIds: readonly string[];
+    },
+  ): Promise<{
+    ipmId: string;
+    branchId: string | null;
+    keyMrp: number;
+    keySp: number;
+    prices: [number, number, number, number];
+  } | null> {
+    const [row] = await tx.$queryRaw<
+      Array<{
+        ipmId: string;
+        branchId: string | null;
+        keyMrp: Prisma.Decimal;
+        keySp: Prisma.Decimal;
+        priceA: Prisma.Decimal | null;
+        priceB: Prisma.Decimal | null;
+        priceC: Prisma.Decimal | null;
+        priceD: Prisma.Decimal | null;
+      }>
+    >`
+      SELECT p.ipm_id AS "ipmId", p.ipm_branch_id AS "branchId",
+             p.ipm_key_mrp AS "keyMrp", p.ipm_key_sp AS "keySp",
+             p.ipm_sales_price_a AS "priceA", p.ipm_sales_price_b AS "priceB",
+             p.ipm_sales_price_c AS "priceC", p.ipm_sales_price_d AS "priceD"
+        FROM inventory.item_price_master p
+       WHERE p.ipm_item_id    = ${args.itemId}::uuid
+         AND p.ipm_uc_unit_id = ${args.uomId}::uuid
+         AND p.ipm_is_deleted = false
+         AND CURRENT_DATE BETWEEN p.ipm_effective_from AND p.ipm_effective_to
+         AND (p.ipm_company_id IS NULL OR p.ipm_company_id = ${args.companyId}::uuid)
+         AND (p.ipm_branch_id  IS NULL OR p.ipm_branch_id  = ${args.branchId}::uuid)
+         AND (   (p.ipm_key_mrp = ${args.keyMrp}::numeric AND p.ipm_key_sp = ${args.keySp}::numeric)
+              OR (p.ipm_key_mrp = -1 AND p.ipm_key_sp = -1))
+         AND NOT (p.ipm_id = ANY(${[...args.excludeIds]}::uuid[]))
+       ORDER BY (p.ipm_key_mrp = ${args.keyMrp}::numeric AND p.ipm_key_sp = ${args.keySp}::numeric) DESC,
+                (p.ipm_branch_id IS NULL), (p.ipm_company_id IS NULL), p.ipm_id
+       LIMIT 1
+    `;
+    if (!row) {
+      return null;
+    }
+    const amount = (value: Prisma.Decimal | null) => (value === null ? 0 : toNumber(value));
+    return {
+      ipmId: row.ipmId,
+      branchId: row.branchId,
+      keyMrp: toNumber(row.keyMrp),
+      keySp: toNumber(row.keySp),
+      prices: [amount(row.priceA), amount(row.priceB), amount(row.priceC), amount(row.priceD)],
+    };
   }
 
   /**

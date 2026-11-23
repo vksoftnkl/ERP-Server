@@ -74,6 +74,7 @@ describe('SellingPriceBulkService', () => {
     getUserId: jest.Mock;
     getUserType: jest.Mock;
     getDeviceId: jest.Mock;
+    getBranchId: jest.Mock;
   };
   let appSettingValueService: { resolveEffective: jest.Mock };
   let gateway: {
@@ -85,6 +86,17 @@ describe('SellingPriceBulkService', () => {
     findBucketRowForUpdate: jest.Mock;
     listNoStock: jest.Mock;
     calendar: jest.Mock;
+    // Change Selling Price P1.
+    listPriceLines: jest.Mock;
+    priceLevels: jest.Mock;
+    otherBranchStockCosts: jest.Mock;
+    branchProblems: jest.Mock;
+    branchLabels: jest.Mock;
+    taxNames: jest.Mock;
+    userBranchId: jest.Mock;
+    lockPriceRow: jest.Mock;
+    liveOwnRowsOfKey: jest.Mock;
+    priceAfterRemoval: jest.Mock;
   };
   /** Notes 144 — S2 / S3 and the period writes live on the price writer now. */
   let writer: {
@@ -154,6 +166,8 @@ describe('SellingPriceBulkService', () => {
       // HQ by default; the 403 tests set it back to the seeded 'USER'.
       getUserType: jest.fn().mockReturnValue('ADMIN'),
       getDeviceId: jest.fn().mockReturnValue(null),
+      // P1 §4.6 — the login's own (device) branch.
+      getBranchId: jest.fn().mockReturnValue(BRANCH_ID),
     };
     appSettingValueService = { resolveEffective: jest.fn() };
     settingIs('warning');
@@ -202,6 +216,29 @@ describe('SellingPriceBulkService', () => {
       listNoStock: jest.fn().mockResolvedValue([]),
       // A save with no effectiveFrom starts today, and runs exactly as before.
       calendar: jest.fn().mockResolvedValue({ today: TODAY, latest: LATEST }),
+      listPriceLines: jest.fn(),
+      priceLevels: jest.fn().mockResolvedValue([
+        { level: 1, name: 'WS', active: true },
+        { level: 2, name: 'RET', active: true },
+        { level: 3, name: 'BWH', active: false },
+        { level: 4, name: 'HOT', active: false },
+      ]),
+      // No other branch reads a CHAIN line unless a test says so.
+      otherBranchStockCosts: jest.fn((_tx: unknown, args: { probes: unknown[] }) =>
+        Promise.resolve(args.probes.map(() => [])),
+      ),
+      // The real rule (no `this` in it).
+      branchProblems: jest.fn((candidates: never, branches: never, opts: never) =>
+        PriceBucketGateway.prototype.branchProblems.call({}, candidates, branches, opts),
+      ),
+      branchLabels: jest.fn((_tx: unknown, ids: string[]) =>
+        Promise.resolve(new Map(ids.map((id) => [id.toLowerCase(), 'Acme CBE']))),
+      ),
+      taxNames: jest.fn().mockResolvedValue(new Map()),
+      userBranchId: jest.fn().mockResolvedValue(null),
+      lockPriceRow: jest.fn(),
+      liveOwnRowsOfKey: jest.fn(),
+      priceAfterRemoval: jest.fn(),
     };
     writer = {
       updateBucketPrice: jest.fn().mockResolvedValue(IPM_ID),
@@ -333,7 +370,8 @@ describe('SellingPriceBulkService', () => {
         ...ctx,
         activeLevels: [1, 2],
       });
-      expect(gateway.validateRows.mock.calls[0][2]).toEqual({ activeLevels: [1, 2] });
+      // P1: the level short names ride along for the problems' params.
+      expect(gateway.validateRows.mock.calls[0][2]).toMatchObject({ activeLevels: [1, 2] });
 
       const keepCost = jest.fn().mockReturnValue({ costRate: 95.004567, costWot: 80.512345 });
       const kept = await service.prepareBulk(
@@ -361,10 +399,10 @@ describe('SellingPriceBulkService', () => {
       expect(keepCost).toHaveBeenCalledTimes(1);
       expect(typed.candidates[0]).toMatchObject({ costRate: 99, costWot: exclusiveOfTax(99, TAX_PERC) });
 
-      // menu 30 / Quick Rate pass neither: Q26 gets no option
+      // menu 30 / Quick Rate pass neither: Q26 gets no activeLevels (only the level names)
       gateway.validateRows.mockClear();
       await service.prepareBulk(tx as never, payload({ rows: [headlineRow()] as never }), ctx);
-      expect(gateway.validateRows.mock.calls[0][2]).toEqual({});
+      expect(gateway.validateRows.mock.calls[0][2]).not.toHaveProperty('activeLevels');
     });
   });
 

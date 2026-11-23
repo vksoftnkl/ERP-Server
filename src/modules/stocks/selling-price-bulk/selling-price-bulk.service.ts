@@ -23,24 +23,31 @@ import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
 import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
 import { SaveSellingPriceBulkDto, SaveSellingPriceRowDto } from './dto/save-selling-price-bulk.dto';
 import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-policy.helper';
-import { exclusiveOfTax, recomputeLevel } from './selling-price-math.helper';
+import { exclusiveOfTax, markupReproduces, recomputeLevel } from './selling-price-math.helper';
 import { resolveTargetScope, type ScopeResolution } from './selling-price-scope.helper';
 import {
   PriceBucketGateway,
   type BucketPriceCandidate,
   type PriceGridRecord,
+  type PriceLineRecord,
   type RowCost,
 } from './price-bucket.gateway';
+import type { BackToAllBranchesDto } from './dto/back-to-all-branches.dto';
 import {
   CONFIRMABLE_VERDICTS,
   PRICE_LEVELS,
   isHqUserType,
   type BelowCostPolicy,
   type ItemTaxRate,
+  type OtherBranchesStockCost,
   type PagedResult,
   type PriceLevel,
+  type PriceLineKind,
   type PriceScope,
   type PriceVerdict,
+  type SellingPriceBackResult,
+  type SellingPriceLinePageMeta,
+  type SellingPriceLineRow,
   type SellingPriceProblem,
   type SellingPriceRow,
   type SellingPriceSaveResult,
@@ -60,6 +67,7 @@ import {
   type PriceWriteOrigin,
 } from '../../Inventory/item-price-log/types/price-change-log.types';
 import { assertMenuRight } from '../../../common/posting/rights';
+import { wordingFor } from '../../../common/error-wording/error-wording';
 
 /** Notes 119 — the code each Q26 verdict is refused with. */
 const PRICE_VERDICT_CODES: Readonly<Record<PriceVerdict, StockErrorCode>> = {
@@ -132,6 +140,15 @@ export interface PrepareBulkContext {
     row: SaveSellingPriceRowDto,
     key: { mrp: number | null; salePrice: number | null },
   ) => { costRate: number; costWot: number } | null;
+  /**
+   * Change Selling Price P1, decision A1 — menu 30 and the Ctrl+R popup (saveBulk) only: a
+   * row that sends no costPrice keeps the LINE's own cost (ipm_cost_price of the line of its
+   * key) instead of being overwritten with the stock-first cost. A key with no line yet, or a
+   * line with no cost, takes the stock-first cost as before. Purchases (applyPurchasePrices)
+   * and menu 244 do not set it: their rows are costed and stored exactly as before (P2 moves
+   * the purchase write).
+   */
+  keepLineCost?: boolean;
 }
 
 /** `YYYY-MM-DD` as the screen says it: `DD-MM-YYYY`. */
@@ -197,10 +214,87 @@ export class SellingPriceBulkService {
   }
 
   /**
+   * Change Selling Price P1 (plan 2026-11-23 §4.1 / §7.1) — GET /stock/price-bulk: the grid's
+   * LINES for a page of ITEMS. Edit on menu 30 first (O8: no read-only mode), then the branch
+   * (another branch's prices are head office only). Every old row key is kept; each line adds
+   * what it is (lineKind), its own cost apart from the stock cost, its company / branch,
+   * Profit Type, unit facts and the item row's facts; an All branches line adds the other
+   * branches' stock-cost spread (C5). Menu 244 keeps `listPrices` (one row per bucket).
+   */
+  async listPriceLines(
+    queryDto: ListSellingPriceQueryDto,
+  ): Promise<{ items: SellingPriceLineRow[]; meta: SellingPriceLinePageMeta }> {
+    await this.assertCanEditPrices();
+    await this.assertBranchAllowed(queryDto.branchId);
+    const limit = Math.min(queryDto.limit ?? DEFAULT_PRICE_GRID_LIMIT, MAX_PRICE_GRID_LIMIT);
+    const offset = Math.max(queryDto.offset ?? 0, 0);
+    const page = await this.gateway.listPriceLines({
+      companyId: queryDto.companyId,
+      branchId: queryDto.branchId,
+      itemGroupId: queryDto.itemGroupId,
+      itemBrandId: queryDto.itemBrandId,
+      itemSectionId: queryDto.itemSectionId,
+      supplierId: queryDto.supplierId,
+      itemId: queryDto.itemId,
+      search: queryDto.search,
+      itemCategoryId: queryDto.itemCategoryId,
+      trackPresetId: queryDto.trackPresetId,
+      taxId: queryDto.taxId,
+      activeOnly: queryDto.activeOnly ?? true,
+      unpricedOnly: queryDto.unpricedOnly === true,
+      limit,
+      offset,
+    });
+    const records = page.items;
+    const taxRates = await this.resolveItemTaxRates(this.prisma, [
+      ...new Set(records.map((record) => record.itemId)),
+    ]);
+    const taxNames = await this.gateway.taxNames(this.prisma, [
+      ...new Set([...taxRates.values()].map((tax) => tax.taxId).filter((id): id is string => !!id)),
+    ]);
+    // C5 — the other branches that read each All branches line, and their stock cost.
+    const chainAt = records
+      .map((record, index) => ({ record, index }))
+      .filter(
+        ({ record }) =>
+          record.lineKind !== 'NO_PRICE' &&
+          record.bucketId !== null &&
+          record.priceScope === 'CHAIN',
+      );
+    const spread = chainAt.length
+      ? await this.gateway.otherBranchStockCosts(this.prisma, {
+          companyId: queryDto.companyId,
+          excludeBranchId: queryDto.branchId,
+          probes: chainAt.map(({ record }) => ({
+            itemId: record.itemId,
+            uomId: record.uomId,
+            mrp: record.mrp,
+            salePrice: record.salePrice,
+          })),
+        })
+      : [];
+    const spreadAt = new Map(chainAt.map(({ index }, at) => [index, spread[at] ?? []]));
+    const items = records.map((record, index) => {
+      const tax = taxRates.get(record.itemId);
+      return this.toLineRow(
+        record,
+        index + 1,
+        tax,
+        tax?.taxId ? (taxNames.get(tax.taxId.toLowerCase()) ?? null) : null,
+        spreadOf(spreadAt.get(index) ?? []),
+      );
+    });
+    return { items, meta: page.meta };
+  }
+
+  /**
    * §4 — Q24, F12: every live price row this branch can see, plus every stock
    * bucket at the branch with no row of its own (notes 74), headline first.
+   * P1 §7.1 — the same two checks as the grid: Edit on menu 30, and the branch.
    */
   async listBuckets(itemId: string, queryDto: PriceBucketsQueryDto): Promise<SellingPriceRow[]> {
+    await this.assertCanEditPrices();
+    await this.assertBranchAllowed(queryDto.branchId);
     const records = await this.gateway.listBuckets(itemId, queryDto.companyId, queryDto.branchId);
     return this.toGridRows(records, 0);
   }
@@ -216,7 +310,10 @@ export class SellingPriceBulkService {
     // the scope. A downgraded scope would be a save that silently did something
     // other than what the header radio said.
     await this.assertCanEditPrices();
-    this.assertScopeAllowed(dto.scope);
+    // P1 §4.6 — another branch is head office only; then the body's scope and each line's.
+    await this.assertBranchAllowed(dto.branchId);
+    this.assertScopeAllowed(dto.scope ?? 'BRANCH');
+    this.assertRowScopesAllowed(dto.rows);
     // The quick rate popup names the screen it was opened from (§3.3).
     const via = dto.originMenuId ? await this.describeOriginMenu(dto.originMenuId) : null;
 
@@ -225,7 +322,8 @@ export class SellingPriceBulkService {
     const actor = resolveActor(dto.userId, this.requestContext.getUserId());
 
     return this.prisma.$transaction(async (tx) => {
-      const prepared = await this.prepareBulk(tx, dto, { actor, policy });
+      // P1 A1 — a line that sends no cost keeps its own (menu 30 / Ctrl+R only).
+      const prepared = await this.prepareBulk(tx, dto, { actor, policy, keepLineCost: true });
       if (
         prepared.belowCost.length &&
         resolveBelowCostAction(policy, confirmed) === 'CONFIRM'
@@ -274,19 +372,54 @@ export class SellingPriceBulkService {
     this.assertUnitsBelong(dto.rows, costs);
 
     const candidates = dto.rows.map((row, index) =>
-      this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index], ctx.keepCost),
+      this.toCandidate(row, index, dto.companyId, ctx.actor, taxRates, costs[index], ctx),
     );
+    // P1 §4.6 — each line's own scope (rows[].scope), else the body's, else BRANCH.
     const resolutions = dto.rows.map((row) =>
-      resolveTargetScope(dto.scope, this.rowScopeOf(row), dto.branchId),
+      resolveTargetScope(row.scope ?? dto.scope ?? 'BRANCH', this.rowScopeOf(row), dto.branchId),
     );
     this.assertOneRowPerBucket(candidates, resolutions);
+    // P1 §4.8 — + Line rows: an MRP item's new line needs its MRP; a key already lined is refused.
+    await this.assertNewLines(tx, dto, candidates, resolutions, costs, scheduledFrom);
 
     // ── Step 1 — Q26. §5.2 ─────────────────────────────────────────────────
+    const levels = await this.gateway.priceLevels(tx);
+    const levelNames = new Map(levels.map((level) => [level.level, level.name]));
     const problems = this.gateway.validateRows(
       candidates,
       costs.map((cost) => cost.minPrice),
-      ctx.activeLevels ? { activeLevels: ctx.activeLevels } : {},
+      ctx.activeLevels ? { activeLevels: ctx.activeLevels, levelNames } : { levelNames },
     );
+    // P1 §4.7 (C6, O10) — an All branches line is judged at every other branch reading it.
+    const chainAt = resolutions
+      .map((resolution, index) => ({ resolution, index }))
+      .filter(({ resolution }) => resolution.targetScope === 'CHAIN')
+      .map(({ index }) => index);
+    if (chainAt.length) {
+      const branches = await this.gateway.otherBranchStockCosts(tx, {
+        companyId: dto.companyId,
+        excludeBranchId: dto.branchId,
+        onDate: from,
+        probes: chainAt.map((index) => ({
+          itemId: candidates[index].itemId,
+          uomId: candidates[index].uomId,
+          mrp: candidates[index].mrp,
+          salePrice: candidates[index].salePrice,
+        })),
+      });
+      problems.push(
+        ...this.gateway.branchProblems(
+          chainAt.map((index) => candidates[index]),
+          branches,
+          {
+            activeLevels:
+              ctx.activeLevels ??
+              levels.filter((level) => level.active).map((level) => level.level),
+            levelNames,
+          },
+        ),
+      );
+    }
 
     const blocking = problems.filter((problem) => !CONFIRMABLE_VERDICTS.includes(problem.verdict));
     if (blocking.length) {
@@ -325,7 +458,7 @@ export class SellingPriceBulkService {
       masterRowsSaved: 0,
       noStock: [],
       needsConfirm: true,
-      problems: prepared.belowCost,
+      problems: worded(prepared.belowCost),
       belowCostPolicy: policy,
     };
   }
@@ -390,10 +523,11 @@ export class SellingPriceBulkService {
 
     const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
 
-    const after = await this.auditWrites(tx, dto, applied, {
+    const after = await this.auditWrites(tx, applied, {
       actor,
       confirmedBelowCost: confirmed ? belowCost : [],
       scheduledFrom,
+      scopes: resolutions.map((resolution) => resolution.targetScope),
     });
 
     return {
@@ -405,7 +539,7 @@ export class SellingPriceBulkService {
       masterRowsSaved: 0,
       noStock,
       needsConfirm: false,
-      problems: prepared.problems,
+      problems: worded(prepared.problems),
       belowCostPolicy: policy,
     };
   }
@@ -776,22 +910,23 @@ export class SellingPriceBulkService {
    */
   private async auditWrites(
     tx: Prisma.TransactionClient,
-    dto: SaveSellingPriceBulkDto,
     applied: readonly AppliedBucketPrice[],
     context: {
       actor: string;
       confirmedBelowCost: readonly SellingPriceProblem[];
       scheduledFrom?: string;
+      /** P1 §4.6 — the scope each row was written at, in `applied` order. */
+      scopes: readonly PriceScope[];
     },
   ): Promise<Map<string, Prisma.JsonObject>> {
     const after = await this.gateway.snapshotRows(tx, [
       ...applied.map((row) => row.ipmId),
       ...applied.flatMap((row) => (row.closed ? [row.closed.ipmId] : [])),
     ]);
-    const scopeLabel = dto.scope === 'CHAIN' ? 'all branches' : 'this branch';
     // Notes 140 A — a scheduled save names its day on every row it wrote.
     const fromLabel = context.scheduledFrom ? `, from ${displayDay(context.scheduledFrom)}` : '';
-    for (const row of applied) {
+    for (const [index, row] of applied.entries()) {
+      const scopeLabel = context.scopes[index] === 'CHAIN' ? 'all branches' : 'this branch';
       const modified = after.get(row.ipmId) ?? null;
       const confirmed = context.confirmedBelowCost.filter((p) => p.lineNo === row.lineNo);
       const displayName = `${row.itemName} · ${this.describeBucket(modified)}`;
@@ -945,6 +1080,276 @@ export class SellingPriceBulkService {
   }
 
   /**
+   * P1 §4.6 — a line's own scope (rows[].scope) of CHAIN is head office's, as the body's is:
+   * 403 STOCK_PRICE_CHAIN_HQ_ONLY naming the line, before anything is read or written.
+   */
+  private assertRowScopesAllowed(rows: readonly SaveSellingPriceRowDto[]): void {
+    if (isHqUserType(this.requestContext.getUserType())) {
+      return;
+    }
+    const wrong = rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.scope === 'CHAIN');
+    if (!wrong.length) {
+      return;
+    }
+    throwStockForbidden<StockErrorDetail>(
+      'These prices cannot be saved',
+      wrong.map(({ row, index }) => ({
+        field: `rows.${row.lineNo ?? index + 1}.scope`,
+        code: StockErrorCode.PRICE_CHAIN_HQ_ONLY,
+        message:
+          `Line ${row.lineNo ?? index + 1}: only an HQ user may save prices for all branches. ` +
+          "Save it as this branch's own line instead.",
+      })),
+    );
+  }
+
+  /**
+   * P1 §4.6 — another branch's prices (GET, POST, Back to all branches) are head office's.
+   * A store user's own branch is the login's (the device branch on the token), else the
+   * user's branch (user_master.usr_branch_id) — Qty-wise Prices' rule (D16 C-d). A store
+   * login with neither has no branch of its own and is refused. 403
+   * STOCK_PRICE_BRANCH_HQ_ONLY, field `branchId`.
+   */
+  async assertBranchAllowed(branchId: string, field = 'branchId'): Promise<void> {
+    if (isHqUserType(this.requestContext.getUserType())) {
+      return;
+    }
+    const own = await this.ownBranchId();
+    if (own !== null && own === branchId.toLowerCase()) {
+      return;
+    }
+    throwStockForbidden<StockErrorDetail>("Another branch's prices need head office", [
+      {
+        field,
+        code: StockErrorCode.PRICE_BRANCH_HQ_ONLY,
+        message: own
+          ? `Only head office may see or change another branch's prices (branch ${branchId}). Work on your own branch.`
+          : 'This login has no branch of its own (no device branch, no branch on the user), so only head office may work on prices.',
+      },
+    ]);
+  }
+
+  /** The caller's own branch: the token's (device) branch, else the user's. Lower-cased. */
+  private async ownBranchId(): Promise<string | null> {
+    const loggedIn = this.requestContext.getBranchId();
+    if (loggedIn) {
+      return loggedIn.toLowerCase();
+    }
+    const userId = this.requestContext.getUserId();
+    const own = userId ? await this.gateway.userBranchId(this.prisma, userId) : null;
+    return own ? own.toLowerCase() : null;
+  }
+
+  /**
+   * P1 §4.8 — + Line (`isNew`) rows, before Q26: an MRP-tracked item's new line names an MRP
+   * above 0 (422 STOCK_PRICE_BUCKET_MRP_ZERO — blanked, it would land on the headline), and
+   * a key that already has a live line at the target scope on the day is refused (422
+   * STOCK_PRICE_LINE_EXISTS, params unit / mrp / branch / n, `existingIpmId` the line there).
+   */
+  private async assertNewLines(
+    tx: Prisma.TransactionClient,
+    dto: SaveSellingPriceBulkDto,
+    candidates: readonly PriceCandidateWrite[],
+    resolutions: readonly ScopeResolution[],
+    costs: readonly RowCost[],
+    scheduledFrom: string | undefined,
+  ): Promise<void> {
+    const fresh = dto.rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.isNew === true);
+    if (!fresh.length) {
+      return;
+    }
+    const noMrp = fresh.filter(
+      ({ row, index }) =>
+        costs[index].trackMrp && !(row.mrp !== undefined && row.mrp !== null && row.mrp > 0),
+    );
+    if (noMrp.length) {
+      throwStockUnprocessable<StockErrorDetail>(
+        'These prices cannot be saved',
+        noMrp.map(({ index }) => ({
+          field: `rows.${candidates[index].lineNo}.mrp`,
+          code: StockErrorCode.PRICE_BUCKET_MRP_ZERO,
+          message:
+            `Line ${candidates[index].lineNo}: ${candidates[index].itemName} is tracked by MRP, so a ` +
+            'new line needs the MRP printed on its stock (above 0).',
+        })),
+      );
+    }
+    const labels = await this.gateway.branchLabels(tx, [dto.branchId]);
+    const errors: StockErrorDetail[] = [];
+    for (const { index } of fresh) {
+      const candidate = candidates[index];
+      const found = await this.gateway.findBucketRowForUpdate(
+        tx,
+        candidate,
+        resolutions[index],
+        scheduledFrom,
+      );
+      if (!found) {
+        continue;
+      }
+      const branch =
+        resolutions[index].targetBranchId === null
+          ? 'All branches'
+          : (labels.get(dto.branchId.toLowerCase()) ?? 'this branch');
+      const mrp =
+        candidate.mrp !== null
+          ? `MRP ${candidate.mrp.toFixed(2)}`
+          : candidate.salePrice !== null
+            ? `sold at ${candidate.salePrice.toFixed(2)}`
+            : '';
+      const unit = candidate.unitName ?? '';
+      errors.push({
+        field: `rows.${candidate.lineNo}`,
+        code: StockErrorCode.PRICE_LINE_EXISTS,
+        message: (
+          `Line ${candidate.lineNo}: ${candidate.itemName} ${unit} ${mrp} already has a price line ` +
+          `for ${branch} (${found.ipmId}). Type the prices on that line.`
+        ).replace(/\s+/g, ' '),
+        params: { unit, mrp, branch, n: candidate.lineNo, item: candidate.itemName },
+        existingIpmId: found.ipmId,
+      } as StockErrorDetail);
+    }
+    if (errors.length) {
+      throwStockUnprocessable<StockErrorDetail>('These prices cannot be saved', errors);
+    }
+  }
+
+  /**
+   * P1 §4.9 / §7.3 — Back to all branches · Alt+X: a store's own line, and its own scheduled
+   * rows of the same key (Q5), are soft-deleted through the price writer (logged DELETE,
+   * reason "Back to all branches"; one audit row each, action cancel), so the store reads the
+   * All branches price again. Edit AND Delete on menu 30 (Q1); a store user for his own
+   * branch only (O6). One transaction. Refused: not an own line (BACK_NOT_OWN), nothing would
+   * price the unit there afterwards (BACK_NOTHING_LEFT).
+   */
+  async backToAllBranches(dto: BackToAllBranchesDto): Promise<SellingPriceBackResult> {
+    await this.assertCanEditPrices();
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: PRICE_MENU_ID.CHANGE_SELLING_PRICE,
+      right: 'delete',
+      codePrefix: 'STOCK_PRICE',
+      action: "remove a branch's own price (Back to all branches)",
+    });
+    await this.assertBranchAllowed(dto.branchId);
+    const actor = resolveActor(undefined, this.requestContext.getUserId());
+    return this.prisma.$transaction(async (tx) => {
+      const named = await this.gateway.lockPriceRow(tx, dto.ipmId);
+      if (
+        !named ||
+        (named.companyId !== null && named.companyId.toLowerCase() !== dto.companyId.toLowerCase())
+      ) {
+        throwStockNotFound<StockErrorDetail>(
+          'Price line not found',
+          'ipmId',
+          `No price line ${dto.ipmId} of this company. Load the item again.`,
+          StockErrorCode.ITEM_PRICE_NOT_FOUND,
+        );
+      }
+      if (named.branchId === null) {
+        throwStockUnprocessable<StockErrorDetail>('This line is the price for all branches', [
+          {
+            field: 'ipmId',
+            code: StockErrorCode.PRICE_BACK_NOT_OWN,
+            message:
+              'This line is the price for all branches, so there is nothing to go back to. Pick a ' +
+              "branch's own line.",
+          },
+        ]);
+      }
+      // The line's branch is the one acted on: a store user's own only.
+      await this.assertBranchAllowed(named.branchId, 'ipmId');
+      if (named.branchId.toLowerCase() !== dto.branchId.toLowerCase()) {
+        throwStockUnprocessable<StockErrorDetail>("This line is another branch's own price", [
+          {
+            field: 'ipmId',
+            code: StockErrorCode.PRICE_BACK_NOT_OWN,
+            message: `Line ${dto.ipmId} is the own price of branch ${named.branchId}, not of branch ${dto.branchId}.`,
+          },
+        ]);
+      }
+      // The line in force and its later scheduled rows, by KEY: the item card rewrites lines
+      // (new ids on every save), so a stale id still finds the live line of its key.
+      const rows = await this.gateway.liveOwnRowsOfKey(tx, named);
+      if (!rows.length) {
+        throwStockNotFound<StockErrorDetail>(
+          'Price line not found',
+          'ipmId',
+          `Branch ${dto.branchId} has no live own line of that key any more. Load the item again.`,
+          StockErrorCode.ITEM_PRICE_NOT_FOUND,
+        );
+      }
+      const ids = rows.map((row) => row.ipmId);
+      const after = await this.gateway.priceAfterRemoval(tx, {
+        companyId: dto.companyId,
+        branchId: named.branchId,
+        itemId: named.itemId,
+        uomId: named.uomId,
+        keyMrp: named.keyMrp,
+        keySp: named.keySp,
+        excludeIds: ids,
+      });
+      const labels = await this.gateway.branchLabels(tx, [named.branchId]);
+      const branch = labels.get(named.branchId.toLowerCase()) ?? named.branchId;
+      if (!after) {
+        throwStockUnprocessable<StockErrorDetail>('No price would be left', [
+          {
+            field: 'ipmId',
+            code: StockErrorCode.PRICE_BACK_NOTHING_LEFT,
+            message:
+              `Without this line, ${named.itemName} ${named.unitName ?? ''} would have no price at ` +
+              `${branch}. Set an All branches price first, or keep this line.`,
+            params: { item: named.itemName, unit: named.unitName ?? '', branch },
+          } as StockErrorDetail,
+        ]);
+      }
+      const before = await this.gateway.snapshotRows(tx, ids);
+      const origin: PriceWriteOrigin = {
+        ...PRICE_ORIGIN.CHANGE_SELLING_PRICE,
+        reason: 'Back to all branches',
+      };
+      for (const id of ids) {
+        await this.writer.softDeletePriceRow(tx, id, actor, origin);
+      }
+      const snapshot = await this.gateway.snapshotRows(tx, ids);
+      for (const id of ids) {
+        const stored = snapshot.get(id) ?? null;
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'cancel',
+            tableName: ITEM_PRICE_TABLE_NAME,
+            screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: id,
+            displayName: `${named.itemName} · ${this.describeBucket(stored)}`,
+            originalRecord: before.get(id) ?? null,
+            modifiedRecord: stored,
+            userId: actor,
+            notes:
+              `${AUDIT_SCREEN_NAME} (menu 30) — back to all branches: ${branch} reads the ` +
+              'All branches price again',
+          },
+          tx,
+        );
+      }
+      return {
+        removed: ids.length,
+        removedIds: ids,
+        nowPricedBy: {
+          lineKind: lineKindOfKey(after.keyMrp, after.keySp),
+          branchId: after.branchId,
+          ipmId: after.ipmId,
+          prices: after.prices,
+        },
+      };
+    });
+  }
+
+  /**
    * Edit on menu 30, Change Selling Price — the right a price save needs
    * wherever it is made from: this screen, or the quick rate popup opened from
    * a bill line or the item list (plan 2026-10-23), which goes read-only
@@ -1068,26 +1473,49 @@ export class SellingPriceBulkService {
     actor: string,
     taxRates: ReadonlyMap<string, ItemTaxRate>,
     cost: RowCost,
-    keepCost?: PrepareBulkContext['keepCost'],
+    ctx?: Pick<PrepareBulkContext, 'keepCost' | 'keepLineCost'>,
   ): PriceCandidateWrite {
     const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
     const key = bucketKeyFor(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
     // Notes 147 B — a keyed costPrice is the price row's own cost for this save:
-    // stored with its w/o-tax half, and the markups and the below-cost check
-    // are against it. Absent, the cost the grid showed, as before.
+    // stored with its w/o-tax half, and the markups are against it.
     // Menu 244 (C-c): a keyed cost the caller calls unchanged is the stored
     // cost and w/o-tax half, kept as they are.
     const kept =
-      keepCost && row.costPrice !== undefined && row.costPrice !== null
-        ? keepCost(index, row, key)
+      ctx?.keepCost && row.costPrice !== undefined && row.costPrice !== null
+        ? ctx.keepCost(index, row, key)
         : null;
     const keyedCost = kept ? kept.costRate : (row.costPrice ?? null);
-    const costRate = keyedCost ?? cost.costRate;
+    // P1 A1 — menu 30 / Ctrl+R: no cost sent keeps the line's own cost (when it has one);
+    // otherwise (purchase, menu 244, a key with no line yet) the cost the grid showed, as before.
+    const lineCost =
+      keyedCost === null &&
+      ctx?.keepLineCost &&
+      cost.lineCost !== undefined &&
+      cost.lineCost !== null &&
+      cost.lineCost > 0
+        ? cost.lineCost
+        : null;
+    const costRate = keyedCost ?? lineCost ?? cost.costRate;
     const costWot = kept
       ? kept.costWot
       : keyedCost !== null
         ? exclusiveOfTax(keyedCost, taxPerc)
-        : cost.costWot;
+        : lineCost !== null
+          ? cost.lineCostWot !== undefined && cost.lineCostWot !== null && cost.lineCostWot > 0
+            ? cost.lineCostWot
+            : exclusiveOfTax(lineCost, taxPerc)
+          : cost.costWot;
+    // P1, A3 option C — below cost is judged on the HIGHER of the line's own cost (what the
+    // line stores) and the stock cost (this MRP's landing cost, else the branch average).
+    const stockCost =
+      cost.stockCost !== undefined && cost.stockCost !== null && cost.stockCost > 0
+        ? cost.stockCost
+        : null;
+    const judgeCost = Math.max(costRate, stockCost ?? 0);
+    // Decision 20 — a sent markup % is kept when it reproduces the price (the card's
+    // typed-figure rule): cost × (1 + % ÷ 100), rounded to the row's R.Off, within 0.005.
+    const step = row.roundOff ?? cost.lineRoundOff ?? 0;
     return {
       lineNo: row.lineNo ?? index + 1,
       companyId,
@@ -1103,22 +1531,74 @@ export class SellingPriceBulkService {
       costRate,
       costWot,
       actor,
+      judgeCost,
+      stockCost,
+      unitName: cost.unitName ?? null,
       // Plan 2026-11-05 §4.6 item 2 — the unit's Rule and a typed MRP ride only
-      // when sent (Qty-wise Prices); menu 30 and Quick Rate send neither, so
-      // their candidate is exactly what it was.
+      // when sent (Qty-wise Prices, menu 30 since P1); absent, the candidate is
+      // exactly what it was.
       ...(row.profitType !== undefined && row.profitType !== null
         ? { profitType: row.profitType }
         : {}),
       ...(row.maxPrice !== undefined && row.maxPrice !== null ? { maxPrice: row.maxPrice } : {}),
       levels: row.levels.map((level) => {
         const value = recomputeLevel(level.level as PriceLevel, level.price, taxPerc, costRate);
+        const sent = level.markupPerc;
+        const keep =
+          sent !== undefined &&
+          sent !== null &&
+          markupReproduces(costRate, sent, step, value.price);
         return {
           level: value.level,
           price: value.price,
           priceWot: value.priceWot,
-          markupPerc: value.markupPerc,
+          markupPerc: keep ? Math.round(sent * 1e6) / 1e6 : value.markupPerc,
         };
       }),
+    };
+  }
+
+  /**
+   * P1 §7.1 — one LINE of GET /stock/price-bulk: the old row (prices recomputed against the
+   * old costRate, as the old screen reads them) plus the line's own keys.
+   */
+  private toLineRow(
+    record: PriceLineRecord,
+    lineNo: number,
+    tax: ItemTaxRate | undefined,
+    taxName: string | null,
+    otherBranchesStockCost: OtherBranchesStockCost | null,
+  ): SellingPriceLineRow {
+    const row = this.toGridRow(record, lineNo, tax);
+    return {
+      ...row,
+      levels: row.levels.map((level, index) => ({
+        ...level,
+        storedMarkupPerc: record.storedMarkups[index] ?? null,
+      })),
+      lineKind: record.lineKind,
+      lineCost: record.lineCost,
+      lineCostWot: record.lineCostWot,
+      stockCost: record.stockCost,
+      stockCostWot: record.stockCostWot,
+      stockCostBasis: record.stockCostBasis,
+      otherBranchesStockCost,
+      profitType: record.profitType,
+      companyId: record.companyId,
+      companyName: record.companyName,
+      branchId: record.branchId,
+      branchName: record.branchName,
+      unitFactor: record.unitFactor,
+      unitSlNo: record.unitSlNo,
+      isDefaultUnit: record.isDefaultUnit,
+      itemGroupName: record.itemGroupName,
+      taxName,
+      trackPresetName: record.trackPresetName,
+      trackMrp: record.trackMrp,
+      trackSalePrice: record.trackSalePrice,
+      itemCompanyId: record.itemCompanyId,
+      itemStockQty: record.itemStockQty,
+      itemStockUnit: record.itemStockUnit,
     };
   }
 
@@ -1179,6 +1659,11 @@ export class SellingPriceBulkService {
         field: `rows.${problem.lineNo}`,
         code: PRICE_VERDICT_CODES[problem.verdict],
         message: `Line ${problem.lineNo}: ${problem.message}`,
+        // P1 — the wording variant (rule=LINE_COST / STOCK_COST / BRANCHES) and its values.
+        ...(problem.rule ? { rule: problem.rule } : {}),
+        ...(problem.params ? { params: problem.params } : {}),
+        ...(problem.branchId ? { branchId: problem.branchId, branchName: problem.branchName } : {}),
+        ...(problem.level !== null ? { level: problem.level } : {}),
       })),
     );
   }
@@ -1196,4 +1681,44 @@ export class SellingPriceBulkService {
   ): Promise<Map<string, ItemTaxRate>> {
     return resolveItemTaxRates(tx, itemIds, asOf);
   }
+}
+
+/**
+ * Notes 120 — a problem's plain words (code + rule + params), for the problems a 200 answer
+ * carries (needsConfirm, or saved under `allow`): the filters word only `errors[]`.
+ */
+function worded(problems: readonly SellingPriceProblem[]): SellingPriceProblem[] {
+  return problems.map((problem) => {
+    if (!problem.code || problem.user) {
+      return problem;
+    }
+    const user = wordingFor(problem as unknown as Record<string, unknown>);
+    return user ? { ...problem, user } : problem;
+  });
+}
+
+/** P1 C5 — the other branches' stock cost of an All branches line, lowest – highest. */
+function spreadOf(
+  branches: ReadonlyArray<{ branchName: string; stockCost: number }>,
+): OtherBranchesStockCost | null {
+  if (!branches.length) {
+    return null;
+  }
+  const sorted = [...branches].sort((a, b) => a.stockCost - b.stockCost);
+  const round = (value: number) => Math.round(value * 1e6) / 1e6;
+  return {
+    low: round(sorted[0].stockCost),
+    high: round(sorted[sorted.length - 1].stockCost),
+    lowBranch: sorted[0].branchName,
+    highBranch: sorted[sorted.length - 1].branchName,
+    branches: sorted.length,
+  };
+}
+
+/** A price row's kind by its key (a headline is -1 / -1). */
+function lineKindOfKey(keyMrp: number, keySp: number): PriceLineKind {
+  if (keyMrp === -1 && keySp === -1) {
+    return 'HEADLINE';
+  }
+  return keySp !== -1 ? 'SOLD_AT' : 'MRP';
 }

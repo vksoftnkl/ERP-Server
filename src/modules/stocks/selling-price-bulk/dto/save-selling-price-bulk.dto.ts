@@ -172,6 +172,31 @@ export class SaveSellingPriceRowDto {
   profitType?: (typeof SELLING_PROFIT_TYPES)[number] | null;
 
   @ApiPropertyOptional({
+    enum: PRICE_SCOPES,
+    nullable: true,
+    description:
+      "Change Selling Price P1 (plan 2026-11-23 §4.6) — THIS line's scope, decided per line by " +
+      'menu 30: CHAIN = the All branches line (head office), BRANCH = the branch on screen. ' +
+      "Absent or null: the body's scope (default BRANCH), as before. CHAIN from a caller who is " +
+      'not head office is a 403 STOCK_PRICE_CHAIN_HQ_ONLY (field rows.<lineNo>.scope), never a ' +
+      "silent downgrade. With priceScope it is §5.5's table, per line.",
+  })
+  @IsOptional()
+  @IsIn(PRICE_SCOPES)
+  scope?: (typeof PRICE_SCOPES)[number] | null;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'P1 §4.8 — a + Line (Ctrl+D) line: a NEW key at its scope. A live line of the same item, ' +
+      'unit and MRP / sale price already at the target scope on the day is a 422 ' +
+      'STOCK_PRICE_LINE_EXISTS (params unit, mrp, branch, n; existingIpmId names the line). ' +
+      'An MRP of 0 on an MRP-tracked item is still STOCK_PRICE_BUCKET_MRP_ZERO.',
+  })
+  @OptionalBoolean()
+  isNew?: boolean;
+
+  @ApiPropertyOptional({
     type: Number,
     nullable: true,
     example: 4600,
@@ -194,16 +219,19 @@ export class SaveSellingPriceBulkDto {
   @RequiredUuid()
   branchId!: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     enum: PRICE_SCOPES,
+    default: 'BRANCH',
     description:
-      'The header radio. BRANCH = This branch, CHAIN = All branches. It is not a filter on ' +
+      'The old header radio, now the DEFAULT for rows that send no scope of their own ' +
+      '(rows[].scope, P1 §4.6). BRANCH = This branch, CHAIN = All branches. It is not a filter on ' +
       'what was displayed: it decides which row S1 looks for, and therefore whether the save ' +
       'updates a row or creates one. CHAIN from a non-HQ caller is a 403, never a silent ' +
-      'downgrade to BRANCH.',
+      'downgrade to BRANCH. Absent: BRANCH (menu 244 and older callers).',
   })
+  @IsOptional()
   @IsIn(PRICE_SCOPES)
-  scope!: (typeof PRICE_SCOPES)[number];
+  scope?: (typeof PRICE_SCOPES)[number];
 
   @ApiPropertyOptional({
     default: false,

@@ -215,6 +215,108 @@ export interface SellingPriceRow {
   levels: SellingPriceLevelValue[];
 }
 
+/**
+ * Change Selling Price P1 (plan 2026-11-23 §4.1) — what a line of the grid IS:
+ *   HEADLINE  the unit's headline (key -1/-1): the "other MRPs" line of an MRP item, the
+ *             unit's line of a plain item. Always listed, priced or not (bucketId null).
+ *   MRP       a line keyed on one MRP, in force at the branch (with or without stock).
+ *   SOLD_AT   a line keyed on one sale price ("sold at 1,250").
+ *   NO_PRICE  stock at the branch whose key has no line of its own; its prices are the
+ *             headline's (what it sells at today), bucketId the headline's or null.
+ */
+export const PRICE_LINE_KINDS = ['HEADLINE', 'MRP', 'SOLD_AT', 'NO_PRICE'] as const;
+export type PriceLineKind = (typeof PRICE_LINE_KINDS)[number];
+
+/** P1 §4.7 — which cost a below-cost problem names (wording variant `rule=`). */
+export const BELOW_COST_RULES = ['LINE_COST', 'STOCK_COST', 'BRANCHES'] as const;
+export type BelowCostRule = (typeof BELOW_COST_RULES)[number];
+
+/**
+ * P1 §7.1 / C5 — the stock cost of the OTHER branches that read an All branches line
+ * (stock on hand, a stock cost, no own line of their own): lowest and highest, per one of
+ * the line's unit, tax inclusive.
+ */
+export interface OtherBranchesStockCost {
+  low: number;
+  high: number;
+  lowBranch: string;
+  highBranch: string;
+  /** How many other branches have a stock cost for the line. */
+  branches: number;
+}
+
+/** P1 §7.1 — the keys one grid line carries on top of SellingPriceRow's. */
+export interface SellingPriceLineFields {
+  lineKind: PriceLineKind;
+  /** ipm_cost_price / ipm_cost_wot of the line itself; null on NO_PRICE and an unpriced HEADLINE. */
+  lineCost: number | null;
+  lineCostWot: number | null;
+  /** This MRP's landing cost (MRP line) else the branch average, × the unit factor; null = none. */
+  stockCost: number | null;
+  stockCostWot: number | null;
+  stockCostBasis: 'MRP' | 'ITEM' | null;
+  /** Only on a CHAIN (All branches) line when another branch reading it has a stock cost. */
+  otherBranchesStockCost: OtherBranchesStockCost | null;
+  /** ipm_profit_type; blank / none → "By User", as the card. */
+  profitType: string;
+  /** The line's company (comp_short, else comp_name); null = shared. */
+  companyId: string | null;
+  companyName: string | null;
+  /** The line's branch (br_short, else br_name); null = All branches. */
+  branchId: string | null;
+  branchName: string | null;
+  /** item_unit_conversion: to-base factor, unit order, default unit. */
+  unitFactor: number;
+  unitSlNo: number;
+  isDefaultUnit: boolean;
+  /** The item row's facts, repeated on each of its lines. */
+  itemGroupName: string | null;
+  taxName: string | null;
+  trackPresetName: string | null;
+  trackMrp: boolean;
+  trackSalePrice: boolean;
+  itemCompanyId: string | null;
+  /** The item's saleable stock at the branch, in itemStockUnit (its default unit, else base). */
+  itemStockQty: number;
+  itemStockUnit: string | null;
+}
+
+/**
+ * P1 §4.3 — a level of a line: the old four numbers plus the line's STORED markup % (the item
+ * card's typed figure; null on NO_PRICE / an unpriced headline), so the screen can show a typed
+ * Profit as typed, as the card does on load.
+ */
+export interface SellingPriceLineLevel extends SellingPriceLevelValue {
+  storedMarkupPerc: number | null;
+}
+
+/** P1 §7.1 — a line of GET /stock/price-bulk: the old row keys plus the line's own. */
+export type SellingPriceLineRow = Omit<SellingPriceRow, 'levels'> &
+  SellingPriceLineFields & { levels: SellingPriceLineLevel[] };
+
+/** P1 §7.1 — the page meta: limit / offset / count count ITEMS; lines counts the lines. */
+export interface SellingPriceLinePageMeta {
+  limit: number;
+  offset: number;
+  count: number;
+  lines: number;
+}
+
+/** P1 §7.3 — what Back to all branches answers. */
+export interface SellingPriceBackResult {
+  /** item_price_master rows soft-deleted: the own line in force and its later scheduled rows. */
+  removed: number;
+  removedIds: string[];
+  /** What prices the unit at the branch now (the resolver's answer today). */
+  nowPricedBy: {
+    lineKind: PriceLineKind;
+    branchId: string | null;
+    ipmId: string;
+    /** Sales prices A–D of that line. */
+    prices: [number, number, number, number];
+  };
+}
+
 /** §4.3 — what the tax resolver answers for one item, as of one date. */
 export type { ItemTaxRate } from '../../../Inventory/utils/item-tax-rate.helper';
 
@@ -231,6 +333,25 @@ export interface SellingPriceProblem {
   /** Q26's own wording, verbatim. Paraphrasing it here is how the message the
    * user reads and the message in the server log drift apart. */
   message: string;
+  /** Notes 119 — the code the verdict is refused / asked with (STOCK_PRICE_BELOW_COST …). */
+  code?: string;
+  /**
+   * P1 §4.7 (A3 option C) — BELOW_COST only: which cost the price is under.
+   * LINE_COST / STOCK_COST only when both costs are above 0 (the higher one is named);
+   * BRANCHES for another branch's stock cost (branchId / branchName set). Absent = one cost known.
+   */
+  rule?: BelowCostRule;
+  /** BELOW_COST: the cost judged against (the higher of the two, or that branch's stock cost). */
+  cost?: number;
+  lineCost?: number | null;
+  stockCost?: number | null;
+  /** BELOW_COST rule BRANCHES: the branch whose stock cost the price is under. */
+  branchId?: string | null;
+  branchName?: string | null;
+  /** The wording's placeholders: level (short name), price, cost, lineCost, stockCost, branch, unit, mrp, item, n. */
+  params?: Record<string, string | number>;
+  /** Notes 120 — the plain words of `code` (+ `rule`), when the catalogue has a row. */
+  user?: { title: string; line: string; todo: string };
 }
 
 /** §5.4 — one row Q27 reported as priced with nothing on hand. */

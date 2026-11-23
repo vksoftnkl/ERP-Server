@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (68 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (69 rows).
 --
 -- 75 QTY PRICE - SELLING LEVELS (menu 244's Price level picker) as migration
 -- 20261106160000_qty_price_layout_fixes inserts it.
@@ -10,6 +10,8 @@
 -- 20261113160000_sale_return_screen inserts it.
 -- 79 DC RETURN REASONS (Challan Return's Reason picker, dropdown 78 on DC_RETURN) as migration
 -- 20261118100000_dc_dc_return inserts it.
+-- 80 BRANCHES - THIS COMPANY (Change Selling Price's Filter popup Branch picker, head office) as
+-- migration 20261124090000_change_selling_price_rework_p1 inserts it.
 -- 48 PRINT PURPOSES - DESKTOP returns ppo_company_id (Voucher Types decision 61) as migration
 -- 20261116130000_print_purpose_dropdown_company sets it.
 -- 8 company and 5 branch list active, not-deleted rows only, regional SQL NULL (review list
@@ -601,6 +603,12 @@ ORDER BY e.emp_name$seed$, NULL)
                            AND c.srm_code = r.srm_code
                            AND c.srm_is_deleted = false))
  ORDER BY r.srm_sort_order, r.srm_name$seed$, NULL)
+    ,(80, 'BRANCHES - THIS COMPANY', 'Change Selling Price (menu 30) Filter popup: the Branch head office picks to work on another branch (plan C7). Live, active branches of this company, by name. Param icompany_id, always sent; compared as text, never cast.', 'br_name'             , 'asc'      , 10, true , 0   , 'Desktop', 'br_name'           , 'system', $seed$SELECT br_id, br_name, COALESCE(br_short, '') AS br_short
+  FROM public.branch_master
+ WHERE br_is_deleted = false
+   AND br_is_active = true
+   AND br_comp_id::text = 'icompany_id'
+ ORDER BY br_name$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

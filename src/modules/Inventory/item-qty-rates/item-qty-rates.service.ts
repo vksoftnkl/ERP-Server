@@ -683,7 +683,9 @@ export class ItemQtyRatesService {
         unitName: row?.unitName ?? null,
         level: problem.level,
         price,
-        cost: candidate ? candidate.costRate : null,
+        // Change Selling Price P1, A3 option C — the cost the price was judged against (the
+        // higher of the line's own cost and the stock cost), else the candidate's.
+        cost: problem.cost ?? (candidate ? candidate.costRate : null),
         field: `rates.rows.${index < 0 ? 0 : index}.levels`,
         message: `Line ${problem.lineNo}${row?.unitName ? ` · ${row.unitName}` : ''}: ${problem.message}`,
       };

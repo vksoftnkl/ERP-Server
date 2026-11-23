@@ -10,13 +10,22 @@ for…", `ipm_bucket_mrp` / `ipm_bucket_sp` set) or the headline (both NULL).
 `stock.stock_mrp_price` was never created. All statements live in
 `PriceBucketGateway` (`price-bucket.gateway.ts`).
 
-Three routes:
+The routes:
 
 | Route | What it is |
 |---|---|
-| `GET /api/v1/stock/price-bulk` | the grid — Q25, paged, four optional filters |
-| `GET /api/v1/stock/price-buckets/:itemId` | F12's bucket picker — Q24: the price rows this branch sees, plus the stock buckets with no row of their own, priced as the grid prices them (notes 74) |
-| `POST /api/v1/stock/price-bulk` | the save — cost → Q26 → S1–S3 → Q27, one transaction |
+| `GET /api/v1/stock/price-bulk` | the grid — since P1 (2026-11-23) the price LINES of a page of ITEMS, as on the item card (below); Edit on menu 30 |
+| `GET /api/v1/stock/price-buckets/:itemId` | F12's bucket picker — Q24: the price rows this branch sees, plus the stock buckets with no row of their own, priced as the grid prices them (notes 74); Edit on menu 30 |
+| `POST /api/v1/stock/price-bulk` | the save — cost → Q26 (+ every branch for CHAIN lines) → S1–S3 → Q27, one transaction |
+| `POST /api/v1/stock/price-bulk/back-to-all-branches` | P1 — a store's own line (and its scheduled rows) removed; Edit + Delete on menu 30 |
+| `GET /api/v1/stock/price-schedule`, `POST …/price-schedule/cancel` | notes 140 B — scheduled prices |
+
+Menu 244 (Qty-wise Prices) still reads the OLD grid through `SellingPriceBulkService.listPrices`
+(one row per unit × bucket with stock): only the route moved to `listPriceLines`.
+
+Plan of the P1 rework: `Shared/Prathap/inventory/plan-change-selling-price-rework-p1-2026-11-23.md`
+(+ the user's answers at its end); keys handed to the Qt side:
+`Shared/Prathap/inventory/csp-rework-p1-keys-2026-11-23.md`.
 
 ## The thing this screen is actually about
 
@@ -74,30 +83,87 @@ record made every valid save a 400).
 | Rule | Enforced in |
 |---|---|
 | shape, types, level 1–4, scope membership | the DTOs, as 400 |
-| `scope: 'CHAIN'` from a non-HQ caller | `assertScopeAllowed`, as **403** — never a silent downgrade |
+| `scope: 'CHAIN'` (body or `rows[].scope`) from a non-HQ caller | `assertScopeAllowed` / `assertRowScopesAllowed`, as **403** — never a silent downgrade |
+| another branch than the login's own | `assertBranchAllowed`, as **403** (head office excepted) |
 | which row the edit targets | `resolveTargetScope` (pure) |
 | above MRP / below min | Q26, as 422 with the row list, before any write |
-| below cost | `inventory.below_cost_price` via `AppSettingValueService.resolveEffective` |
+| below cost — the higher of line cost and stock cost; CHAIN rows at every branch | `inventory.below_cost_price` via `AppSettingValueService.resolveEffective` |
 | bucket vs headline | `bucketKeyFor` over the item's policy — never the client's say-so |
 | one row per bucket per scope | the save (422, both lines named), then `ex_ipm_overlap` (409) |
 | the unit is the item's | the save, as 422 |
 | everything else | the database, translated by `SellingPriceBulkExceptionFilter` |
 
-### The row's cost (notes 147 B)
+### The row's cost (notes 147 B; P1 A1 / A3 option C, 2026-11-23)
 
-A save writes the price row's `ipm_cost_price` / `ipm_cost_wot`. By default that is the cost
-the grid showed, as it always has been: this MRP's stock, else the item's average, else the
-row's own.
+A price line has TWO costs, and P1 keeps them apart:
 
-A row may instead send `costPrice`. That is the row's own cost for one of its unit, tax
-inclusive, as keyed in the quick rate popup. It is stored with
-`ipm_cost_wot = costPrice ÷ (1 + tax %)`, through the same writer, so the Price Change Log
-records it under CHANGE_SELLING_PRICE. The row's markups and the below-cost check use it too.
-It never touches the stock's moving average.
+- the **line cost** — `ipm_cost_price` / `ipm_cost_wot`, the line's own (the last purchase cost,
+  as the item card shows it);
+- the **stock cost** — what was paid here: this MRP's landing cost (its lots), else the branch
+  average, × the unit factor (`stock-cost.reader.ts`, `StockCostReader`). Null when there is none.
 
-Each `rows[]` entry in the response carries `costRate` / `costWot` / `costBasis`. They are read
-back after the write by the grid's own rule, so a keyed cost shows there only while the
-item has no stock.
+What a save STORES in `ipm_cost_price`:
+
+| Row sends | menu 30 / Ctrl+R (`saveBulk`, `keepLineCost`) | purchase price update, menu 244 |
+|---|---|---|
+| `costPrice` | that cost, `ipm_cost_wot = costPrice ÷ (1 + tax %)` | the same (244: `keepCost` may keep the stored pair) |
+| no `costPrice` | the line's own cost, kept (its key's line in force at the branch); a key with no line yet → the stock-first cost | the stock-first cost, as before (P2 changes purchases) |
+
+What a save JUDGES below cost against (A3 option C, every writer of the shared save): the
+**higher** of the line cost (what the line will store) and the stock cost — `judgeCost` on the
+candidate. A BELOW_COST problem carries `cost` (the judged one), `lineCost`, `stockCost` and, when
+BOTH are above 0, `rule` LINE_COST or STOCK_COST naming the higher (the wording variants
+`rule=LINE_COST` / `rule=STOCK_COST`); with one cost known there is no rule and the old words
+stand. `params` = level (short name), price, cost, lineCost, stockCost (2 dp), unit, mrp, item, n.
+`inventory.below_cost_price` (restrict / warning / allow) decides what happens, as before.
+
+**Every branch (C6, O10).** A row written at CHAIN scope is also judged at every OTHER active
+branch of the company that reads it: saleable stock on hand for the key (MRP line: that MRP;
+headline: the item), no live own line for the unit and key on the day, a stock cost. A branch is
+named only where ITS stock cost is above the line cost and the price is under it (a price under
+the line cost is the same everywhere and was reported once): verdict BELOW_COST, `rule`
+BRANCHES, `branchId` / `branchName`, one problem per active level priced above 0.
+
+**The markup (decision 20).** A sent `levels[].markupPerc` is stored as sent when it reproduces
+the price — cost × (1 + % ÷ 100), rounded to the R.Off step, within 0.005 (the item card's
+typed-figure rule); otherwise it is recomputed. The price still wins.
+
+Each `rows[]` entry in the response carries `costRate` / `costWot` / `costBasis` — the OLD grid
+rule (stock first), kept for the old screen.
+
+### Per-line scope (P1 §4.6)
+
+`rows[].scope` (CHAIN / BRANCH) is each line's own; the body's `scope` is only the default
+(default BRANCH). `resolveTargetScope(row.scope ?? dto.scope ?? 'BRANCH', row.priceScope, branchId)`
+is unchanged. Checks, in order, before anything is read: Edit on menu 30; `branchId` is the
+login's own branch (device branch, else `usr_branch_id`) unless head office
+(`STOCK_PRICE_BRANCH_HQ_ONLY`, also on both GETs and Back); CHAIN (body or row) is head office
+only (`STOCK_PRICE_CHAIN_HQ_ONLY`, field `rows.<n>.scope`). `rows[].isNew` (+ Line): an MRP item
+needs an MRP above 0 (`STOCK_PRICE_BUCKET_MRP_ZERO`), and a key already lined at the target scope
+is `STOCK_PRICE_LINE_EXISTS` (params unit, mrp, branch, n; `existingIpmId`).
+
+### Back to all branches (P1 §4.9, Q1, Q5)
+
+`POST /stock/price-bulk/back-to-all-branches {companyId, branchId, ipmId}`: the branch's own line
+of `ipmId`'s key in force today and its later scheduled own rows are soft-deleted through
+`PriceMasterWriter.softDeletePriceRow` (logged DELETE, reason "Back to all branches"; one audit
+`cancel` row each), in one transaction. A stale id (the card rewrote the line) finds the live line
+by its key. Edit AND Delete on menu 30 (`STOCK_PRICE_RIGHT_DELETE`); a store user for his own
+branch only. Refused: an All branches line or another branch's (`STOCK_PRICE_BACK_NOT_OWN`);
+nothing left to price the unit there — no All branches line of the key and no headline
+(`STOCK_PRICE_BACK_NOTHING_LEFT`, params item / unit / branch). Answers `removed`, `removedIds`,
+`nowPricedBy {lineKind, branchId, ipmId, prices[4]}`.
+
+### The grid's lines (P1 §4.1)
+
+`GET /stock/price-bulk` pages by ITEM (`limit` / `offset` count items, `meta.lines` the lines).
+Per live unit: the HEADLINE always (bucketId null when unpriced), every MRP / "sold at" line in
+force at the branch (keys the item's policy tracks), and NO_PRICE for stock whose key has no line
+of its own (priced by the headline; a plain item's headline with stock and no line is NO_PRICE
+too). `unpricedOnly` keeps items with a NO_PRICE line. New keys per line: `lineKind`,
+`lineCost(Wot)`, `stockCost(Wot)`, `stockCostBasis`, `otherBranchesStockCost` (CHAIN lines: the
+other branches reading it, lowest – highest), `profitType`, `companyId/Name`, `branchId/Name`,
+`unitFactor`, `unitSlNo`, `isDefaultUnit`, `levels[].storedMarkupPerc`, and the item row's facts.
 
 ### The save in two halves (Qty-wise Prices plan 2026-11-05 §4.6)
 
@@ -109,8 +175,8 @@ answer). Qty-wise Prices (menu 244) runs the same two inside its own transaction
 checks between them; menu 30 and Quick Rate answer exactly as before.
 
 A row may also carry `profitType` (the unit's Rule, stored in `ipm_profit_type`) and `maxPrice`
-(a typed MRP, stored in `ipm_max_price` on a HEADLINE row only). Neither is sent by menu 30 or
-Quick Rate, whose candidates and statements are unchanged.
+(a typed MRP, stored in `ipm_max_price` on a HEADLINE row only). Menu 30 sends them since P1
+(`maxPrice` on a plain item's headline only).
 
 ## Five traps worth reading before editing
 

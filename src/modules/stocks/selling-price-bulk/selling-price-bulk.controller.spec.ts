@@ -24,31 +24,33 @@ const SAVED: SellingPriceSaveResult = {
 
 describe('SellingPriceBulkController', () => {
   let service: {
-    listPrices: jest.Mock;
+    listPriceLines: jest.Mock;
     listBuckets: jest.Mock;
     saveBulk: jest.Mock;
     buildSaveMessage: jest.Mock;
+    backToAllBranches: jest.Mock;
   };
   let controller: SellingPriceBulkController;
 
   beforeEach(() => {
     service = {
-      listPrices: jest.fn(),
+      listPriceLines: jest.fn(),
       listBuckets: jest.fn(),
+      backToAllBranches: jest.fn(),
       saveBulk: jest.fn().mockResolvedValue(SAVED),
       buildSaveMessage: jest.fn().mockReturnValue('2 prices saved.'),
     };
     controller = new SellingPriceBulkController(service as unknown as SellingPriceBulkService);
   });
 
-  // ── GET price-bulk ────────────────────────────────────────────────────────
+  // ── GET price-bulk (P1: the lines of a page of items) ─────────────────────
   it.each([
-    [[ROW], '1 row loaded'],
-    [[ROW, ROW, ROW], '3 rows loaded'],
-    [[], '0 rows loaded'],
-  ])('wraps a page of %#, counting its rows', async (items, message) => {
-    const page = { items, meta: { limit: 200, offset: 0, count: items.length } };
-    service.listPrices.mockResolvedValue(page);
+    [[ROW], 1, '1 item, 1 line loaded'],
+    [[ROW, ROW, ROW], 2, '2 items, 3 lines loaded'],
+    [[], 0, '0 items, 0 lines loaded'],
+  ])('wraps a page of %#, counting its items and lines', async (items, count, message) => {
+    const page = { items, meta: { limit: 200, offset: 0, count, lines: items.length } };
+    service.listPriceLines.mockResolvedValue(page);
     const query = { companyId: COMPANY_ID, branchId: BRANCH_ID };
 
     await expect(controller.listPrices(query)).resolves.toEqual({
@@ -56,7 +58,25 @@ describe('SellingPriceBulkController', () => {
       message,
       data: page,
     });
-    expect(service.listPrices).toHaveBeenCalledWith(query);
+    expect(service.listPriceLines).toHaveBeenCalledWith(query);
+  });
+
+  // ── POST price-bulk/back-to-all-branches (P1 §7.3) ────────────────────────
+  it('sends a line back to all branches and says how many own rows went', async () => {
+    const answer = {
+      removed: 2,
+      removedIds: ['a', 'b'],
+      nowPricedBy: { lineKind: 'MRP', branchId: null, ipmId: 'c', prices: [505, 530, 0, 0] },
+    };
+    service.backToAllBranches.mockResolvedValue(answer);
+    const dto = { companyId: COMPANY_ID, branchId: BRANCH_ID, ipmId: ITEM_ID };
+
+    await expect(controller.backToAllBranches(dto)).resolves.toEqual({
+      success: true,
+      message: '2 own price lines removed — the branch reads the All branches price again',
+      data: answer,
+    });
+    expect(service.backToAllBranches).toHaveBeenCalledWith(dto);
   });
 
   // ── GET price-buckets/:itemId ─────────────────────────────────────────────
@@ -106,7 +126,7 @@ describe('SellingPriceBulkController', () => {
   // The README's trap 5: live stock beside live prices, written back — never cached.
   it('caches nothing, on the controller or on any route', () => {
     expect(Reflect.getMetadata(CACHE_TTL_METADATA, SellingPriceBulkController)).toBeUndefined();
-    for (const route of ['listPrices', 'listBuckets', 'saveBulk'] as const) {
+    for (const route of ['listPrices', 'listBuckets', 'saveBulk', 'backToAllBranches'] as const) {
       expect(
         // Only reflected on, never called.
         // eslint-disable-next-line @typescript-eslint/unbound-method

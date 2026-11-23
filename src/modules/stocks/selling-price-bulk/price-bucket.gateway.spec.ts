@@ -360,8 +360,20 @@ describe('PriceBucketGateway', () => {
 
       const costs = await gateway.loadRowCosts(txClient(), [row, row, row], COMPANY_ID, BRANCH_ID);
 
+      // P1 — the line's own cost and the stock cost apart, none in these rows.
+      const p1 = {
+        unitName: null,
+        unitFactor: 1,
+        lineCost: null,
+        lineCostWot: null,
+        lineRoundOff: null,
+        stockCost: null,
+        stockCostWot: null,
+        stockCostBasis: null,
+      };
       expect(costs).toEqual([
         {
+          ...p1,
           itemCode: 'SALT',
           itemName: 'Salt 1 Kg',
           uomBelongs: true,
@@ -373,6 +385,7 @@ describe('PriceBucketGateway', () => {
           minPrice: 26,
         },
         {
+          ...p1,
           itemCode: null,
           itemName: '',
           uomBelongs: false,
@@ -384,6 +397,7 @@ describe('PriceBucketGateway', () => {
           minPrice: 0,
         },
         {
+          ...p1,
           itemCode: 'RICE',
           itemName: 'Rice 25 Kg',
           uomBelongs: true,
@@ -435,6 +449,7 @@ describe('PriceBucketGateway', () => {
         level: 1,
         verdict: 'ABOVE_MRP',
         message: 'Salt 1 Kg: 41 is above the MRP 40.',
+        code: 'STOCK_PRICE_ABOVE_MRP',
       });
       expect(problems[1].message).toBe('Salt 1 Kg: 29 is below the minimum price 30.');
       expect(problems[2].message).toBe('Salt 1 Kg: 33 is below the cost 35.');

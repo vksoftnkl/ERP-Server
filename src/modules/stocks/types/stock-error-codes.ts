@@ -399,6 +399,22 @@ export enum StockErrorCode {
   PRICE_SCHEDULE_NOT_FOUND = 'STOCK_PRICE_SCHEDULE_NOT_FOUND',
   /** The scheduled price is already in force: cancelling it would rewrite past bills (notes 140 B). */
   PRICE_SCHEDULE_STARTED = 'STOCK_PRICE_SCHEDULE_STARTED',
+  /**
+   * Change Selling Price P1 (plan 2026-11-23 §4.6) — a store user reading, saving or sending
+   * back another branch's prices. Head office (isHqUserType) may name any branch.
+   */
+  PRICE_BRANCH_HQ_ONLY = 'STOCK_PRICE_BRANCH_HQ_ONLY',
+  /** P1 §4.8 — a + Line (`isNew`) row whose key already has a live line at the target scope. */
+  PRICE_LINE_EXISTS = 'STOCK_PRICE_LINE_EXISTS',
+  /** P1 §4.9 — Back to all branches on a line that is not a branch's own (an All branches line). */
+  PRICE_BACK_NOT_OWN = 'STOCK_PRICE_BACK_NOT_OWN',
+  /** P1 §4.9 — Back to all branches would leave the unit with no price at the branch. */
+  PRICE_BACK_NOTHING_LEFT = 'STOCK_PRICE_BACK_NOTHING_LEFT',
+  /**
+   * P1 §4.9 / Q1 — Back to all branches without Delete on menu 30. Built by assertMenuRight
+   * as STOCK_PRICE_RIGHT_DELETE (codePrefix STOCK_PRICE).
+   */
+  PRICE_RIGHT_DELETE = 'STOCK_PRICE_RIGHT_DELETE',
 
   // ── balance reads and presets ─────────────────────────────────────────────
   /** No item stock balance row for the scope asked. */

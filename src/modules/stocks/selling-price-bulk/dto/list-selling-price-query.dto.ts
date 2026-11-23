@@ -93,11 +93,27 @@ export class ListSellingPriceQueryDto {
   @OptionalQueryBoolean()
   activeOnly?: boolean;
 
-  @ApiPropertyOptional({ default: DEFAULT_PRICE_GRID_LIMIT, maximum: MAX_PRICE_GRID_LIMIT })
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Change Selling Price P1 (plan 2026-11-23 §7.1) — only items with stock at the branch ' +
+      'that no line of its own prices (a NO_PRICE line: a received MRP nobody priced, or a ' +
+      'plain item with stock and no price at all).',
+  })
+  @OptionalQueryBoolean()
+  unpricedOnly?: boolean;
+
+  @ApiPropertyOptional({
+    default: DEFAULT_PRICE_GRID_LIMIT,
+    maximum: MAX_PRICE_GRID_LIMIT,
+    description:
+      'P1: counts ITEMS, not lines — a page never splits an item\'s lines (meta.count = items, ' +
+      'meta.lines = lines).',
+  })
   @OptionalQueryInt(1, MAX_PRICE_GRID_LIMIT)
   limit?: number;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({ default: 0, description: 'P1: in ITEMS.' })
   @OptionalQueryInt(0)
   offset?: number;
 }

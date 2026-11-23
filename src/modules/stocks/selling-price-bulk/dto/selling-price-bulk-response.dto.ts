@@ -1,7 +1,9 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import {
   BELOW_COST_POLICIES,
+  BELOW_COST_RULES,
   COST_BASES,
+  PRICE_LINE_KINDS,
   PRICE_LEVELS,
   PRICE_SCOPES,
   PRICE_SOURCES,
@@ -202,6 +204,236 @@ export class SellingPriceListSuccessDto {
   data!: SellingPriceListDataDto;
 }
 
+/** P1 C5 — the other branches reading an All branches line: their stock cost, lowest – highest. */
+export class OtherBranchesStockCostDto {
+  @ApiProperty({ example: 448.5 })
+  low!: number;
+
+  @ApiProperty({ example: 470.4 })
+  high!: number;
+
+  @ApiProperty({ example: 'Counter2' })
+  lowBranch!: string;
+
+  @ApiProperty({ example: 'Head Office' })
+  highBranch!: string;
+
+  @ApiProperty({
+    example: 2,
+    description: 'How many other branches have a stock cost for the line.',
+  })
+  branches!: number;
+}
+
+/** P1 — a line's level: the old four numbers plus the line's stored markup %. */
+export class SellingPriceLineLevelDto extends SellingPriceLevelDto {
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 25,
+    description:
+      "The line's own ipm_price_x_markup_perc (the item card's typed %, kept by decision 20); " +
+      'null on NO_PRICE / an unpriced headline.',
+  })
+  storedMarkupPerc!: number | null;
+}
+
+/** Change Selling Price P1 (plan 2026-11-23 §7.1) — one LINE: every old row key, plus these. */
+export class SellingPriceLineRowDto extends OmitType(SellingPriceRowDto, ['levels'] as const) {
+  @ApiProperty({ type: SellingPriceLineLevelDto, isArray: true })
+  levels!: SellingPriceLineLevelDto[];
+
+  @ApiProperty({
+    enum: PRICE_LINE_KINDS,
+    description:
+      'HEADLINE = the unit\'s headline (the "other MRPs" line of an MRP item), always listed, ' +
+      'bucketId null when unpriced · MRP / SOLD_AT = a line of that key in force at the branch ' +
+      '· NO_PRICE = stock whose key has no line of its own (priced by the headline).',
+  })
+  lineKind!: string;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 416,
+    description:
+      "The line's own ipm_cost_price (the last purchase cost); null on NO_PRICE / unpriced.",
+  })
+  lineCost!: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 352.542373 })
+  lineCostWot!: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 452,
+    description:
+      "This MRP's landing cost (MRP / NO_PRICE at an MRP), else the branch average, × unitFactor. " +
+      'Null when the branch has neither. Grey, never sent back.',
+  })
+  stockCost!: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  stockCostWot!: number | null;
+
+  @ApiPropertyOptional({ enum: ['MRP', 'ITEM'], nullable: true })
+  stockCostBasis!: 'MRP' | 'ITEM' | null;
+
+  @ApiPropertyOptional({
+    type: OtherBranchesStockCostDto,
+    nullable: true,
+    description:
+      'Only on an All branches (CHAIN) line, when another branch reading it (stock on hand, no ' +
+      'own line) has a stock cost; else null.',
+  })
+  otherBranchesStockCost!: OtherBranchesStockCostDto | null;
+
+  @ApiProperty({ example: 'By %', description: 'ipm_profit_type; blank → "By User".' })
+  profitType!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The line's company; null = shared. A company-less line of the company's own item reads " +
+      'as the company (the save updates it in place). NO_PRICE: the company asked for.',
+  })
+  companyId!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Acme Foods' })
+  companyName!: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: "The line's branch (a store's own line); null = All branches (and NO_PRICE).",
+  })
+  branchId!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Acme CBE' })
+  branchName!: string | null;
+
+  @ApiProperty({ example: 12, description: 'iuc_to_base_factor' })
+  unitFactor!: number;
+
+  @ApiProperty({ example: 1, description: 'iuc_unit_slno' })
+  unitSlNo!: number;
+
+  @ApiProperty({ example: true, description: 'iuc_is_default_unit' })
+  isDefaultUnit!: boolean;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Edible Oil' })
+  itemGroupName!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'GST 5%' })
+  taxName!: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: "The effective stock track preset's name (own, else the group's).",
+  })
+  trackPresetName!: string | null;
+
+  @ApiProperty({ example: false })
+  trackMrp!: boolean;
+
+  @ApiProperty({ example: false })
+  trackSalePrice!: boolean;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  itemCompanyId!: string | null;
+
+  @ApiProperty({
+    example: 14,
+    description:
+      "The item's saleable stock at the branch, in itemStockUnit (default unit, else base).",
+  })
+  itemStockQty!: number;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'BOX' })
+  itemStockUnit!: string | null;
+}
+
+export class SellingPriceLinesMetaDto {
+  @ApiProperty({ example: 200, description: 'ITEMS per page.' })
+  limit!: number;
+
+  @ApiProperty({ example: 0, description: 'In ITEMS.' })
+  offset!: number;
+
+  @ApiProperty({ example: 4, description: 'Items on this page.' })
+  count!: number;
+
+  @ApiProperty({ example: 12, description: 'Lines on this page.' })
+  lines!: number;
+}
+
+export class SellingPriceLinesDataDto {
+  @ApiProperty({ type: SellingPriceLineRowDto, isArray: true })
+  items!: SellingPriceLineRowDto[];
+
+  @ApiProperty({ type: SellingPriceLinesMetaDto })
+  meta!: SellingPriceLinesMetaDto;
+}
+
+export class SellingPriceLinesSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: '4 items, 12 lines loaded' })
+  message!: string;
+
+  @ApiProperty({ type: SellingPriceLinesDataDto })
+  data!: SellingPriceLinesDataDto;
+}
+
+export class SellingPriceNowPricedByDto {
+  @ApiProperty({ enum: PRICE_LINE_KINDS })
+  lineKind!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'null = All branches.',
+  })
+  branchId!: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  ipmId!: string;
+
+  @ApiProperty({ type: Number, isArray: true, example: [505, 530, 0, 0] })
+  prices!: number[];
+}
+
+export class SellingPriceBackDataDto {
+  @ApiProperty({ example: 2 })
+  removed!: number;
+
+  @ApiProperty({ type: String, isArray: true, format: 'uuid' })
+  removedIds!: string[];
+
+  @ApiProperty({ type: SellingPriceNowPricedByDto })
+  nowPricedBy!: SellingPriceNowPricedByDto;
+}
+
+export class SellingPriceBackSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({
+    example: '2 own price lines removed — the branch reads the All branches price again',
+  })
+  message!: string;
+
+  @ApiProperty({ type: SellingPriceBackDataDto })
+  data!: SellingPriceBackDataDto;
+}
+
 export class SellingPriceBucketsSuccessDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -240,6 +472,46 @@ export class SellingPriceProblemDto {
 
   @ApiProperty({ example: 'Retail Price 92.00 is below the cost of 95.00.' })
   message!: string;
+
+  @ApiPropertyOptional({ example: 'STOCK_PRICE_BELOW_COST' })
+  code?: string;
+
+  @ApiPropertyOptional({
+    enum: BELOW_COST_RULES,
+    description:
+      'P1 (A3 option C) BELOW_COST: LINE_COST / STOCK_COST name the higher cost when both are ' +
+      "known; BRANCHES = another branch's stock cost (branchId / branchName). Absent = one cost.",
+  })
+  rule?: string;
+
+  @ApiPropertyOptional({ example: 500, description: 'The cost judged against.' })
+  cost?: number;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  lineCost?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  stockCost?: number | null;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  branchId?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  branchName?: string | null;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description: 'level, price, cost, lineCost, stockCost, branch, unit, mrp, item, n.',
+  })
+  params?: Record<string, string | number>;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description: 'Notes 120 — {title, line, todo}, the plain words of code + rule.',
+  })
+  user?: { title: string; line: string; todo: string };
 }
 
 export class SellingPriceNoStockRowDto {

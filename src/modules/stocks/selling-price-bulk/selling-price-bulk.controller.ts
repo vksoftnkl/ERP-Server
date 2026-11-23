@@ -22,16 +22,20 @@ import { PriceBucketsQueryDto } from './dto/price-buckets-query.dto';
 import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
 import { CancelPriceScheduleDto } from './dto/cancel-price-schedule.dto';
 import { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
+import { BackToAllBranchesDto } from './dto/back-to-all-branches.dto';
 import {
+  SellingPriceBackSuccessDto,
   SellingPriceBucketsSuccessDto,
   SellingPriceErrorResponseDto,
-  SellingPriceListSuccessDto,
+  SellingPriceLinesSuccessDto,
   SellingPriceSaveSuccessDto,
   SellingPriceScheduleCancelSuccessDto,
   SellingPriceScheduleSuccessDto,
 } from './dto/selling-price-bulk-response.dto';
 import type {
-  PagedResult,
+  SellingPriceBackResult,
+  SellingPriceLinePageMeta,
+  SellingPriceLineRow,
   SellingPriceRow,
   SellingPriceSaveResult,
   SellingPriceScheduleCancelResult,
@@ -76,30 +80,43 @@ export class SellingPriceBulkController {
   @Get('price-bulk')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'The price grid — one row per (item × uom × live bucket) with stock',
+    summary: 'The price grid — the price LINES of a page of items, laid out as on the item card',
     description:
-      'Buckets are the (MRP, sale price) pairs of the stock on hand at the branch, blanked by ' +
-      "the item's stock track policy — an item that tracks neither has one bucket, its " +
-      'headline. Items with no live bucket come back once per unit as the headline, both ' +
-      'dimensions blank. priceSource / priceScope / bucketId are what the price resolver ' +
-      'answers: the exact bucket row before the headline, a branch row before the chain row. ' +
-      "stockQty is in the row's own unit. Paged, because a group filter over a 40,000-row item master with four buckets " +
-      'each is not a grid; F8 exists so the operator narrows before loading. taxPerc is ' +
-      'resolved server-side as of today through item_tax_history, so the client never has to ' +
-      'ask which tax row applied. itemId narrows the grid to one item (the Add item search). ' +
-      'The filter popup (notes 76): search (contains, on code / name / alias / barcode), ' +
-      "itemCategoryId, trackPresetId (the effective preset — own, else the group's), taxId, and " +
-      'activeOnly (default true). Every row carries barcode and costWot.',
+      'Change Selling Price P1 (plan 2026-11-23 §4.1 / §7.1). Needs Edit on menu 30 (403 ' +
+      "STOCK_PRICE_RIGHT_EDIT: no read-only mode, O8). A branchId other than the login's own " +
+      "(device branch, else the user's) is head office only (403 STOCK_PRICE_BRANCH_HQ_ONLY). " +
+      'limit / offset count ITEMS: a page never splits an item (meta.count = items, meta.lines = ' +
+      'lines). Per live unit: the HEADLINE (the "other MRPs" line of an MRP item) always, every ' +
+      'MRP / "sold at" line in force at the branch with or without stock (the branch\'s own ' +
+      'line before the All branches one), and NO_PRICE for stock whose key has no line of its ' +
+      'own (priced by the headline). Every old key stays with its old meaning (costRate / ' +
+      'costWot / costBasis = the stock-first cost, deprecated); new per line: lineKind, ' +
+      "lineCost / lineCostWot (the line's own ipm_cost_price), stockCost / stockCostWot / " +
+      'stockCostBasis (MRP landing cost or branch average × unitFactor, null = none), ' +
+      'otherBranchesStockCost (All branches lines: the other branches reading it, lowest – ' +
+      'highest), profitType, companyId / companyName, branchId / branchName (null = All ' +
+      "branches), unitFactor / unitSlNo / isDefaultUnit, and the item row's facts " +
+      '(itemGroupName, taxName, trackPresetName, trackMrp, trackSalePrice, itemCompanyId, ' +
+      'itemStockQty in itemStockUnit). unpricedOnly keeps the items with a NO_PRICE line. The ' +
+      'filter popup keys (notes 76) are unchanged.',
   })
-  @ApiOkResponse({ type: SellingPriceListSuccessDto })
+  @ApiOkResponse({ type: SellingPriceLinesSuccessDto })
   @ApiBadRequestResponse({ type: SellingPriceErrorResponseDto })
+  @ApiForbiddenResponse({
+    type: SellingPriceErrorResponseDto,
+    description: 'STOCK_PRICE_RIGHT_EDIT (no Edit on menu 30) · STOCK_PRICE_BRANCH_HQ_ONLY.',
+  })
   async listPrices(
     @Query() queryDto: ListSellingPriceQueryDto,
-  ): Promise<SellingPriceSuccessResponse<PagedResult<SellingPriceRow>>> {
-    const data = await this.sellingPriceBulkService.listPrices(queryDto);
+  ): Promise<
+    SellingPriceSuccessResponse<{ items: SellingPriceLineRow[]; meta: SellingPriceLinePageMeta }>
+  > {
+    const data = await this.sellingPriceBulkService.listPriceLines(queryDto);
     return {
       success: true,
-      message: `${data.items.length} row${data.items.length === 1 ? '' : 's'} loaded`,
+      message:
+        `${data.meta.count} item${data.meta.count === 1 ? '' : 's'}, ` +
+        `${data.items.length} line${data.items.length === 1 ? '' : 's'} loaded`,
       data,
     };
   }
@@ -123,6 +140,12 @@ export class SellingPriceBulkController {
   @ApiParam({ name: 'itemId', format: 'uuid' })
   @ApiOkResponse({ type: SellingPriceBucketsSuccessDto })
   @ApiNotFoundResponse({ type: SellingPriceErrorResponseDto })
+  @ApiForbiddenResponse({
+    type: SellingPriceErrorResponseDto,
+    description:
+      'P1: STOCK_PRICE_RIGHT_EDIT (no Edit on menu 30) · STOCK_PRICE_BRANCH_HQ_ONLY (another ' +
+      'branch, not head office).',
+  })
   async listBuckets(
     @Param() params: PriceBucketsParamDto,
     @Query() queryDto: PriceBucketsQueryDto,
@@ -155,9 +178,20 @@ export class SellingPriceBulkController {
   @ApiBadRequestResponse({ type: SellingPriceErrorResponseDto })
   @ApiForbiddenResponse({
     type: SellingPriceErrorResponseDto,
-    description: 'scope: CHAIN from a caller whose user type is not HQ. Never downgraded silently.',
+    description:
+      "STOCK_PRICE_RIGHT_EDIT · STOCK_PRICE_BRANCH_HQ_ONLY (branchId not the login's own, not " +
+      'head office) · STOCK_PRICE_CHAIN_HQ_ONLY (scope or rows[].scope CHAIN from a caller whose ' +
+      'user type is not HQ; never downgraded silently).',
   })
-  @ApiUnprocessableEntityResponse({ type: SellingPriceErrorResponseDto })
+  @ApiUnprocessableEntityResponse({
+    type: SellingPriceErrorResponseDto,
+    description:
+      'STOCK_PRICE_ABOVE_MRP · STOCK_PRICE_BELOW_MIN · STOCK_PRICE_BELOW_COST under restrict ' +
+      '(rule LINE_COST / STOCK_COST / BRANCHES, params) · STOCK_PRICE_LINE_EXISTS (isNew on a ' +
+      'key already lined; params unit, mrp, branch, n; existingIpmId) · ' +
+      'STOCK_PRICE_BUCKET_MRP_ZERO (isNew on an MRP item without an MRP) · ' +
+      'STOCK_PRICE_DUPLICATE_BUCKET · STOCK_PRICE_UNIT_NOT_OF_ITEM.',
+  })
   @ApiConflictResponse({
     type: SellingPriceErrorResponseDto,
     description: 'ex_ipm_overlap (23P01) — another price already covers this bucket and period.',
@@ -169,6 +203,41 @@ export class SellingPriceBulkController {
     return {
       success: true,
       message: this.sellingPriceBulkService.buildSaveMessage(data),
+      data,
+    };
+  }
+
+  @Post('price-bulk/back-to-all-branches')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: "P1 — Back to all branches · Alt+X: remove a store's own price line",
+    description:
+      "Change Selling Price P1 (plan 2026-11-23 §4.9 / §7.3). The branch's own line of the " +
+      'key ipmId names, in force today, and its later scheduled own rows of the same key (Q5) ' +
+      'are soft-deleted in one transaction — logged DELETE in the price change log with the ' +
+      'reason "Back to all branches", one audit row each — so the branch reads the All ' +
+      'branches price again. A stale ipmId (the item card rewrote the line) finds the live ' +
+      'line by its key. Needs Edit AND Delete on menu 30 (403 STOCK_PRICE_RIGHT_EDIT / ' +
+      'STOCK_PRICE_RIGHT_DELETE); a store user for his own branch only (403 ' +
+      'STOCK_PRICE_BRANCH_HQ_ONLY). 422 STOCK_PRICE_BACK_NOT_OWN on an All branches line (or ' +
+      "another branch's line); 422 STOCK_PRICE_BACK_NOTHING_LEFT when no All branches line " +
+      'of the key and no headline would price the unit there (params item, unit, branch); 404 ' +
+      'STOCK_ITEM_PRICE_NOT_FOUND for an id with no live line of its key. Answers removed, ' +
+      'removedIds and nowPricedBy {lineKind, branchId, ipmId, prices[4]} — what prices the ' +
+      'unit at the branch now.',
+  })
+  @ApiOkResponse({ type: SellingPriceBackSuccessDto })
+  @ApiBadRequestResponse({ type: SellingPriceErrorResponseDto })
+  @ApiForbiddenResponse({ type: SellingPriceErrorResponseDto })
+  @ApiNotFoundResponse({ type: SellingPriceErrorResponseDto })
+  @ApiUnprocessableEntityResponse({ type: SellingPriceErrorResponseDto })
+  async backToAllBranches(
+    @Body() dto: BackToAllBranchesDto,
+  ): Promise<SellingPriceSuccessResponse<SellingPriceBackResult>> {
+    const data = await this.sellingPriceBulkService.backToAllBranches(dto);
+    return {
+      success: true,
+      message: `${data.removed} own price line${data.removed === 1 ? '' : 's'} removed — the branch reads the All branches price again`,
       data,
     };
   }
