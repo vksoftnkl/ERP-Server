@@ -172,8 +172,9 @@ SELECT v.* FROM (VALUES
     ,('019f2684-f8d5-7c13-afea-fc48d521faa0', 36, 1, 'Tax Name'            , 'tax_name'          , NULL                  , 'Text'   , 100.00, 'Left'  , true , true , 'system')
     -- ============ HSN/SAC CODES (id 37) ============
     ,('019f2688-4da2-7408-a94a-4625fc338a71', 37, 0, '#'                   , 'hsn_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
-    ,('019f2688-4da3-71e1-84a2-47c8f4d58943', 37, 1, 'Code'                , 'hsn_code'          , NULL                  , 'Text'   , 100.00, 'Left'  , true , true , 'system')
-    ,('019f2688-4da3-7a78-ac1a-e20fe9e26e2b', 37, 2, 'Description'         , 'hsn_name'          , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
+    ,('019f2688-4da3-71e1-84a2-47c8f4d58943', 37, 1, 'Code'                , 'hsn_code'          , NULL                  , 'Text'   , 15.00 , 'Left'  , true , true , 'system')
+    ,('019f2688-4da3-7a78-ac1a-e20fe9e26e2b', 37, 2, 'Description'         , 'hsn_name'          , NULL                  , 'Text'   , 50.00 , 'Left'  , true , true , 'system')
+    ,('01a206e0-37a3-7c4e-9b1d-3f6a2c8e5d01', 37, 3, 'Heading'             , 'hsn_heading'       , NULL                  , 'Text'   , 35.00 , 'Left'  , true , true , 'system')
     -- ============ EMPLOYEES (id 38) ============
     ,('019f4bf2-1c10-791d-bc6f-2598730890eb', 38, 0, '#'                   , 'emp_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
     ,('019f4bf2-1c11-7997-b0c0-e73479c0c896', 38, 1, 'Code'                , 'emp_code'          , NULL                  , 'Text'   , 30.00 , 'Left'  , true , true , 'system')

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ItemMaster, Prisma } from '@prisma/client';
 import { SaveItemDto } from './dto/save-item.dto';
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
@@ -20,6 +20,7 @@ import {
   sameRevision,
 } from './item-revision';
 import { rowUnitLock, unitRowsInUse } from '../utils/item-unit-in-use.helper';
+import { ItemHsnCheckService } from './item-hsn-check.service';
 import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import type { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
@@ -199,6 +200,8 @@ export class ItemsMasterService {
     private readonly itemMasterUpdateService: ItemMasterUpdateService,
     private readonly stockTrackPolicyService: StockTrackPolicyService,
     private readonly priceBucketService: PriceBucketService,
+    // Optional: the hand-built services of the e2e specs leave it out (no HSN check there).
+    @Optional() private readonly itemHsnCheck?: ItemHsnCheckService,
   ) {}
   /**
    * @param tx When supplied, the write runs inside the caller's transaction
@@ -225,6 +228,9 @@ export class ItemsMasterService {
    * conversion row for — rolls the whole save back, item included.
    */
   async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
+    // Item master review point 1 (2026-11-23): the HSN against the GST list and the
+    // company's digits, by inventory.hsn_check — before anything is written.
+    await this.itemHsnCheck?.assertHsn(dto);
     // History step 2 (2026-11-21): the whole item BEFORE this save, read before
     // anything is touched — the revision row's "before" (null on a create).
     const before = dto.item_id ? await this.getComposite(dto.item_id).catch(() => null) : null;

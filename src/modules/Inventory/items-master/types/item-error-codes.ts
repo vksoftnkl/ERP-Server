@@ -74,6 +74,12 @@ export enum ItemErrorCode {
    *  used — any row of the item for the base row, that row itself for any other row — so old
    *  bills, orders, purchases and stock would read the new unit (item master review 11-20 Q2). */
   UNIT_IN_USE = 'ITEM_UNIT_IN_USE',
+  /** item_hsn_code is not in the GST HSN / SAC list (fixed.hsn_master); inventory.hsn_check WARN
+   *  (confirmable, re-post with item_hsn_confirmed) or BLOCK (item master review point 1, 2026-11-23). */
+  HSN_NOT_IN_LIST = 'ITEM_HSN_NOT_IN_LIST',
+  /** item_hsn_code has fewer digits than GST asks of this company: rule 46 by turnover class
+   *  (StatutoryService.hsnDigits), or inventory.hsn_min_length when that asks more. Same modes. */
+  HSN_TOO_SHORT = 'ITEM_HSN_TOO_SHORT',
   /** The item cannot move to this company while another company holds its stock or prices (notes 137 C3). */
   COMPANY_MOVE_BLOCKED = 'ITEM_COMPANY_MOVE_BLOCKED',
   /** item_brand_id names no item brand (the column has no foreign key, notes 137 B9). */

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsOptional, ValidateNested } from 'class-validator';
+import { IsArray, IsOptional, ValidateNested, IsBoolean } from 'class-validator';
 import { ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { SaveItemDto } from './save-item.dto';
 import { SaveItemUnitConversionDto } from '../../item-unit-conversion/dto/save-item-unit-conversion.dto';
@@ -55,6 +55,16 @@ export class CompositeItemReorderDto extends OmitType(SaveItemReorderDto, ['ir_i
  * the request behave exactly like a plain item create/update.
  */
 export class SaveItemCompositeDto extends SaveItemDto {
+  @ApiPropertyOptional({
+    description:
+      'The operator saw the HSN warning (ITEM_HSN_NOT_IN_LIST / ITEM_HSN_TOO_SHORT with confirmable: true, ' +
+      'inventory.hsn_check = WARN) and chose to save anyway. Ignored under BLOCK. Never stored.',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  item_hsn_confirmed?: boolean;
+
   @ApiPropertyOptional({ type: [CompositeItemUnitConversionDto] })
   @IsOptional()
   @IsArray()

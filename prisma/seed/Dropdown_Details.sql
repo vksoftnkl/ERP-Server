@@ -260,13 +260,17 @@ ORDER BY sup_name;$seed$, NULL)
 FROM inventory.tax_rate_master
 WHERE tax_is_active = true AND tax_is_deleted = false
 ORDER BY tax_name;$seed$, NULL)
-    ,(37, 'HSN/SAC CODES'            , NULL, 'hsn_code'            , 'asc'      , 10, false, 0   , 'Desktop', 'hsn_code'          , 'system', $seed$SELECT
-	hsn_id,
-	hsn_code,
-	hsn_name
-FROM fixed.hsn_master
-WHERE hsn_is_active = true
-ORDER BY hsn_code;$seed$, NULL)
+    ,(37, 'HSN/SAC CODES'            , NULL, 'hsn_code'            , 'asc'      , 10, true , 45  , 'Desktop', 'hsn_code'          , 'system', $seed$SELECT
+	h.hsn_id,
+	h.hsn_code,
+	h.hsn_name,
+	hd.hsn_name AS hsn_heading
+FROM fixed.hsn_master h
+LEFT JOIN LATERAL (SELECT p.hsn_name FROM fixed.hsn_master p
+                    WHERE length(h.hsn_code) > 4 AND p.hsn_code = left(h.hsn_code, 4) AND p.hsn_is_active = true
+                    ORDER BY p.hsn_uqc IS NULL DESC, p.hsn_id LIMIT 1) hd ON true
+WHERE h.hsn_is_active = true
+ORDER BY h.hsn_code, h.hsn_id;$seed$, NULL)
     ,(38, 'EMPLOYEES'                , 'Staff picker: active, not deleted, not Resigned employees of the branch iemp_branch_id plus the branch-less ones, by name. Param iemp_branch_id, cast to uuid, so always sent.', 'emp_name'            , 'asc'      , 10, false, 0   , 'Desktop', 'emp_name'          , 'system', $seed$SELECT
     emp_id,
     emp_code,
