@@ -865,12 +865,20 @@ export class PriceBucketGateway {
     scope: ScopeResolution,
     onDate?: string,
   ): Promise<LockedPriceRow | null> {
+    // The company's own row first; failing that, a row with NO company on an item of
+    // this company (the item card wrote such lines): it is this company's price, so it is
+    // updated in place — inserting a company row beside it made two prices for one line
+    // (change-selling-price review 2026-11-23, point 2). A SHARED item's company-less row
+    // serves every company and is never taken here: this company gets its own row.
     const [row] = await tx.$queryRaw<LockedPriceRow[]>`
       SELECT ipm_id                   AS "ipmId",
              ipm_effective_from::text AS "effectiveFrom",
              ipm_effective_to::text   AS "effectiveTo"
-        FROM inventory.item_price_master
-       WHERE ipm_company_id IS NOT DISTINCT FROM ${candidate.companyId}::uuid
+        FROM inventory.item_price_master p
+       WHERE (ipm_company_id IS NOT DISTINCT FROM ${candidate.companyId}::uuid
+              OR (ipm_company_id IS NULL
+                  AND EXISTS (SELECT 1 FROM inventory.item_master im
+                               WHERE im.item_id = p.ipm_item_id AND im.item_company_id = ${candidate.companyId}::uuid)))
          AND ipm_branch_id  IS NOT DISTINCT FROM ${scope.targetBranchId}::uuid
          AND ipm_item_id    = ${candidate.itemId}::uuid
          AND ipm_uc_unit_id = ${candidate.uomId}::uuid
@@ -878,7 +886,9 @@ export class PriceBucketGateway {
          AND ipm_key_sp     = COALESCE(${candidate.salePrice}::numeric, -1)
          AND ${daySql(onDate)} BETWEEN ipm_effective_from AND ipm_effective_to
          AND ipm_is_deleted = false
-       FOR UPDATE
+       ORDER BY (ipm_company_id IS NULL)
+       LIMIT 1
+       FOR UPDATE OF p
     `;
     return row ?? null;
   }

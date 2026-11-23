@@ -206,6 +206,7 @@ model StockLedger {
   reason               StockReasonMaster? @relation("StockLedgerReason",  fields: [smlReasonId],  references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_reason")
 
   @@id([smlId, smlAccYear], map: "pk_stock_ledger")
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_sml_uom, migration 20261123140000.
   @@map("stock_ledger")
   @@schema("stock")
 }

@@ -198,6 +198,7 @@ model SaleBillItem {
   // ── Sales plan (20260921220000) ───────────────────────────────────────
   lot                StockLot? @relation("SaleBillItemLot", fields: [sbiLotId], references: [sltId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbi_lot")
 
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_sbi_item_unit, migration 20261123140000.
   @@map("sale_bill_item")
   @@schema("sales")
 }

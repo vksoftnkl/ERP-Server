@@ -87,6 +87,7 @@ model SaleDeliveryNoteItem {
   // CHECK constraints (DB-only): ck_sdni_line_no, ck_sdni_bucket, ck_sdni_qty,
   //   ck_sdni_base_qty.
 
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_sdni_item_unit, migration 20261123140000.
   @@map("sale_delivery_note_item")
   @@schema("sales")
 }

@@ -495,8 +495,13 @@ describe('PriceBucketGateway', () => {
       ).resolves.toEqual({ ipmId: IPM_ID });
 
       const statement = statementOf(tx.$queryRaw);
-      expect(statement.values).toEqual([COMPANY_ID, BRANCH_ID, ITEM_ID, UOM_ID, 40, 38]);
+      expect(statement.values).toEqual([COMPANY_ID, COMPANY_ID, BRANCH_ID, ITEM_ID, UOM_ID, 40, 38]);
       expect(statement.sql).toContain('FOR UPDATE');
+      // A company-less line of this company's own item is the same price (review 2026-11-23 point 2):
+      // taken when there is no company line, the company line first.
+      expect(statement.sql).toContain('ipm_company_id IS NULL');
+      expect(statement.sql).toContain('im.item_company_id =');
+      expect(statement.sql).toContain('ORDER BY (ipm_company_id IS NULL)');
       // A predicate on the scope, so a BRANCH search can never find the chain row.
       expect(statement.sql).toContain('ipm_branch_id  IS NOT DISTINCT FROM');
     });
@@ -511,6 +516,7 @@ describe('PriceBucketGateway', () => {
       ).resolves.toBeNull();
 
       expect(statementOf(tx.$queryRaw).values).toEqual([
+        COMPANY_ID,
         COMPANY_ID,
         null,
         ITEM_ID,

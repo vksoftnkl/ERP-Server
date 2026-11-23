@@ -155,6 +155,7 @@ model SaleQuotationItem {
   // ix_sqi_tax (sqi_tax_id) WHERE sqi_tax_id IS NOT NULL is a DB-only partial index
   // (migration 20260912050000). Prisma cannot express the predicate and
   // would re-create it without one. Do NOT add @@index for it.
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_sqi_item_unit, migration 20261123140000.
   @@map("sale_quotation_item")
   @@schema("sales")
 }

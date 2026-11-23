@@ -95,6 +95,7 @@ model AccVoucherDocDetail {
 
   // LIST-partitioned on vtx_acc_year as of 20260922100000; the key is the pair.
   @@id([vtxId, vtxAccYear], map: "pk_acc_voucher_doc_detail")
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_vtx_unit, migration 20261123140000.
   @@map("acc_voucher_doc_detail")
   @@schema("accounts")
   // Partial index idx_acc_voucher_doc_detail_voucher

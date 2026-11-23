@@ -197,6 +197,7 @@ model PurOrderItem {
   purOrder            PurOrder  @relation(fields: [poiPoId, poiAccYear], references: [poId, poAccYear], map: "fk_poi_po")
 
   @@id([poiId, poiAccYear], map: "pk_pur_order_item")
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_poi_uom, migration 20261123140000.
   @@map("pur_order_item")
   @@schema("purchase")
 }
@@ -295,6 +296,7 @@ model PurGrnItem {
   purGrn             PurGrn    @relation(fields: [griGrnId, griAccYear], references: [grnId, grnAccYear], map: "fk_gri_grn")
 
   @@id([griId, griAccYear], map: "pk_pur_grn_item")
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_gri_uom, migration 20261123140000.
   @@map("pur_grn_item")
   @@schema("purchase")
 }
@@ -465,6 +467,7 @@ model PurInvoiceItem {
   // CHECK (DB-only): ck_pii_wastage — 0 <= pii_wastage_per_qty < 1 AND pii_wastage_qty >= 0 (20261104130000).
 
   @@id([piiId, piiAccYear], map: "pk_pur_invoice_item")
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_pii_uom, migration 20261123140000.
   @@map("pur_invoice_item")
   @@schema("purchase")
 }
@@ -646,6 +649,7 @@ model PurShortageReceiptItem {
   purShortage         PurShortage        @relation(fields: [psriShortageId, psriShortageAccYear], references: [pshId, pshAccYear], map: "fk_psri_shortage")
 
   @@id([psriId, psriAccYear], map: "pk_pur_shortage_receipt_item")
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_psri_uom, migration 20261123140000.
   @@map("pur_shortage_receipt_item")
   @@schema("purchase")
 }
@@ -763,6 +767,7 @@ model PurReturnItem {
   purReturn             PurReturn            @relation(fields: [priPrId, priAccYear], references: [prId, prAccYear], map: "fk_pri_pr")
 
   @@id([priId, priAccYear], map: "pk_pur_return_item")
+  // DB-only (FK-covering, the item card's unit-in-use check): ix_pri_uom, migration 20261123140000.
   @@map("pur_return_item")
   @@schema("purchase")
 }
