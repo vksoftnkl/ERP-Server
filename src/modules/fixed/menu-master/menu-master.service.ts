@@ -25,6 +25,13 @@ type BaseMenuFields = Pick<
   | 'menuIsActive'
   | 'menuVerbs'
 >;
+/**
+ * Menus a user gets only with the Edit right (`um_can_edit`), not with View alone: their
+ * screen has no read-only mode. Change Selling Price (menu 30), decision O8 (2026-11-23):
+ * "a user without Edit on menu 30 does not get the menu".
+ */
+export const MENUS_NEEDING_EDIT: ReadonlySet<number> = new Set([30]);
+
 @Injectable()
 export class MenuMasterService {
   constructor(
@@ -114,9 +121,12 @@ export class MenuMasterService {
         { menu: { menuId: 'asc' } },
       ],
     });
-    const records = userMenus.map((userMenu) => userMenu.menu);
+    const shown = userMenus.filter(
+      (userMenu) => !MENUS_NEEDING_EDIT.has(userMenu.umMenuId) || userMenu.umCanEdit,
+    );
+    const records = shown.map((userMenu) => userMenu.menu);
     const permissionsByMenuId = new Map<number, MenuMasterUserPermissions>(
-      userMenus.map((userMenu) => [
+      shown.map((userMenu) => [
         userMenu.umMenuId,
         {
           canCreate: userMenu.umCanCreate,

@@ -259,7 +259,9 @@ export class SellingPriceBulkService {
         ({ record }) =>
           record.lineKind !== 'NO_PRICE' &&
           record.bucketId !== null &&
-          record.priceScope === 'CHAIN',
+          record.priceScope === 'CHAIN' &&
+          // S7 — an MRP item's main line ("other MRPs") has no stock cost anywhere.
+          !(record.trackMrp && record.mrp === null),
       );
     const spread = chainAt.length
       ? await this.gateway.otherBranchStockCosts(this.prisma, {
@@ -385,15 +387,24 @@ export class SellingPriceBulkService {
     // ── Step 1 — Q26. §5.2 ─────────────────────────────────────────────────
     const levels = await this.gateway.priceLevels(tx);
     const levelNames = new Map(levels.map((level) => [level.level, level.name]));
+    // Review S4 — only the ACTIVE levels priced above 0 are judged, on every writer: a hidden
+    // (inactive) level the user cannot see neither asks nor refuses (menu 244 already sent its own).
+    const activeLevels =
+      ctx.activeLevels ?? levels.filter((level) => level.active).map((level) => level.level);
     const problems = this.gateway.validateRows(
       candidates,
       costs.map((cost) => cost.minPrice),
-      ctx.activeLevels ? { activeLevels: ctx.activeLevels, levelNames } : { levelNames },
+      { activeLevels, levelNames },
     );
     // P1 §4.7 (C6, O10) — an All branches line is judged at every other branch reading it.
+    // S7 — an MRP item's main line ("other MRPs") has no stock cost anywhere: not probed.
     const chainAt = resolutions
       .map((resolution, index) => ({ resolution, index }))
-      .filter(({ resolution }) => resolution.targetScope === 'CHAIN')
+      .filter(
+        ({ resolution, index }) =>
+          resolution.targetScope === 'CHAIN' &&
+          !(costs[index].trackMrp && candidates[index].mrp === null),
+      )
       .map(({ index }) => index);
     if (chainAt.length) {
       const branches = await this.gateway.otherBranchStockCosts(tx, {
@@ -411,12 +422,7 @@ export class SellingPriceBulkService {
         ...this.gateway.branchProblems(
           chainAt.map((index) => candidates[index]),
           branches,
-          {
-            activeLevels:
-              ctx.activeLevels ??
-              levels.filter((level) => level.active).map((level) => level.level),
-            levelNames,
-          },
+          { activeLevels, levelNames },
         ),
       );
     }
@@ -770,6 +776,9 @@ export class SellingPriceBulkService {
    * day each row starts; stock and cost are today's, as on the grid.
    */
   async listSchedule(queryDto: PriceScheduleQueryDto): Promise<SellingPriceScheduleRow[]> {
+    // Review S5 — the same rights as the grid: Edit on menu 30, and another branch is head office only.
+    await this.assertCanEditPrices();
+    await this.assertBranchAllowed(queryDto.branchId);
     const records = await this.gateway.listScheduled(
       queryDto.companyId,
       queryDto.branchId,
@@ -838,6 +847,9 @@ export class SellingPriceBulkService {
       }
       if (row.branchId === null) {
         this.assertScopeAllowed('CHAIN');
+      } else {
+        // Review S5 — a store user cancels only his own branch's schedule.
+        await this.assertBranchAllowed(row.branchId, 'ipmId');
       }
       const previous = await this.gateway.findRowBeforeForUpdate(tx, ipmId);
       const ids = previous ? [ipmId, previous.ipmId] : [ipmId];
@@ -1496,7 +1508,19 @@ export class SellingPriceBulkService {
       cost.lineCost > 0
         ? cost.lineCost
         : null;
-    const costRate = keyedCost ?? lineCost ?? cost.costRate;
+    // P1, A3 option C — below cost is judged on the HIGHER of the line's own cost and the stock
+    // cost (this MRP's landing cost, else the branch average; none for an MRP with no lot — U2 —
+    // and none on an MRP item's "other MRPs" line — S7).
+    const stockCost =
+      cost.stockCost !== undefined && cost.stockCost !== null && cost.stockCost > 0
+        ? cost.stockCost
+        : null;
+    // Review S1 / S8 (user 2026-11-24) — menu 30 / Ctrl+R: no cost sent and no cost of its own →
+    // the stock cost above, else NOTHING (0). Never the old stock-first figure, which fell back to
+    // the branch average for an MRP with no lot and to another line's cost. Menu 244 and purchases
+    // store what they stored before (P2 / P4 move those writes).
+    const fromStock = keyedCost === null && lineCost === null && ctx?.keepLineCost === true;
+    const costRate = keyedCost ?? lineCost ?? (fromStock ? (stockCost ?? 0) : cost.costRate);
     const costWot = kept
       ? kept.costWot
       : keyedCost !== null
@@ -1505,14 +1529,31 @@ export class SellingPriceBulkService {
           ? cost.lineCostWot !== undefined && cost.lineCostWot !== null && cost.lineCostWot > 0
             ? cost.lineCostWot
             : exclusiveOfTax(lineCost, taxPerc)
-          : cost.costWot;
-    // P1, A3 option C — below cost is judged on the HIGHER of the line's own cost (what the
-    // line stores) and the stock cost (this MRP's landing cost, else the branch average).
-    const stockCost =
-      cost.stockCost !== undefined && cost.stockCost !== null && cost.stockCost > 0
-        ? cost.stockCost
-        : null;
-    const judgeCost = Math.max(costRate, stockCost ?? 0);
+          : fromStock
+            ? stockCost === null
+              ? 0
+              : cost.stockCostWot !== undefined && cost.stockCostWot !== null && cost.stockCostWot > 0
+                ? cost.stockCostWot
+                : exclusiveOfTax(stockCost, taxPerc)
+            : cost.costWot;
+    // Review S2 — the line's OWN cost: what was typed / sent, else (menu 30 / Ctrl+R / menu 244 —
+    // a ctx; menu 244 sends no cost on an MRP row) the line's stored cost. A purchase (no ctx)
+    // sends no cost yet: its "last purchase cost" is THIS bill (user 2026-11-24), already in the
+    // stock cost it is judged on — never the line's cost from before the bill. P2 sends the
+    // bill's landing cost. With neither cost the stored figure is judged, except on an
+    // MRP-tracked item, where it can be the branch average over every MRP (U2 / S7).
+    const ownCost =
+      keyedCost !== null
+        ? keyedCost
+        : ctx !== undefined && cost.lineCost !== undefined && cost.lineCost !== null && cost.lineCost > 0
+          ? cost.lineCost
+          : null;
+    const judgeCost =
+      ownCost !== null || stockCost !== null
+        ? Math.max(ownCost ?? 0, stockCost ?? 0)
+        : cost.trackMrp
+          ? 0
+          : costRate;
     // Decision 20 — a sent markup % is kept when it reproduces the price (the card's
     // typed-figure rule): cost × (1 + % ÷ 100), rounded to the row's R.Off, within 0.005.
     const step = row.roundOff ?? cost.lineRoundOff ?? 0;
@@ -1532,6 +1573,7 @@ export class SellingPriceBulkService {
       costWot,
       actor,
       judgeCost,
+      ownCost,
       stockCost,
       unitName: cost.unitName ?? null,
       // Plan 2026-11-05 §4.6 item 2 — the unit's Rule and a typed MRP ride only

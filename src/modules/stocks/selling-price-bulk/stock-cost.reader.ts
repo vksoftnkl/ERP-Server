@@ -57,24 +57,44 @@ export function mrpLotCostLateral(a: {
 
 /**
  * The stock-cost columns from the aliases a statement joined: `mc` = the MRP lot cost (only
- * for an MRP key), `sic` = stock_item_cost, `factor` = the unit's iuc_to_base_factor. Unlike
- * the old `costColumns` there is no price-row fallback: no stock cost is NULL.
+ * for an MRP key), `sic` = stock_item_cost, `factor` = the unit's iuc_to_base_factor, `mrpKey`
+ * = the SQL predicate "this line is keyed on an MRP". Unlike the old `costColumns` there is no
+ * price-row fallback: no stock cost is NULL.
+ *
+ * U2 (user 2026-11-24): an MRP line takes ONLY that MRP's lot cost. With no lot of the MRP at
+ * the branch it has NO stock cost (the item's branch average mixes the other MRPs' lots, e.g.
+ * 341.67 from lots at 25 and 500), so below cost is judged on the line's own cost alone and
+ * the Stock cost column is blank. The branch average is for a line that is not keyed on an MRP.
+ * S7 (user 2026-11-24): an MRP item's main line ("other MRPs") has no stock cost at all — it prices
+ * only the MRPs with no line of their own, and the branch average mixes every MRP's lots.
  */
-export function stockCostColumns(a: { mc: string; sic: string; factor: string }): {
+export function stockCostColumns(a: {
+  mc: string;
+  sic: string;
+  factor: string;
+  mrpKey: string;
+  /** S7 (user 2026-11-24): true = the line has NO stock cost — an MRP item's main line ("other MRPs"). */
+  none?: string;
+}): {
   rate: Prisma.Sql;
   wot: Prisma.Sql;
   basis: Prisma.Sql;
 } {
   const mrpRate = `NULLIF(${a.mc}.cost_rate, 0)`;
   const itemRate = `NULLIF(${a.sic}.sic_avg_cost_rate, 0)`;
+  const onMrp = `COALESCE((${a.mrpKey}), false)`;
+  const none = a.none ? `WHEN COALESCE((${a.none}), false) THEN NULL ` : '';
   return {
-    rate: Prisma.raw(`COALESCE(${mrpRate} * ${a.factor}, ${itemRate} * ${a.factor})`),
+    rate: Prisma.raw(
+      `CASE ${none}WHEN ${onMrp} THEN ${mrpRate} * ${a.factor} ELSE ${itemRate} * ${a.factor} END`,
+    ),
     wot: Prisma.raw(
-      `CASE WHEN ${mrpRate} IS NOT NULL THEN COALESCE(${a.mc}.cost_rate_wot, 0) * ${a.factor}` +
+      `CASE ${none}WHEN ${onMrp} THEN CASE WHEN ${mrpRate} IS NOT NULL THEN COALESCE(${a.mc}.cost_rate_wot, 0) * ${a.factor} END` +
         ` WHEN ${itemRate} IS NOT NULL THEN COALESCE(${a.sic}.sic_avg_cost_rate_wot, 0) * ${a.factor} END`,
     ),
     basis: Prisma.raw(
-      `CASE WHEN ${mrpRate} IS NOT NULL THEN 'MRP' WHEN ${itemRate} IS NOT NULL THEN 'ITEM' END`,
+      `CASE ${none}WHEN ${onMrp} THEN CASE WHEN ${mrpRate} IS NOT NULL THEN 'MRP' END` +
+        ` WHEN ${itemRate} IS NOT NULL THEN 'ITEM' END`,
     ),
   };
 }
@@ -123,7 +143,7 @@ export const StockCostReader = {
       return [];
     }
     const day = args.onDate ? Prisma.sql`${args.onDate}::date` : Prisma.raw('CURRENT_DATE');
-    const cost = stockCostColumns({ mc: 'mc', sic: 'sic', factor: 'p.factor' });
+    const cost = stockCostColumns({ mc: 'mc', sic: 'sic', factor: 'p.factor', mrpKey: 'p.mrp IS NOT NULL' });
     const rows = await client.$queryRaw<
       Array<{
         ord: bigint;

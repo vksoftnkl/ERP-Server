@@ -52,6 +52,9 @@ export class MenuMasterController {
     };
   }
   @Get('usermenu')
+  // Not cached (2026-11-24): the HTTP cache keys answers by URL alone, and this answer is the
+  // CALLER's menu — two users within the class's 1 s TTL got the first one's menu (and its rights).
+  @CacheTTL(0)
   @Version(API_VERSION)
   @ApiOperation({
     summary:

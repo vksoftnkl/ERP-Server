@@ -470,10 +470,10 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
           }),
         ]),
       );
-      // the other branch: level 1 only (2 is 0, 3 is not active); the branch on screen still
-      // judges every level sent, as before (the 0 of level 2 is under its cost there)
+      // the other branch: level 1 only (2 is 0, 3 is not active); review S4 (11-24): the branch on
+      // screen judges the same way — the 0 of level 2 and the hidden level 3 are not asked about
       expect(asked.problems.filter((p) => p.rule === 'BRANCHES').map((p) => p.level)).toEqual([1]);
-      expect(asked.problems.filter((p) => p.rule !== 'BRANCHES').map((p) => p.level)).toEqual([2]);
+      expect(asked.problems.filter((p) => p.rule !== 'BRANCHES').map((p) => p.level)).toEqual([]);
 
       const saved = await service.saveBulk(save([line()], { confirmed: true }));
       expect(saved.needsConfirm).toBe(false);
@@ -963,6 +963,83 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       expect(page.items[2]).toMatchObject({ lineKind: 'NO_PRICE', otherBranchesStockCost: null });
     });
   });
+  describe('review fixes 2026-11-24 (S1, S2, S4, S7, S8)', () => {
+    it('S1 / S8: menu 30, no cost sent, no cost of its own, an MRP with no lot -> stores 0 and asks nothing', async () => {
+      // the old stock-first figure was the branch average over every MRP (341.67)
+      cost = rowCost({
+        trackMrp: true,
+        costRate: 341.67,
+        costBasis: 'ITEM',
+        lineCost: null,
+        lineCostWot: null,
+        stockCost: null,
+        stockCostWot: null,
+        stockCostBasis: null,
+      });
+      const prepared = await service.prepareBulk(
+        tx as never,
+        save([line({ mrp: 99, isNew: true, levels: [{ level: 1, price: 80 }] })]),
+        { actor: USER, policy: 'warning', keepLineCost: true },
+      );
+      expect(prepared.candidates[0]).toMatchObject({ costRate: 0, costWot: 0, judgeCost: 0, ownCost: null });
+      expect(prepared.belowCost).toEqual([]);
+    });
+
+    it('S1: menu 30, no cost of its own but a stock cost -> stores and judges the stock cost', async () => {
+      cost = rowCost({ costRate: 341.67, lineCost: null, lineCostWot: null, stockCost: 25, stockCostWot: 23.8 });
+      const prepared = await service.prepareBulk(tx as never, save([line()]), {
+        actor: USER,
+        policy: 'warning',
+        keepLineCost: true,
+      });
+      expect(prepared.candidates[0]).toMatchObject({ costRate: 25, costWot: 23.8, judgeCost: 25 });
+    });
+
+    it('S2: menu 244 sends no cost on an MRP row -> judged on the higher of the line\'s own cost and the stock cost', async () => {
+      cost = rowCost({ trackMrp: true, costRate: 450, lineCost: 500, stockCost: 450 });
+      const prepared = await service.prepareBulk(
+        tx as never,
+        save([line({ mrp: 600, scope: undefined, priceScope: 'BRANCH', levels: [{ level: 1, price: 480 }] })]),
+        { actor: USER, policy: 'warning' },
+      );
+      // the stored figure is what it was (P2 / P4 move it); the judge takes the line's own cost
+      expect(prepared.candidates[0]).toMatchObject({ costRate: 450, ownCost: 500, judgeCost: 500 });
+      expect(prepared.belowCost).toEqual([
+        expect.objectContaining({ rule: 'LINE_COST', cost: 500, lineCost: 500, stockCost: 450 }),
+      ]);
+    });
+
+    it('S2: a purchase sends this bill\'s cost -> judged on it (and the stock cost), not on the line\'s stored cost', async () => {
+      cost = rowCost({ costRate: 90, lineCost: 500, stockCost: 90 });
+      const prepared = await service.prepareBulk(
+        tx as never,
+        save([line({ costPrice: 100, scope: undefined, priceScope: 'BRANCH', levels: [{ level: 1, price: 120 }] })]),
+        { actor: USER, policy: 'warning' },
+      );
+      expect(prepared.candidates[0]).toMatchObject({ costRate: 100, ownCost: 100, judgeCost: 100 });
+      expect(prepared.belowCost).toEqual([]);
+    });
+
+    it('S2 / S7: an MRP item with neither cost is not judged on the stored (mixed) figure', async () => {
+      cost = rowCost({ trackMrp: true, costRate: 341.67, lineCost: null, stockCost: null });
+      const prepared = await service.prepareBulk(
+        tx as never,
+        save([line({ scope: undefined, priceScope: 'BRANCH', levels: [{ level: 1, price: 100 }] })]),
+        { actor: USER, policy: 'warning' },
+      );
+      expect(prepared.candidates[0]).toMatchObject({ judgeCost: 0 });
+      expect(prepared.belowCost).toEqual([]);
+    });
+
+    it('S4: a hidden (inactive) level below cost neither asks nor refuses on menu 30', async () => {
+      cost = rowCost({ lineCost: 100, stockCost: 90 });
+      const result = await service.saveBulk(
+        save([line({ levels: [{ level: 1, price: 120 }, { level: 3, price: 90 }] })]),
+      );
+      expect(result).toMatchObject({ needsConfirm: false });
+      expect(result.problems.filter((p) => p.level === 3)).toEqual([]);
+    });
+  });
 });
 
 describe('Change Selling Price P1 — PriceBucketGateway.listPriceLines', () => {
@@ -1080,4 +1157,5 @@ describe('Change Selling Price P1 — PriceBucketGateway.listPriceLines', () => 
     });
     expect(page).toEqual({ items: [], meta: { limit: 50, offset: 0, count: 0, lines: 0 } });
   });
+
 });

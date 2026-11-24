@@ -1,3 +1,4 @@
+import { CACHE_TTL_METADATA } from '@nestjs/cache-manager';
 import { MenuMasterController } from './menu-master.controller';
 import { MenuMasterService } from './menu-master.service';
 import { MenuMasterPayload } from './types/menu-master-api.types';
@@ -47,5 +48,9 @@ describe('MenuMasterController', () => {
       data: [{ menuId: 1, menuVisibility: false }],
     });
     expect(service.updateVisibility).toHaveBeenCalledWith(menus);
+  });
+
+  it('usermenu is never served from the HTTP cache (the cache key is the URL alone, the answer is per user)', () => {
+    expect(Reflect.getMetadata(CACHE_TTL_METADATA, MenuMasterController.prototype.getUserMenu)).toBe(0);
   });
 });

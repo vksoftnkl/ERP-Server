@@ -220,6 +220,31 @@ describe('MenuMasterService', () => {
       });
     });
 
+    it('O8: leaves out Change Selling Price (menu 30) for a user without Edit on it', async () => {
+      const root = menuRow(10, null);
+      prisma.userMenus.findMany.mockResolvedValue([
+        userMenuRow(root),
+        userMenuRow(menuRow(30, 10), { umCanEdit: false }),
+        userMenuRow(menuRow(31, 10), { umCanEdit: false }),
+      ]);
+
+      const { items } = await service.getUserMenu();
+
+      expect(items[0].children?.map((c) => c.menuId)).toEqual([31]);
+    });
+
+    it('O8: lists menu 30 for a user with Edit on it', async () => {
+      const root = menuRow(10, null);
+      prisma.userMenus.findMany.mockResolvedValue([
+        userMenuRow(root),
+        userMenuRow(menuRow(30, 10), { umCanEdit: true }),
+      ]);
+
+      const { items } = await service.getUserMenu();
+
+      expect(items[0].children?.map((c) => c.menuId)).toEqual([30]);
+    });
+
     it('drops a granted child whose parent the user was not granted', async () => {
       prisma.userMenus.findMany.mockResolvedValue([userMenuRow(menuRow(21, 20))]);
 

@@ -259,6 +259,11 @@ export interface BucketPriceCandidate {
    * of the line's own cost (costRate, what the line stores) and the stock cost. Absent = costRate.
    */
   judgeCost?: number;
+  /**
+   * Review S2 — the line's OWN cost judged (the cost typed / sent, else the line's stored cost);
+   * null = it has none. Absent = costRate (the candidates built before S2).
+   */
+  ownCost?: number | null;
   /** P1 — the stock cost judged beside the line cost; null / absent when there is none. */
   stockCost?: number | null;
   /** P1 — the unit's name, for the problem's words. */
@@ -311,6 +316,12 @@ function paramsOf(
  * LINE_COST "below the last purchase cost 500.00 (stock cost 450.00)", STOCK_COST the other
  * way round; with one cost the plain "below the cost" wording, exactly as before.
  */
+/** The line's own cost judged (S2), null when it has none; before S2 the stored costRate. */
+function ownCostOf(candidate: BucketPriceCandidate): number | null {
+  const own = candidate.ownCost !== undefined ? candidate.ownCost : candidate.costRate;
+  return own !== null && own > 0 ? own : null;
+}
+
 function belowCostOf(
   candidate: BucketPriceCandidate,
   level: number,
@@ -318,7 +329,7 @@ function belowCostOf(
   names?: ReadonlyMap<number, string>,
 ): { text: string; fields: Partial<SellingPriceProblem> } {
   const judgeCost = candidate.judgeCost ?? candidate.costRate;
-  const lineCost = candidate.costRate > 0 ? candidate.costRate : null;
+  const lineCost = ownCostOf(candidate);
   const stockCost =
     candidate.stockCost !== undefined && candidate.stockCost !== null && candidate.stockCost > 0
       ? candidate.stockCost
@@ -827,7 +838,13 @@ export class PriceBucketGateway {
     const saveCost = costColumns({ mc: 'mc', sic: 'sic', p: 'p', factor: 'k.iuc_to_base_factor' });
     // P1 — the stock cost alone (A3), and the line's own cost when the resolver answered the
     // row of THIS key (A1), apart from the stock-first cost the save stored until now.
-    const stock = stockCostColumns({ mc: 'mc', sic: 'sic', factor: 'k.iuc_to_base_factor' });
+    const stock = stockCostColumns({
+      mc: 'mc',
+      sic: 'sic',
+      factor: 'k.iuc_to_base_factor',
+      mrpKey: 'k.track_mrp AND k.mrp > 0',
+      none: 'k.track_mrp AND NOT COALESCE(k.mrp > 0, false)',
+    });
     const keyMrp = Prisma.raw('CASE WHEN k.track_mrp AND k.mrp > 0 THEN k.mrp END');
     const keySp = Prisma.raw('CASE WHEN k.track_sp AND k.sp > 0 THEN k.sp END');
     const exact = Prisma.sql`(p.ipm_id IS NOT NULL AND p.ipm_key_mrp = COALESCE(${keyMrp}, -1) AND p.ipm_key_sp = COALESCE(${keySp}, -1))`;
@@ -1061,8 +1078,9 @@ export class PriceBucketGateway {
     const problems: SellingPriceProblem[] = [];
     const judged = opts.activeLevels ? new Set(opts.activeLevels) : null;
     candidates.forEach((candidate, index) => {
+      const own = ownCostOf(candidate);
       for (const branch of branches[index] ?? []) {
-        if (!(branch.stockCost > candidate.costRate)) {
+        if (!(branch.stockCost > (own ?? 0))) {
           continue;
         }
         for (const level of candidate.levels) {
@@ -1087,14 +1105,14 @@ export class PriceBucketGateway {
             code: PRICE_VERDICT_CODE.BELOW_COST,
             rule: 'BRANCHES',
             cost: round2(branch.stockCost),
-            lineCost: candidate.costRate > 0 ? round2(candidate.costRate) : null,
+            lineCost: own !== null ? round2(own) : null,
             stockCost: round2(branch.stockCost),
             branchId: branch.branchId,
             branchName: branch.branchName,
             params: paramsOf(candidate, level.level, level.price, opts.levelNames, {
               cost: money(branch.stockCost),
               stockCost: money(branch.stockCost),
-              ...(candidate.costRate > 0 ? { lineCost: money(candidate.costRate) } : {}),
+              ...(own !== null ? { lineCost: money(own) } : {}),
               branch: branch.branchName,
             }),
           });
@@ -1598,7 +1616,13 @@ export class PriceBucketGateway {
       salePrice: Prisma.raw('b.sbl_sale_price'),
     });
     const gridCost = costColumns({ mc: 'mc', sic: 'sic', p: 'p', factor: 'un.factor' });
-    const stock = stockCostColumns({ mc: 'mc', sic: 'sic', factor: 'un.factor' });
+    const stock = stockCostColumns({
+      mc: 'mc',
+      sic: 'sic',
+      factor: 'un.factor',
+      mrpKey: 'k.key_mrp <> -1',
+      none: 'pol.track_mrp AND k.key_mrp = -1',
+    });
     const co = args.companyId;
     const br = args.branchId;
     const exact = Prisma.raw(
@@ -1687,6 +1711,7 @@ export class PriceBucketGateway {
                    FROM stock st
                    JOIN inventory.item_unit_conversion iuc
                      ON iuc.iuc_item_id = st.item_id AND iuc.iuc_is_deleted = false
+                    AND iuc.iuc_is_active = true
                   WHERE st.item_id = items.item_id
                     AND NOT EXISTS (
                           SELECT 1
@@ -1708,6 +1733,7 @@ export class PriceBucketGateway {
           FROM page
           JOIN inventory.item_unit_conversion iuc
             ON iuc.iuc_item_id = page.item_id AND iuc.iuc_is_deleted = false
+           AND iuc.iuc_is_active = true   -- review NIT 3: an inactive unit is not listed (as menu 244)
           LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
       ),
       keys AS (

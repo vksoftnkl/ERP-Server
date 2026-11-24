@@ -188,6 +188,10 @@ describe('SellingPriceBulkService', () => {
               costRate: COST,
               costWot: COST / 1.18,
               costBasis: 'ITEM',
+              // P1 / review S1: COST is the stock cost (what the stock-first figure was).
+              stockCost: COST,
+              stockCostWot: COST / 1.18,
+              stockCostBasis: 'ITEM',
               minPrice: 0,
             })),
           ),
@@ -399,10 +403,10 @@ describe('SellingPriceBulkService', () => {
       expect(keepCost).toHaveBeenCalledTimes(1);
       expect(typed.candidates[0]).toMatchObject({ costRate: 99, costWot: exclusiveOfTax(99, TAX_PERC) });
 
-      // menu 30 / Quick Rate pass neither: Q26 gets no activeLevels (only the level names)
+      // menu 30 / Quick Rate pass none: Q26 judges the company's ACTIVE levels (review S4, 11-24)
       gateway.validateRows.mockClear();
       await service.prepareBulk(tx as never, payload({ rows: [headlineRow()] as never }), ctx);
-      expect(gateway.validateRows.mock.calls[0][2]).not.toHaveProperty('activeLevels');
+      expect(gateway.validateRows.mock.calls[0][2]).toHaveProperty('activeLevels');
     });
   });
 
