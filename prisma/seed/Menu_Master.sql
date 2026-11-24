@@ -139,7 +139,8 @@ VALUES
     ,(  30,    3, 'Change Selling Price'                 , 'CTRL+G'              , true ,  20.00, NULL, NULL, NULL, true , false)
     -- 298 (20261105120000_cost_price_bulk_change): type the new cost, the selling
     -- prices follow each unit's own rule; grid = ui_table 67. Verbs below.
-    ,( 298,    3, 'Cost Price – Bulk Change'             , NULL                  , true ,  25.00, NULL, NULL, NULL, true , false)
+    -- HIDDEN since 2026-11-24 (20261124200000_hide_cost_price_bulk_change): menu 30 does it.
+    ,( 298,    3, 'Cost Price – Bulk Change'             , NULL                  , false,  25.00, NULL, NULL, NULL, true , false)
     ,(  34,    3, 'Item Masters'                         , NULL                  , true ,  40.00, NULL, NULL, NULL, true , false)
     ,(  35,   34, 'Item Groups'                          , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
     ,(  36,   34, 'Brands'                               , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
