@@ -52,8 +52,10 @@ export class MenuMasterController {
     };
   }
   @Get('usermenu')
-  // Not cached (2026-11-24): the HTTP cache keys answers by URL alone, and this answer is the
-  // CALLER's menu — two users within the class's 1 s TTL got the first one's menu (and its rights).
+  // Not cached (2026-11-24): this answer is the CALLER's menu — while the HTTP cache keyed answers
+  // by URL alone, two users within the class's 1 s TTL got the first one's menu (and its rights).
+  // The key now carries the caller (HttpCacheInterceptor); a menu must still follow a rights
+  // change at once, so it stays uncached.
   @CacheTTL(0)
   @Version(API_VERSION)
   @ApiOperation({

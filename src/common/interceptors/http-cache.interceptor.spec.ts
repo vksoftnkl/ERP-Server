@@ -23,6 +23,8 @@ const contextFor = (options: {
   handler?: () => unknown;
   controller?: new () => unknown;
   headers?: Record<string, string>;
+  user?: Record<string, string | null>;
+  requestHeaders?: Record<string, string>;
 }) =>
   ({
     getType: () => options.type ?? 'http',
@@ -32,6 +34,8 @@ const contextFor = (options: {
       getRequest: () => ({
         method: options.method ?? 'GET',
         originalUrl: options.originalUrl ?? '/api/v1/items/list',
+        user: options.user,
+        headers: options.requestHeaders ?? {},
       }),
       getResponse: () => ({
         setHeader: (name: string, value: string) => {
@@ -98,6 +102,58 @@ describe('HttpCacheInterceptor', () => {
       expect(interceptor.trackBy(contextFor({ originalUrl: '/api/v1/author-list' }))).toBe(
         '/api/v1/author-list',
       );
+    });
+
+    it('keys a logged-in GET on its user, company, branch and counter too (11-24)', () => {
+      const asker = { sub: 'u1', company_id: 'c1', branch_id: 'b1', device_id: 'd1' };
+      const key = (user: Record<string, string | null>) =>
+        interceptor.trackBy(contextFor({ originalUrl: '/api/v1/menu?b=2&a=1', user }));
+      expect(key(asker)).toBe('/api/v1/menu?a=1&b=2|u=u1;c=c1;b=b1;d=d1');
+      // each one that differs makes a different key: no answer reaches another asker
+      const others = [
+        { ...asker, sub: 'u2' },
+        { ...asker, company_id: 'c2' },
+        { ...asker, branch_id: 'b2' },
+        { ...asker, device_id: null },
+      ];
+      const keys = new Set([key(asker), ...others.map(key)]);
+      expect(keys.size).toBe(5);
+      // the same asker again: the same key (the cache still works)
+      expect(key({ ...asker })).toBe(key(asker));
+    });
+
+    it('keys a call with no token on the URL, or on the x-user-id it names', () => {
+      expect(interceptor.trackBy(contextFor({ originalUrl: '/api/v1/items/list' }))).toBe(
+        '/api/v1/items/list',
+      );
+      expect(
+        interceptor.trackBy(
+          contextFor({
+            originalUrl: '/api/v1/items/list',
+            requestHeaders: { 'x-user-id': ' u9 ' },
+          }),
+        ),
+      ).toBe('/api/v1/items/list|x=u9');
+    });
+
+    it('never serves one user the answer cached for another', async () => {
+      const handler = handlerWithTtl(30);
+      const asA = contextFor({
+        handler,
+        user: { sub: 'uA', company_id: 'c', branch_id: 'b', device_id: null },
+      });
+      const asB = contextFor({
+        handler,
+        user: { sub: 'uB', company_id: 'c', branch_id: 'b', device_id: null },
+      });
+      handle.mockReturnValueOnce(of({ menu: 'A' })).mockReturnValueOnce(of({ menu: 'B' }));
+      expect(await run(asA)).toEqual({ menu: 'A' });
+      await flush();
+      expect(await run(asB)).toEqual({ menu: 'B' });
+      await flush();
+      expect(handle).toHaveBeenCalledTimes(2);
+      expect(await run(asA)).toEqual({ menu: 'A' }); // A's own copy, from the cache
+      expect(handle).toHaveBeenCalledTimes(2);
     });
 
     it('skips a request with no url, and any non-http context', () => {

@@ -15,6 +15,14 @@ import { Reflector } from '@nestjs/core';
 type CacheableRequest = {
   method?: string;
   originalUrl?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  /** Set by AccessTokenGuard (guards run before interceptors) from the verified token. */
+  user?: {
+    sub?: string | null;
+    company_id?: string | null;
+    branch_id?: string | null;
+    device_id?: string | null;
+  };
 };
 const CACHE_SKIP_PATH_SEGMENTS = new Set(['auth', 'profile', 'health']);
 const isNil = (value: unknown): value is null | undefined => value === null || value === undefined;
@@ -96,7 +104,25 @@ export class HttpCacheInterceptor extends CacheInterceptor {
     }
     url.searchParams.sort();
     const searchParams = url.searchParams.toString();
-    return searchParams ? `${url.pathname}?${searchParams}` : url.pathname;
+    const path = searchParams ? `${url.pathname}?${searchParams}` : url.pathname;
+    const who = this.askerOf(request);
+    return who ? `${path}|${who}` : path;
+  }
+
+  /**
+   * Who asked (2026-11-24): the key used to be the URL alone, so two users who read the same
+   * URL within the TTL got each other's answer (seen on /menu-masters/usermenu). An answer can
+   * depend on the user (rights), the company, the branch and the counter, all of which come
+   * from the verified token, so all four join the key. A call with no token shares the URL's
+   * key, unless it names a user in x-user-id (RequestContextMiddleware reads that header).
+   */
+  private askerOf(request: CacheableRequest): string {
+    const user = request.user;
+    if (user && typeof user.sub === 'string' && user.sub) {
+      return `u=${user.sub};c=${user.company_id ?? ''};b=${user.branch_id ?? ''};d=${user.device_id ?? ''}`;
+    }
+    const header = request.headers?.['x-user-id'];
+    return typeof header === 'string' && header.trim() ? `x=${header.trim()}` : '';
   }
   private setCacheHeader(context: ExecutionContext, value: 'HIT' | 'MISS'): void {
     const response = context

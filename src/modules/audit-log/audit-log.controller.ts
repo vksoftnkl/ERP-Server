@@ -24,8 +24,9 @@ import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Audit Logs')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-// What a caller may read depends on its rights now (review list 11-19 step 3): the HTTP
-// cache keys on the URL alone, so a cached answer would reach a user without them.
+// What a caller may read depends on its rights now (review list 11-19 step 3). The HTTP cache
+// keyed on the URL alone until 2026-11-24 (it now carries the caller), and a rights change must
+// show at once, so this stays uncached.
 @CacheTTL(0)
 @Controller(['audit-logs', 'audit-log'])
 export class AuditLogController {
