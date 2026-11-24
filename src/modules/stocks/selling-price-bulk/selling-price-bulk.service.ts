@@ -1276,10 +1276,12 @@ export class SellingPriceBulkService {
       // The line's branch is the one acted on: a store user's own only.
       await this.assertBranchAllowed(named.branchId, 'ipmId');
       if (named.branchId.toLowerCase() !== dto.branchId.toLowerCase()) {
-        throwStockUnprocessable<StockErrorDetail>("This line is another branch's own price", [
+        // rule=OTHER_BRANCH: its own wording (review NIT 11); the plain row is the All branches line's.
+        throwStockUnprocessable<StockErrorDetail & { rule: 'OTHER_BRANCH' }>("This line is another branch's own price", [
           {
             field: 'ipmId',
             code: StockErrorCode.PRICE_BACK_NOT_OWN,
+            rule: 'OTHER_BRANCH',
             message: `Line ${dto.ipmId} is the own price of branch ${named.branchId}, not of branch ${dto.branchId}.`,
           },
         ]);

@@ -805,6 +805,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       expect(await codesOf(back())).toMatchObject({
         status: 422,
         codes: ['STOCK_PRICE_BACK_NOT_OWN'],
+        errors: [expect.objectContaining({ rule: 'OTHER_BRANCH' })], // its own wording (NIT 11)
       });
       // a store user may not even reach another branch's line
       storeUser();
