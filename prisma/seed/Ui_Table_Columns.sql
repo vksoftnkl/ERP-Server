@@ -14,6 +14,9 @@
 -- 19 and 68 as 20261106160000_qty_price_layout_fixes left them: 19's column 22 (id 417) live
 -- again as "Value", 1..4 and 9..15 hidden, the nine shown add up to 100.00; 68 Unit 5.00,
 -- Stock 4.00, Stock avg 5.00, Changed 3.88.
+-- 68 as 20261125100000_qty_price_card_margin_columns leaves it (v2, user 11-25): a Margin % per level
+-- (21..24, ids 2834-2837) right after its Profit (Profit · Margin · W/o tax · Price, as the item card
+-- and Change Selling Price); every width x 0.855, so the 25 shown add up to 100.08 over all four levels.
 -- 19 as 20261106200000_qty_price_line_scope_layout left it: every slab line holds its own scope,
 -- so 1..4 and 12..15 are shown again (column 4 titled "Level"); 23 Level and 25 With saved card
 -- hidden; the fifteen shown add up to 100.00; focus on for every column typed or picked in the
@@ -1913,27 +1916,32 @@ SELECT v.* FROM (VALUES
     ,(2369, 67  , 43 , 'ScheduledFrom'         , 0                , false, false, 43 , false, NULL, NULL, true , false, 'system')
     ,(2370, 67  , 44 , 'HasQtySlabs'           , 0                , false, false, 44 , false, NULL, NULL, true , false, 'system')
     -- ============ QTY-WISE PRICES - CARD RATE (id 68) ============
-    ,(2371, 68  , 0  , 'Unit'                  , 5.00             , true , false, 0  , false, NULL, NULL, true , false, 'system')
-    ,(2372, 68  , 1  , 'Rule'                  , 3.79             , true , true , 1  , false, NULL, NULL, true , false, 'system')
-    ,(2373, 68  , 2  , 'MRP'                   , 6.42             , true , true , 2  , false, NULL, NULL, true , false, 'system')
-    ,(2374, 68  , 3  , 'Stock'                 , 4.00             , true , false, 3  , false, NULL, NULL, true , false, 'system')
-    ,(2375, 68  , 4  , 'Stock avg'             , 5.00             , true , false, 4  , false, NULL, NULL, true , false, 'system')
-    ,(2376, 68  , 5  , 'Cost w/o tax'          , 5.05             , true , false, 5  , false, NULL, NULL, true , false, 'system')
-    ,(2377, 68  , 6  , 'Cost'                  , 6.19             , true , true , 6  , false, NULL, NULL, true , false, 'system')
-    ,(2378, 68  , 7  , 'L1 Profit %'           , 4.24             , true , true , 7  , false, NULL, NULL, true , false, 'system')
-    ,(2379, 68  , 8  , 'L1 W/o tax'            , 4.24             , true , true , 8  , false, NULL, NULL, true , false, 'system')
-    ,(2380, 68  , 9  , 'L1 Price'              , 5.74             , true , true , 9  , false, NULL, NULL, true , false, 'system')
-    ,(2381, 68  , 10 , 'L2 Profit %'           , 4.24             , true , true , 10 , false, NULL, NULL, true , false, 'system')
-    ,(2382, 68  , 11 , 'L2 W/o tax'            , 4.24             , true , true , 11 , false, NULL, NULL, true , false, 'system')
-    ,(2383, 68  , 12 , 'L2 Price'              , 5.74             , true , true , 12 , false, NULL, NULL, true , false, 'system')
-    ,(2384, 68  , 13 , 'L3 Profit %'           , 4.24             , true , true , 13 , false, NULL, NULL, true , false, 'system')
-    ,(2385, 68  , 14 , 'L3 W/o tax'            , 4.24             , true , true , 14 , false, NULL, NULL, true , false, 'system')
-    ,(2386, 68  , 15 , 'L3 Price'              , 5.74             , true , true , 15 , false, NULL, NULL, true , false, 'system')
-    ,(2387, 68  , 16 , 'L4 Profit %'           , 4.24             , true , true , 16 , false, NULL, NULL, true , false, 'system')
-    ,(2388, 68  , 17 , 'L4 W/o tax'            , 4.24             , true , true , 17 , false, NULL, NULL, true , false, 'system')
-    ,(2389, 68  , 18 , 'L4 Price'              , 5.74             , true , true , 18 , false, NULL, NULL, true , false, 'system')
-    ,(2390, 68  , 19 , 'Min'                   , 3.79             , true , true , 19 , false, NULL, NULL, true , false, 'system')
-    ,(2391, 68  , 20 , 'Changed'               , 3.88             , true , false, 20 , false, NULL, NULL, true , false, 'system')
+    -- v2 (migration 20261125100000): widths x 0.855, a Margin % per level right after its Profit
+    ,(2371, 68  , 0  , 'Unit'                  , 4.28             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2372, 68  , 1  , 'Rule'                  , 3.24             , true , true , 1  , false, NULL, NULL, true , false, 'system')
+    ,(2373, 68  , 2  , 'MRP'                   , 5.49             , true , true , 2  , false, NULL, NULL, true , false, 'system')
+    ,(2374, 68  , 3  , 'Stock'                 , 3.42             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2375, 68  , 4  , 'Stock avg'             , 4.28             , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2376, 68  , 5  , 'Cost w/o tax'          , 4.32             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2377, 68  , 6  , 'Cost'                  , 5.29             , true , true , 6  , false, NULL, NULL, true , false, 'system')
+    ,(2378, 68  , 7  , 'L1 Profit %'           , 3.63             , true , true , 7  , false, NULL, NULL, true , false, 'system')
+    ,(2834, 68  , 21 , 'L1 Margin %'           , 3.63             , true , true , 8  , false, NULL, NULL, true , false, 'system')
+    ,(2379, 68  , 8  , 'L1 W/o tax'            , 3.63             , true , true , 9  , false, NULL, NULL, true , false, 'system')
+    ,(2380, 68  , 9  , 'L1 Price'              , 4.91             , true , true , 10 , false, NULL, NULL, true , false, 'system')
+    ,(2381, 68  , 10 , 'L2 Profit %'           , 3.63             , true , true , 11 , false, NULL, NULL, true , false, 'system')
+    ,(2835, 68  , 22 , 'L2 Margin %'           , 3.63             , true , true , 12 , false, NULL, NULL, true , false, 'system')
+    ,(2382, 68  , 11 , 'L2 W/o tax'            , 3.63             , true , true , 13 , false, NULL, NULL, true , false, 'system')
+    ,(2383, 68  , 12 , 'L2 Price'              , 4.91             , true , true , 14 , false, NULL, NULL, true , false, 'system')
+    ,(2384, 68  , 13 , 'L3 Profit %'           , 3.63             , true , true , 15 , false, NULL, NULL, true , false, 'system')
+    ,(2836, 68  , 23 , 'L3 Margin %'           , 3.63             , true , true , 16 , false, NULL, NULL, true , false, 'system')
+    ,(2385, 68  , 14 , 'L3 W/o tax'            , 3.63             , true , true , 17 , false, NULL, NULL, true , false, 'system')
+    ,(2386, 68  , 15 , 'L3 Price'              , 4.91             , true , true , 18 , false, NULL, NULL, true , false, 'system')
+    ,(2387, 68  , 16 , 'L4 Profit %'           , 3.63             , true , true , 19 , false, NULL, NULL, true , false, 'system')
+    ,(2837, 68  , 24 , 'L4 Margin %'           , 3.63             , true , true , 20 , false, NULL, NULL, true , false, 'system')
+    ,(2388, 68  , 17 , 'L4 W/o tax'            , 3.63             , true , true , 21 , false, NULL, NULL, true , false, 'system')
+    ,(2389, 68  , 18 , 'L4 Price'              , 4.91             , true , true , 22 , false, NULL, NULL, true , false, 'system')
+    ,(2390, 68  , 19 , 'Min'                   , 3.24             , true , true , 23 , false, NULL, NULL, true , false, 'system')
+    ,(2391, 68  , 20 , 'Changed'               , 3.32             , true , false, 24 , false, NULL, NULL, true , false, 'system')
     -- ============ SALES ORDER - CHARGES (id 69) ============
     ,(2396, 69  , 0  , '#'                     , 0                , false, false, 7  , false, NULL, NULL, true , false, 'system')
     ,(2397, 69  , 1  , 'Charge'                , 20               , true , true , 0  , false, NULL, NULL, true , false, 'system')
