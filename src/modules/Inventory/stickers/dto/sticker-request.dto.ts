@@ -101,15 +101,66 @@ export class StickerFromItemsQueryDto extends StickerScopeDto {
   labelsEach?: number;
 }
 
+// ─── S-P2: a document (purchase bill / shortage receipt) ────────────────────
+
+/** The document a sticker list / job comes from. docType is checked by the service (coded 422). */
+class StickerDocRefFields extends StickerScopeDto {
+  @ApiProperty({
+    example: 'PURCHASE_BILL',
+    description:
+      'PURCHASE_BILL (pur_invoice) | SHORTAGE_RECEIPT (pur_shortage_receipt); else STICKER_DOC_TYPE_INVALID.',
+  })
+  @IsString()
+  @MaxLength(30)
+  docType!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'pi_id / psr_id.' })
+  @RequiredUuid()
+  docId!: string;
+
+  @ApiProperty({ example: '2026-2027', description: 'The document’s acc year.' })
+  @IsString()
+  @Matches(ACC_YEAR)
+  accYear!: string;
+}
+
+// ─── GET /stickers/lines/from-doc ───────────────────────────────────────────
+
+export class StickerFromDocQueryDto extends StickerDocRefFields {
+  @ApiProperty({ example: 'ITEM_LABEL', description: 'ITEM_LABEL | PACK_LABEL | SHELF_LABEL' })
+  @IsString()
+  @MaxLength(30)
+  purposeCode!: string;
+
+  @ApiProperty({ minimum: 1, maximum: 4, example: 2 })
+  @PriceLevel()
+  priceLevel!: number;
+
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      'Only lines of items ticked "Sticker" (C9: none ticked → STICKER_DOC_NOTHING_TICKED); false loads all.',
+  })
+  @OptionalQueryBoolean()
+  stickerOnly?: boolean;
+}
+
+// ─── GET /stickers/docs/state ───────────────────────────────────────────────
+
+export class StickerDocStateQueryDto extends StickerDocRefFields {}
+
 // ─── POST /stickers/lines/resolve ───────────────────────────────────────────
 
 export class StickerResolveLineDto {
   @ApiProperty({
-    description: 'The client’s own key for the row; answered back unchanged.',
+    description:
+      'The client’s own key for the row; answered back unchanged. Up to 80 characters (a document ' +
+      'line’s key D:<srcLineId>:<lotId> is 75; review F5).',
     example: 'r7',
+    maxLength: 80,
   })
   @IsString()
-  @MaxLength(60)
+  @MaxLength(80)
   key!: string;
 
   @ApiPropertyOptional({
@@ -234,6 +285,32 @@ export class StickerPrintLineDto {
   @Type(() => Number)
   @IsInt()
   labels!: number;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'S-P2: the document line (from-doc lines[].srcLineId). Required on every line of a job with a source, ' +
+      'refused on a job without one (STICKER_DOC_LINE_NOT_ON_DOC, C6).',
+  })
+  @OptionalUuid()
+  srcLineId?: string;
+}
+
+/** S-P2: the posted document a job's lines come from (one per job, C6). */
+export class StickerSourceDto {
+  @ApiProperty({ example: 'PURCHASE_BILL', description: 'PURCHASE_BILL | SHORTAGE_RECEIPT' })
+  @IsString()
+  @MaxLength(30)
+  docType!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  docId!: string;
+
+  @ApiProperty({ example: '2026-2027' })
+  @IsString()
+  @Matches(ACC_YEAR)
+  accYear!: string;
 }
 
 export class StickerPrintDto extends StickerScopeDto {
@@ -272,6 +349,17 @@ export class StickerPrintDto extends StickerScopeDto {
   @ApiProperty({ minimum: 1, maximum: 4, example: 2 })
   @PriceLevel()
   priceLevel!: number;
+
+  @ApiPropertyOptional({
+    type: StickerSourceDto,
+    description:
+      'S-P2: the document the lines come from. Then every line names its srcLineId, its lot and the ' +
+      'item’s Def unit, and the labels per item + lot must be ≤ what is left (checked under a lock).',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => StickerSourceDto)
+  source?: StickerSourceDto;
 
   @ApiProperty({ type: [StickerPrintLineDto] })
   @IsArray()

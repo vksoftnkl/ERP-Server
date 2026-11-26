@@ -286,16 +286,18 @@ afterAll(async () => {
 });
 
 describe('A — no menu-32 right needed', () => {
-  it('Swagger lists the ten /stickers routes', () => {
+  it('Swagger lists the twelve /stickers routes (S-P2 added docs/state and lines/from-doc)', () => {
     const document = SwaggerModule.createDocument(app, new DocumentBuilder().build());
     const paths = Object.keys(document.paths).filter((path) => path.includes('/stickers/'));
     expect(paths.sort()).toEqual(
       [
+        'docs/state',
         'jobs/get',
         'jobs/print',
         'jobs/reprint',
         'jobs/resend',
         'jobs/status',
+        'lines/from-doc',
         'lines/from-items',
         'lines/resolve',
         'lots',
@@ -312,7 +314,8 @@ describe('A — no menu-32 right needed', () => {
     const provider = (res.body as { data: Array<{ code: string; fields?: unknown[] }> }).data.find(
       (p) => p.code === 'stickers.label',
     );
-    expect(provider?.fields?.length).toBe(36);
+    // 36 in S-P1; S-P2 added doc_date (plan S-P2 §7.5)
+    expect(provider?.fields?.length).toBe(37);
     keep('providers-stickers-label', provider);
   });
 

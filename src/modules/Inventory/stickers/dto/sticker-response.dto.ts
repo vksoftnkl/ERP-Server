@@ -126,6 +126,16 @@ class StickerInspectLineDto {
   @ApiPropertyOptional({ nullable: true }) costCode!: string | null;
   @ApiPropertyOptional({ nullable: true }) priceCode!: string | null;
   @ApiProperty() labels!: number;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'S-P2: the document line' })
+  srcLineId!: string | null;
+}
+
+/** S-P2: the document a job's lines come from. */
+export class StickerJobSourceDto {
+  @ApiProperty({ enum: ['PURCHASE_BILL', 'SHORTAGE_RECEIPT'] }) docType!: string;
+  @ApiProperty({ format: 'uuid' }) docId!: string;
+  @ApiProperty({ example: '2026-2027' }) accYear!: string;
+  @ApiProperty({ example: 'PUR/2026-2027/D8/01177' }) refno!: string;
 }
 
 export class StickerJobInspectDto {
@@ -134,6 +144,8 @@ export class StickerJobInspectDto {
   @ApiProperty({ example: '2026-2027' }) accYear!: string;
   @ApiProperty() labels!: number;
   @ApiProperty() pages!: number;
+  @ApiPropertyOptional({ type: StickerJobSourceDto, nullable: true, description: 'S-P2; null = manual' })
+  source!: StickerJobSourceDto | null;
   @ApiProperty({ type: [StickerInspectLineDto] }) lines!: StickerInspectLineDto[];
   @ApiProperty({ type: [String] }) warnings!: string[];
 }
@@ -155,7 +167,8 @@ export class StickerJobGetDataDto {
       'reasonCode, reasonText, ' +
       'reasonNote, status, statusOn, printerMessage, purposeCode, templateId, templateName, versionId, revNo, ' +
       'labelWidthMm, labelHeightMm, labelsAcross, labelsDown, paperCode, printerName, printerDpi, priceLevel, ' +
-      'startAt, lineCount, labelCount, pageCount, printedOn, printedBy, printedByName, deviceId, deviceCode, deviceName',
+      'startAt, lineCount, labelCount, pageCount, printedOn, printedBy, printedByName, deviceId, deviceCode, deviceName, ' +
+      'srcKind (MANUAL | DOCUMENT), srcDocType, srcDocId, srcAccYear, srcRefno (S-P2; null on a manual job)',
   })
   job!: Record<string, unknown>;
 
@@ -164,7 +177,7 @@ export class StickerJobGetDataDto {
     items: { type: 'object', additionalProperties: true },
     description:
       'lineId, lineNo, itemId, itemName, unitId, unitName, lotId, barcode, batchNo, mrp, price, mfgDate, ' +
-      'expiryDate, labels, reprintedLabels, reprintOfLineId',
+      'expiryDate, labels, reprintedLabels, reprintOfLineId, srcLineId (S-P2)',
   })
   lines!: Array<Record<string, unknown>>;
 
@@ -178,4 +191,120 @@ export class StickerJobGetDataDto {
       'FAILED one is not counted in reprintedLabels), resendOfJobId, resendOfJobNo (set on a resend)',
   })
   reprints!: Array<Record<string, unknown>>;
+}
+
+// ─── S-P2: stickers of a document ───────────────────────────────────────────
+
+export class StickerFromGrnDto {
+  @ApiProperty({ format: 'uuid' }) grnId!: string;
+  @ApiProperty({ example: '2026-2027' }) accYear!: string;
+  @ApiPropertyOptional({ nullable: true, example: 'GRN/2026-2027/D8/00041' }) refno!: string | null;
+}
+
+export class StickerDocHeadDto {
+  @ApiProperty({ enum: ['PURCHASE_BILL', 'SHORTAGE_RECEIPT'] }) docType!: string;
+  @ApiProperty({ format: 'uuid' }) docId!: string;
+  @ApiProperty({ example: '2026-2027' }) accYear!: string;
+  @ApiProperty({ example: 'PUR/2026-2027/D8/01177' }) refno!: string;
+  @ApiPropertyOptional({ nullable: true, example: '26/11/2026' }) docDate!: string | null;
+  @ApiProperty({ example: 'POSTED' }) status!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true }) supplierId!: string | null;
+  @ApiPropertyOptional({ nullable: true }) supplierName!: string | null;
+  @ApiPropertyOptional({
+    enum: ['DIRECT', 'GRN', 'SISTER_SALE'],
+    nullable: true,
+    description: 'null on a shortage receipt',
+  })
+  sourceKind!: string | null;
+  @ApiProperty({ type: [StickerFromGrnDto] }) fromGrns!: StickerFromGrnDto[];
+  @ApiProperty() linesAll!: number;
+  @ApiProperty() linesTicked!: number;
+}
+
+export class StickerDocLineDto extends StickerLineDto {
+  @ApiProperty({ enum: ['PURCHASE_BILL', 'SHORTAGE_RECEIPT'] }) srcDocType!: string;
+  @ApiProperty({ format: 'uuid' }) srcDocId!: string;
+  @ApiProperty({ example: '2026-2027' }) srcAccYear!: string;
+  @ApiProperty({ example: 'PUR/2026-2027/D8/01177' }) srcRefno!: string;
+  @ApiProperty({ format: 'uuid', description: 'pii_id / psri_id (the lowest line number when merged)' })
+  srcLineId!: string;
+  @ApiProperty({ example: 2 }) srcLineNo!: number;
+  @ApiProperty({ type: [Number], example: [1, 7] }) srcLineNos!: number[];
+  @ApiPropertyOptional({ nullable: true, description: 'the GRN of a line made from one' })
+  srcGrnRefno!: string | null;
+  @ApiProperty({ example: 60 }) needed!: number;
+  @ApiProperty({
+    example: 40,
+    description: 'min(PRINT jobs not FAILED, needed), a reprint’s copies left out (F2)',
+  })
+  printed!: number;
+  @ApiProperty({ example: 0, description: 'from a cancelled bill of the same GRN lines (Q20)' })
+  carried!: number;
+  @ApiProperty({ example: 20 }) left!: number;
+  @ApiProperty({
+    example: 0,
+    description:
+      'REPRINT jobs and resends of a failed reprint, not FAILED (never counted in printed, F2)',
+  })
+  reprinted!: number;
+}
+
+class StickerDocSkippedDto {
+  @ApiProperty({
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+    description: 'stickerOnly: lines whose item is not ticked Sticker: lineNo, itemName',
+  })
+  notTicked!: Array<{ lineNo: number; itemName: string | null }>;
+}
+
+export class StickerFromDocDataDto {
+  @ApiProperty({ type: StickerDocHeadDto }) doc!: StickerDocHeadDto;
+  @ApiProperty({ type: [StickerDocLineDto] }) lines!: StickerDocLineDto[];
+  @ApiProperty({ type: StickerDocSkippedDto }) skipped!: StickerDocSkippedDto;
+  @ApiProperty({ type: StickerAssignmentDto }) assignment!: StickerAssignmentDto;
+}
+
+class StickerDocJobDto {
+  @ApiProperty({ format: 'uuid' }) jobId!: string;
+  @ApiProperty({ example: 'D8-000127' }) jobNo!: string;
+  @ApiProperty({ example: '2026-2027' }) accYear!: string;
+  @ApiProperty() labels!: number;
+  @ApiProperty({ enum: ['PRINT', 'REPRINT'] }) kind!: string;
+  @ApiProperty({
+    description:
+      'F2: true = the job prints labels again (a REPRINT, or a resend of a failed reprint, which is kind ' +
+      'PRINT); it never counts in printed. false = a real print or a resend of one.',
+  })
+  reprint!: boolean;
+  @ApiProperty({ enum: ['SENT', 'PRINTED', 'FAILED'] }) status!: string;
+  @ApiPropertyOptional({ nullable: true, example: '26/11/2026 10:30 AM' }) printedOn!: string | null;
+}
+
+class StickerCarriedFromDto {
+  @ApiProperty({ format: 'uuid' }) docId!: string;
+  @ApiProperty({ example: '2026-2027' }) accYear!: string;
+  @ApiPropertyOptional({ nullable: true }) refno!: string | null;
+  @ApiProperty() labels!: number;
+}
+
+export class StickerDocStateDataDto {
+  @ApiProperty({ enum: ['PURCHASE_BILL', 'SHORTAGE_RECEIPT'] }) docType!: string;
+  @ApiProperty({ format: 'uuid' }) docId!: string;
+  @ApiProperty({ example: '2026-2027' }) accYear!: string;
+  @ApiProperty() refno!: string;
+  @ApiProperty({ example: 'POSTED' }) status!: string;
+  @ApiPropertyOptional({ nullable: true }) sourceKind!: string | null;
+  @ApiProperty({ type: [StickerFromGrnDto] }) fromGrns!: StickerFromGrnDto[];
+  @ApiProperty() linesAll!: number;
+  @ApiProperty() linesTicked!: number;
+  @ApiProperty() needed!: number;
+  @ApiProperty() printed!: number;
+  @ApiProperty() carried!: number;
+  @ApiProperty() left!: number;
+  @ApiProperty({ enum: ['NONE', 'NOT', 'PART', 'DONE'] }) state!: string;
+  @ApiProperty({ type: [StickerDocJobDto] }) jobs!: StickerDocJobDto[];
+  @ApiProperty({ type: [StickerCarriedFromDto] }) carriedFrom!: StickerCarriedFromDto[];
+  @ApiProperty({ enum: ['ASK', 'ALWAYS', 'NEVER'], description: 'this counter’s "Stickers after post"' })
+  afterPost!: string;
 }

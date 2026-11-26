@@ -42,8 +42,9 @@ import {
  * Every route that shows or prints a sticker line goes through `buildLines`:
  * Add items (from-items), scan / type (resolve), the preview, and the job
  * print, which re-resolves every line itself and never stores a figure the
- * client sent (decision 26). S-P2 (stickers from a GRN / purchase bill) calls
- * it with the document's lines. For one line it decides:
+ * client sent (decision 26). S-P2 (stickers of a purchase bill / shortage
+ * receipt, StickerDocSourceService) calls it with each document line's Def
+ * unit and lot. For one line it decides:
  *
  *   - the unit: the scanned EAN's unit, else the one named, else the item's
  *     Def unit (S5 / SM11);
@@ -81,6 +82,11 @@ export interface StickerScope {
   assignment: StickerAssignment;
   /** One design for every line (a job, the preview): designSource JOB. */
   jobTemplateId?: string | null;
+  /**
+   * S-P2 F4: a job from a document — its supplier's Short name, the label's
+   * supplier_code for a line whose lot has no supplier (null = blank).
+   */
+  docSupplierCode?: string | null;
 }
 
 export interface StickerLineInput {
@@ -127,6 +133,10 @@ interface LotRow {
   expiry_date: string | null;
   first_inward_date: string | null;
   cost_rate: Prisma.Decimal | null;
+  /** S-P2 C8: the lot's supplier (slt_supplier_id), null when the lot has none. */
+  supplier_id: string | null;
+  /** S-P2 C8: purchase.suppliers.sup_short of slt_supplier_id (label field supplier_code). */
+  supplier_code: string | null;
   /** Base units; SALEABLE at this branch (0 for a lot named but not stocked). */
   on_hand: Prisma.Decimal;
 }
@@ -731,6 +741,11 @@ export class StickerLinesService {
       line.batchNo = lot.batch_no;
       line.mfgDate = lot.mfg_date;
       line.expiryDate = lot.expiry_date;
+      // C8 / F4: the lot's supplier; a lot with none takes the document's (a
+      // job from a document). A blank Short name stays blank (user 2026-11-26).
+      built.facts.supplierCode = lot.supplier_id
+        ? lot.supplier_code
+        : (scope.docSupplierCode ?? null);
       const detail = lot.batch_no
         ? ctx.batchDetails.get(`${item.item_id}|${lot.batch_no}`)
         : undefined;
@@ -1036,7 +1051,10 @@ export class StickerLinesService {
              l.slt_id AS lot_id, l.slt_item_id AS item_id, l.slt_company_id AS company_id,
              NULLIF(btrim(l.slt_batch_no), '') AS batch_no, l.slt_mrp AS mrp, l.slt_sale_price AS sale_price,
              l.slt_mfg_date::text AS mfg_date, l.slt_expiry_date::text AS expiry_date,
-             l.slt_first_inward_date::text AS first_inward_date, l.slt_cost_rate AS cost_rate`;
+             l.slt_first_inward_date::text AS first_inward_date, l.slt_cost_rate AS cost_rate,
+             l.slt_supplier_id AS supplier_id,
+             (SELECT NULLIF(btrim(sp.sup_short), '') FROM purchase.suppliers sp
+               WHERE sp.sup_id = l.slt_supplier_id) AS supplier_code`;
 
   /** Lots with SALEABLE stock > 0 at this branch (any godown), newest first (§4.6). */
   private async loadStockedLots(
@@ -1110,6 +1128,8 @@ export class StickerLinesService {
       expiry_date: isoDay(row.expiry_date as string | null),
       first_inward_date: isoDay(row.first_inward_date as string | null),
       cost_rate: dec(row.cost_rate),
+      supplier_id: (row.supplier_id as string | null | undefined) ?? null,
+      supplier_code: (row.supplier_code as string | null | undefined) ?? null,
       on_hand: dec(row.on_hand) ?? new Prisma.Decimal(0),
     };
   }

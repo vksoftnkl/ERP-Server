@@ -141,11 +141,6 @@ export class GrnPostDto extends GrnRefDto {
   @ApiPropertyOptional({ description: 'Go past PUR_SHELF_LIFE (REFUSE mode) — Override right on menu 196; logged.' }) @IsOptional() @IsBoolean() overrideWarnings?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(250) overrideReason?: string;
 }
-export class LabelsFromDocDto {
-  @ApiProperty({ enum: ['GRN', 'PURCHASE_BILL'] }) @IsIn(['GRN', 'PURCHASE_BILL']) docType!: string;
-  @ApiProperty() @IsUUID() docId!: string;
-  @ApiProperty() @IsString() @MaxLength(9) accYear!: string;
-}
 export class GrnCancelDto extends GrnRefDto {
   @ApiProperty() @IsString() @MaxLength(250) reason!: string;
 }
@@ -245,7 +240,7 @@ export class PurchaseGrnService {
         receivedQty: l.receivedQty, freeQty: l.freeQty ?? 0, rate: l.rate, gstPct: 0, toBaseFactor: units.get(l.uomId)!.iuc_to_base_factor, weight: l.weight ?? 0 })),
     });
 
-    // the strip + Check column (ENT-15 shelf life, short vs challan, damage reason, serials, labels)
+    // the strip + Check column (ENT-15 shelf life, short vs challan, damage reason, serials)
     const facts: GrnLineFact[] = dto.lines.map((l, i) => {
       const rows = l.allocs?.length
         ? l.allocs.map((a) => ({ bucket: a.bucket ?? 'SALEABLE', qty: D(a.qty).plus(D(a.freeQty)), mfgDate: dateOf(a.mfgDate), expiryDate: dateOf(a.expiryDate), serialNo: a.serialNo ?? null }))
@@ -780,55 +775,6 @@ export class PurchaseGrnService {
     return [...shelf, ...notes];
   }
 
-  /**
-   * ENT-21 — the labels of a posted GRN or bill: one row per SALEABLE allocation row (damaged
-   * pieces get none), copies = received + free. Barcode = the batch (textile: the piece label scans
-   * on the sale bill), else the item's EAN for the line's unit. Price = the row's sale price, else
-   * the line's Sell A, else the current price row. A bill from a GRN prints its GRN's rows.
-   */
-  async labels(q: LabelsFromDocDto) {
-    const rows = await this.prisma.$queryRaw<Record<string, unknown>[]>`
-      WITH r AS (
-        SELECT a.pia_id, a.pia_row_no, a.pia_doc_type, a.pia_line_id, a.pia_company_id, a.pia_batch_no, a.pia_mrp, a.pia_sale_price,
-               a.pia_size_id, a.pia_colour_id, a.pia_model, a.pia_expiry_date, a.pia_qty + a.pia_free_qty AS pieces
-          FROM purchase.pur_item_alloc a
-         WHERE NOT a.pia_is_deleted AND a.pia_bucket = 'SALEABLE' AND a.pia_acc_year = ${q.accYear}::bpchar
-           AND ((a.pia_doc_type = ${q.docType} AND a.pia_doc_id = ${q.docId}::uuid)
-             OR (${q.docType} = 'PURCHASE_BILL' AND a.pia_doc_type = 'GRN' AND a.pia_line_id IN (
-                   SELECT pii_src_item_id FROM purchase.pur_invoice_item
-                    WHERE pii_pi_id = ${q.docId}::uuid AND pii_src_doc_type = 'GRN' AND NOT pii_is_deleted))))
-      SELECT r.pia_id AS "rowId", COALESCE(gri.gri_line_no, pii.pii_line_no) AS "lineNo", r.pia_row_no AS "rowNo",
-             im.item_id AS "itemId", im.item_name_en AS "itemName", u.unit_name AS "unitName",
-             COALESCE(NULLIF(r.pia_batch_no, ''), e.ean_code) AS "barcode", r.pia_batch_no AS "batchNo", e.ean_code AS "ean",
-             COALESCE(r.pia_mrp, gri.gri_mrp, pii.pii_mrp) AS "mrp",
-             COALESCE(r.pia_sale_price, gri.gri_sell_a, pii.pii_sell_a, p.ipm_sales_price_a) AS "price",
-             sz.isz_name AS "size", cl.icl_name AS "colour", r.pia_model AS "model", r.pia_expiry_date AS "expiryDate",
-             r.pieces AS "qty", c.comp_name AS "companyName"
-        FROM r
-        LEFT JOIN purchase.pur_grn_item gri ON r.pia_doc_type = 'GRN' AND gri.gri_id = r.pia_line_id
-        LEFT JOIN purchase.pur_invoice_item pii ON r.pia_doc_type = 'PURCHASE_BILL' AND pii.pii_id = r.pia_line_id
-        JOIN inventory.item_master im ON im.item_id = COALESCE(gri.gri_item_id, pii.pii_item_id)
-        LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = COALESCE(gri.gri_uom_id, pii.pii_uom_id)
-        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
-        LEFT JOIN inventory.item_size_master sz ON sz.isz_id = r.pia_size_id
-        LEFT JOIN inventory.item_colour_master cl ON cl.icl_id = r.pia_colour_id
-        LEFT JOIN public.companys c ON c.comp_id = r.pia_company_id
-        LEFT JOIN LATERAL (SELECT ean_code FROM inventory.item_ean_codes
-                            WHERE ean_item_id = im.item_id AND ean_uc_unit_id = iuc.iuc_id AND ean_is_active AND NOT ean_is_deleted
-                            ORDER BY ean_is_default DESC, ean_sl_no LIMIT 1) e ON true
-        LEFT JOIN LATERAL (SELECT ipm_sales_price_a FROM inventory.item_price_master
-                            WHERE ipm_item_id = im.item_id AND ipm_uc_unit_id = iuc.iuc_id AND ipm_is_active AND NOT ipm_is_deleted
-                            ORDER BY (ipm_branch_id IS NOT NULL) DESC, ipm_effective_from DESC NULLS LAST LIMIT 1) p ON true
-       ORDER BY 2, 3`;
-    if (!rows.length) {
-      const [doc] = q.docType === 'GRN'
-        ? await this.prisma.$queryRaw<{ s: string }[]>`SELECT grn_status AS s FROM purchase.pur_grn WHERE grn_id = ${q.docId}::uuid AND grn_acc_year = ${q.accYear}::bpchar`
-        : await this.prisma.$queryRaw<{ s: string }[]>`SELECT pi_status AS s FROM purchase.pur_invoice WHERE pi_id = ${q.docId}::uuid AND pi_acc_year = ${q.accYear}::bpchar`;
-      if (!doc) purNotFound(`${q.docType} ${q.docId} not found`);
-    }
-    return jsonSafe(rows.map((r) => ({ ...r, copies: Math.max(1, Math.ceil(Number(r.qty))), textile: !!(r.size || r.colour || r.model) })));
-  }
-
   /** The line facts of a saved GRN (for the strip / Check column on /get and under an override). */
   private async factsOfSaved(db: Prisma.TransactionClient | PrismaService, _companyId: string, _branchId: string,
                              lines: { griId: string; griLineNo: number; griItemId: string; griChallanQty: Prisma.Decimal; griReceivedQty: Prisma.Decimal; griDamagedQty: Prisma.Decimal;
@@ -960,7 +906,7 @@ export class PurchaseGrnController {
     return { success: true, message: `GRN ${data.header.grnRefno} ${cur?.s === 'POSTED' ? 'amended' : dto.header.post ? 'posted' : 'saved as draft'}`, data };
   }
   @Post('validate') @Version(API_VERSION)
-  @ApiOperation({ summary: 'The server\'s figures for a GRN being keyed — line value / off-bill share / excess, the charges, the six totals, the WARN / REFUSE strip (warnings[] / refusals[]: code, level, lineNo, field, message, needsRight) and lines[].check (chips, shelf life %, labels, serials). Writes nothing.' })
+  @ApiOperation({ summary: 'The server\'s figures for a GRN being keyed — line value / off-bill share / excess, the charges, the six totals, the WARN / REFUSE strip (warnings[] / refusals[]: code, level, lineNo, field, message, needsRight) and lines[].check (chips, shelf life %, serials). Writes nothing.' })
   async validate(@Body() dto: SaveGrnDto) {
     await this.right('view', 'check a GRN');
     return { success: true, message: 'GRN checked', data: await this.service.validate(dto) };
@@ -982,18 +928,5 @@ export class PurchaseGrnController {
     await this.right('cancel', 'cancel a GRN');
     const data = await this.service.cancel(dto);
     return { success: true, message: `GRN ${data.header.grnRefno} cancelled`, data };
-  }
-}
-
-@ApiTags('Purchase — Labels')
-@ApiBearerAuth()
-@Controller('purchase/labels')
-export class PurchaseLabelsController {
-  constructor(private readonly service: PurchaseGrnService, private readonly prisma: PrismaService, private readonly ctx: RequestContextService) {}
-  @Get('from-doc') @Version(API_VERSION)
-  @ApiOperation({ summary: 'ENT-21: the labels of a GRN or purchase bill — one row per saleable allocation row, copies = received + free (damaged get none).' })
-  async fromDoc(@Query() q: LabelsFromDocDto) {
-    await assertMenuRight(this.prisma, { userId: this.ctx.getUserId(), menuId: q.docType === 'GRN' ? GRN_MENU_ID : 24, right: 'view', codePrefix: 'LBL', action: 'print purchase labels' });
-    return { success: true, message: 'Labels', data: await this.service.labels(q) };
   }
 }

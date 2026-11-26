@@ -16,6 +16,18 @@ import { STICKER_ERROR, STOCK_DEVICE_NOT_FOUND } from './types/sticker-error-cod
 export interface StickerErrorDetail extends ModuleErrorDetail {
   rule?: string;
   line?: number;
+  /** The wording row's `{name}` values (S-P2: doc, status, item, printed, needed, left). */
+  params?: Record<string, string | number>;
+  /** Figures for the client (S-P2 STICKER_DOC_OVER_LEFT: itemId, lotId, needed, printed, carried, left). */
+  meta?: Record<string, unknown>;
+}
+
+/** What a refusal may carry besides its code, words and field. */
+export interface StickerRefusalExtra {
+  rule?: string;
+  line?: number;
+  params?: Record<string, string | number>;
+  meta?: Record<string, unknown>;
 }
 
 const FORBIDDEN = new Set<string>([
@@ -29,6 +41,7 @@ const NOT_FOUND = new Set<string>([
   STICKER_ERROR.DESIGN_NOT_FOUND,
   STICKER_ERROR.ITEM_NOT_FOUND,
   STICKER_ERROR.JOB_NOT_FOUND,
+  STICKER_ERROR.DOC_NOT_FOUND,
 ]);
 
 const CONFLICT = new Set<string>([STICKER_ERROR.JOB_STATUS_SET, STICKER_ERROR.ALREADY_RESENT]);
@@ -47,7 +60,7 @@ export class StickerRefusal {
     readonly code: string,
     readonly message: string,
     readonly field: string,
-    readonly extra: { rule?: string; line?: number } = {},
+    readonly extra: StickerRefusalExtra = {},
   ) {}
 
   /** As the line object's `problem` key. */
@@ -61,7 +74,7 @@ export function refuseSticker(
   code: string,
   message: string,
   field: string,
-  extra: { rule?: string; line?: number } = {},
+  extra: StickerRefusalExtra = {},
 ): never {
   const detail: StickerErrorDetail = {
     field,
@@ -69,6 +82,8 @@ export function refuseSticker(
     message,
     ...(extra.rule ? { rule: extra.rule } : {}),
     ...(extra.line ? { line: extra.line } : {}),
+    ...(extra.params ? { params: extra.params } : {}),
+    ...(extra.meta ? { meta: extra.meta } : {}),
   };
   const body = buildErrorResponse<StickerErrorDetail>(message, [detail]);
   switch (stickerStatusOf(code)) {
@@ -84,7 +99,7 @@ export function refuseSticker(
 }
 
 /** Throw a kept refusal (a line problem turned into a refusal). */
-export function throwRefusal(refusal: StickerRefusal, extra: { line?: number } = {}): never {
+export function throwRefusal(refusal: StickerRefusal, extra: StickerRefusalExtra = {}): never {
   return refuseSticker(refusal.code, refusal.message, refusal.field, {
     ...refusal.extra,
     ...extra,

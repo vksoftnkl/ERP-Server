@@ -4,7 +4,8 @@ import type { PurIssue } from '../invoice/purchase-invoice-checks';
 
 /**
  * GRN — the WARN / REFUSE strip and the per-line Check column (purchase_grn_ui_mockup.png: chips OK / SHORT 2 /
- * 2 DAMAGED / SHELF LIFE / 5/5 SN, columns Shelf life % and Labels), the same for /validate, /save and /get.
+ * 2 DAMAGED / SHELF LIFE / 5/5 SN, column Shelf life %), the same for /validate, /save and /get. The Labels
+ * count went with the GRN's labels (sticker printing S-P2: stickers come from the bill, not the GRN).
  * Nothing here writes. Issue shape = the invoice's (purchase-invoice-checks.ts PurIssue).
  */
 export interface GrnLineFact {
@@ -33,8 +34,6 @@ export interface GrnLineCheck {
   /** % of the shelf life left at receipt (the worst saleable row); null = no expiry / no span to judge by */
   shelfLifePct: number | null;
   minShelfLifePct: number | null;
-  /** labels to print = saleable pieces (received + free), whole */
-  labels: number;
   serials: { have: number; need: string } | null;
   chips: GrnChip[];
 }
@@ -120,11 +119,10 @@ export function judgeGrnLines(
       }
     }
     if (!chips.some((c) => c.code !== 'SERIALS') && (!serials || D(serials.have).equals(D(serials.need)))) chips.unshift({ code: 'OK', text: 'OK' });
-    const labels = f.rows.filter((r) => r.bucket === 'SALEABLE').reduce((s, r) => s.plus(r.qty), ZERO);
     checks.set(f.lineNo, {
       shortQty: (short.isNegative() ? ZERO : short).toString(), damagedQty: f.damaged.toString(), damageReasonMissing: noReason,
       excessQty: f.excess.toString(), excessAction: f.excessAction, shelfLifePct: sl?.pct ?? null, minShelfLifePct: sl?.min ?? null,
-      labels: Math.ceil(Number(labels)), serials, chips,
+      serials, chips,
     });
   }
   return { issues, checks };

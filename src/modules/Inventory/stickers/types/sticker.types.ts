@@ -73,6 +73,8 @@ export interface StickerLineFacts {
   priceLevelShort: string | null;
   /** The label unit counts in decimals (kg, litre): "stock on hand" gives 1 label. */
   unitHasDecimals: boolean;
+  /** S-P2 C8: the lot's supplier's Short name (`supplier_code`); absent / null = blank. */
+  supplierCode?: string | null;
 }
 
 export interface BuiltStickerLine {
@@ -110,6 +112,16 @@ export interface FrozenStickerLine {
   priceCode: string | null;
   labels: number;
   reprintOfLineId: string | null;
+  /** S-P2: the document line (pii_id / psri_id) of a DOCUMENT job; absent / null otherwise. */
+  srcLineId?: string | null;
+}
+
+/** S-P2: the document a job's lines come from (frozen on label_job.lbj_src_*). */
+export interface StickerJobSource {
+  docType: string;
+  docId: string;
+  accYear: string;
+  refno: string;
 }
 
 /** `inspect: true` on print / reprint / resend (plan §7.2). */
@@ -119,6 +131,8 @@ export interface StickerJobInspect {
   accYear: string;
   labels: number;
   pages: number;
+  /** S-P2: the job's document, null for a MANUAL job. */
+  source: StickerJobSource | null;
   lines: Array<{
     lineId: string;
     lineNo: number;
@@ -134,6 +148,8 @@ export interface StickerJobInspect {
     costCode: string | null;
     priceCode: string | null;
     labels: number;
+    /** S-P2: the document line, null on a MANUAL job. */
+    srcLineId: string | null;
   }>;
   warnings: string[];
 }

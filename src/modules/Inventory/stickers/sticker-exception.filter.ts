@@ -15,7 +15,7 @@ export class StickerExceptionFilter extends InventoryExceptionFilter<
 > {
   constructor() {
     super(
-      /\b((?:company|branch|purpose|price|template|printer|item|unit|lot|job|reason|line|labels|start|status|acc|code|key)[A-Za-z0-9]*|lines(?:\.[A-Za-z0-9_]+)+)\b/,
+      /\b((?:company|branch|purpose|price|template|printer|item|unit|lot|job|reason|line|labels|start|status|acc|code|key|doc|sticker|src)[A-Za-z0-9]*|(?:lines|source)(?:\.[A-Za-z0-9_]+)+)\b/,
     );
   }
 }

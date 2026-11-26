@@ -29,6 +29,8 @@ import { API_VERSION } from '../../../common/constants/api-version';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import type { LabelRenderOutcome } from '../../settings/print-render/print-render.service';
 import {
+  StickerDocStateQueryDto,
+  StickerFromDocQueryDto,
   StickerFromItemsQueryDto,
   StickerJobGetQueryDto,
   StickerJobStatusDto,
@@ -41,6 +43,8 @@ import {
   StickerTestPrintDto,
 } from './dto/sticker-request.dto';
 import {
+  StickerDocStateDataDto,
+  StickerFromDocDataDto,
   StickerFromItemsDataDto,
   StickerJobGetDataDto,
   StickerJobInspectDto,
@@ -48,6 +52,11 @@ import {
   StickerLotsDataDto,
   StickerResolveDataDto,
 } from './dto/sticker-response.dto';
+import {
+  StickerDocSourceService,
+  StickerDocStateAnswer,
+  StickerFromDocAnswer,
+} from './sticker-doc-source.service';
 import { StickerExceptionFilter } from './sticker-exception.filter';
 import { StickerJobsService, StickerPdfAnswer } from './sticker-jobs.service';
 import { StickerLinesService } from './sticker-lines.service';
@@ -94,6 +103,8 @@ const JOB_PDF_NOTE =
   description: 'STICKER_RIGHT_VIEW / STICKER_RIGHT_PRINT',
 })
 @ApiExtraModels(
+  StickerFromDocDataDto,
+  StickerDocStateDataDto,
   StickerFromItemsDataDto,
   StickerResolveDataDto,
   StickerLotsDataDto,
@@ -107,6 +118,7 @@ export class StickersController {
   constructor(
     private readonly lines: StickerLinesService,
     private readonly jobs: StickerJobsService,
+    private readonly docs: StickerDocSourceService,
   ) {}
 
   @Get('lines/from-items')
@@ -129,6 +141,56 @@ export class StickersController {
   async fromItems(@Query() q: StickerFromItemsQueryDto): Promise<Ok<StickerFromItemsDataDto>> {
     const data = await this.jobs.fromItems(q);
     return { success: true, message: `${data.lines.length} line(s)`, data };
+  }
+
+  @Get('lines/from-doc')
+  @Version(API_VERSION)
+  @CacheTTL(0)
+  @ApiOperation({
+    summary:
+      'Load from a document · Ctrl+O: the sticker lines of a posted purchase bill / shortage receipt',
+    description:
+      'S-P2 §7.1. One line per item + lot of the document (two lines of one item + lot merged, srcLineNos), ' +
+      'in the item’s Def unit with the row’s lot: needed (received + free, rounded down, min 1; a decimal ' +
+      'unit 1), printed (this document’s PRINT jobs, not FAILED), carried (a cancelled bill of the same GRN ' +
+      'lines), left; labels = left (0 allowed). A bill made from a GRN reads its GRN rows. stickerOnly ' +
+      '(default true) = items ticked Sticker; the others are counted in skipped.notTicked. The same counts as ' +
+      'grid 224.',
+  })
+  @ApiOkResponse(ok('doc, lines, skipped, assignment', StickerFromDocDataDto))
+  @ApiNotFoundResponse({ type: HttpErrorResponseDto, description: 'STICKER_DOC_NOT_FOUND' })
+  @ApiUnprocessableEntityResponse({
+    type: HttpErrorResponseDto,
+    description:
+      'STICKER_BRANCH_NOT_IN_COMPANY, STICKER_PURPOSE_INVALID, STICKER_DOC_TYPE_INVALID, ' +
+      'STICKER_DOC_OTHER_BRANCH, STICKER_DOC_NOT_POSTED, STICKER_DOC_NOTHING_TICKED',
+  })
+  async fromDoc(@Query() q: StickerFromDocQueryDto): Promise<Ok<StickerFromDocAnswer>> {
+    const data = await this.docs.fromDoc(q);
+    return { success: true, message: `${data.lines.length} line(s) of ${data.doc.refno}`, data };
+  }
+
+  @Get('docs/state')
+  @Version(API_VERSION)
+  @CacheTTL(0)
+  @ApiOperation({
+    summary: 'A document’s sticker state: the pill, the question after Post, the cancel sentence',
+    description:
+      'S-P2 §7.2. Any status (C14). needed / printed / carried / left over the items ticked Sticker, state ' +
+      'NONE | NOT | PART | DONE (as grid 224), the document’s jobs, the cancelled bills it carries from, and ' +
+      'afterPost = "Stickers after post" for this counter (purchase.labels_after_post with the session’s ' +
+      'device; ASK when unset).',
+  })
+  @ApiOkResponse(ok('the document’s sticker state', StickerDocStateDataDto))
+  @ApiNotFoundResponse({ type: HttpErrorResponseDto, description: 'STICKER_DOC_NOT_FOUND' })
+  @ApiUnprocessableEntityResponse({
+    type: HttpErrorResponseDto,
+    description:
+      'STICKER_BRANCH_NOT_IN_COMPANY, STICKER_DOC_TYPE_INVALID, STICKER_DOC_OTHER_BRANCH',
+  })
+  async docState(@Query() q: StickerDocStateQueryDto): Promise<Ok<StickerDocStateAnswer>> {
+    const data = await this.docs.state(q);
+    return { success: true, message: `${data.refno}: ${data.state}`, data };
   }
 
   @Post('lines/resolve')
@@ -208,6 +270,9 @@ export class StickersController {
       'Order: right → branch → purpose → design (live, published, label sheet, the job’s purpose) → ' +
       'printer → counter → every line re-resolved (item / unit / lot, lot required, barcode when the design ' +
       'prints one, labels 1-9,999) → ≤ 5,000 labels → number + render + job + SENT step in one transaction. ' +
+      'S-P2: with `source` (one posted document) every line names its srcLineId, its lot and the item’s Def ' +
+      'unit, and inside the transaction, under a lock on the document, the labels per item + lot must be ≤ ' +
+      'left; the job keeps the source. Without `source` no line may name a srcLineId. ' +
       JOB_PDF_NOTE,
   })
   @ApiProduces('application/pdf', 'application/json')
@@ -223,7 +288,10 @@ export class StickersController {
       'STICKER_BRANCH_NOT_IN_COMPANY, STICKER_PURPOSE_INVALID, STICKER_NO_DESIGN, STICKER_DESIGN_NOT_PUBLISHED, ' +
       'STICKER_DESIGN_NOT_LABEL (rule=PURPOSE), STICKER_NO_PRINTER, STICKER_NOTHING_TO_PRINT, STICKER_TOO_MANY_ITEMS, ' +
       'STICKER_UNIT_NOT_OF_ITEM, STICKER_LOT_NOT_OF_ITEM, STICKER_LOT_REQUIRED, STICKER_LINE_NO_BARCODE, ' +
-      'STICKER_LABELS_INVALID, STICKER_TOO_MANY_LABELS, STICKER_BARCODE_TOO_LONG, STICKER_BATCH_TOO_LONG',
+      'STICKER_LABELS_INVALID, STICKER_TOO_MANY_LABELS, STICKER_BARCODE_TOO_LONG, STICKER_BATCH_TOO_LONG; ' +
+      'S-P2: STICKER_DOC_TYPE_INVALID, STICKER_DOC_OTHER_BRANCH, STICKER_DOC_NOT_POSTED, ' +
+      'STICKER_DOC_LINE_NOT_ON_DOC (rule=UNIT), STICKER_DOC_OVER_LEFT (rule=LEFT; meta itemId, lotId, needed, ' +
+      'printed, carried, left). 404 STICKER_DOC_NOT_FOUND.',
   })
   async print(
     @Body() body: StickerPrintDto,
@@ -318,7 +386,9 @@ export class StickersController {
   @CacheTTL(0)
   @ApiOperation({
     summary: 'One job: head, frozen lines with Reprinted, and its reprints',
-    description: 'The Printed jobs list itself is grid 223.',
+    description:
+      'The Printed jobs list itself is grid 223. S-P2: job.srcKind (MANUAL | DOCUMENT), srcDocType, ' +
+      'srcDocId, srcAccYear, srcRefno; lines[].srcLineId.',
   })
   @ApiOkResponse(ok('job, lines, reprints', StickerJobGetDataDto))
   @ApiNotFoundResponse({ type: HttpErrorResponseDto, description: 'STICKER_JOB_NOT_FOUND' })

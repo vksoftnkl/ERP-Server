@@ -27,7 +27,8 @@ import {
   StickerLinesService,
   StickerScope,
 } from './sticker-lines.service';
-import { LabelShop, labelRow } from './sticker-label-row';
+import { StickerDocSourceService } from './sticker-doc-source.service';
+import { LabelRowDoc, LabelShop, labelRow } from './sticker-label-row';
 import { refuseSticker, throwRefusal } from './sticker.errors';
 import {
   LabelsMode,
@@ -37,6 +38,7 @@ import {
   STICKER_MAX_LINES,
   asReprintReason,
   dayToDate,
+  dmyText,
   isoDay,
   istDateTimeText,
   jobRefno,
@@ -56,6 +58,7 @@ import {
   FrozenStickerLine,
   StickerAssignment,
   StickerJobInspect,
+  StickerJobSource,
   StickerLine,
 } from './types/sticker.types';
 
@@ -75,6 +78,12 @@ import {
  * txn_status_log records. A reprint (with a reason) and a resend of a failed
  * job are NEW jobs that copy the frozen figures and the frozen design revision.
  * Sticker jobs write no print_log (decision 25) and no audit revision (§5).
+ *
+ * S-P2: a job may come from ONE posted document (`source`, plan S-P2 §4.4):
+ * its lines are that document's (srcLineId, its lot, the Def unit), the
+ * labels per item + lot stay within what is left — re-counted inside the
+ * job's transaction under a per-document lock — and the job keeps the source
+ * (lbj_src_*, lbjl_src_line_id). A reprint / resend copies its original's.
  */
 
 export interface StickerPdfAnswer {
@@ -111,6 +120,12 @@ interface JobRow {
   lbj_printer_message: string | null;
   lbj_printed_on: Date;
   lbj_printed_by: string;
+  /** S-P2: MANUAL | DOCUMENT and the document (all null on a MANUAL job). */
+  lbj_src_kind?: string | null;
+  lbj_src_doc_type?: string | null;
+  lbj_src_doc_id?: string | null;
+  lbj_src_acc_year?: string | null;
+  lbj_src_refno?: string | null;
 }
 
 interface JobLineRow {
@@ -129,6 +144,12 @@ interface JobLineRow {
   lbjl_price_code: string | null;
   lbjl_labels: number;
   lbjl_reprint_of_line_id: string | null;
+  /** S-P2: the document line of a DOCUMENT job. */
+  lbjl_src_line_id?: string | null;
+  /** S-P2 C8: the frozen lot's supplier (null = the lot has none, F4 falls back to the document's). */
+  lot_supplier_id?: string | null;
+  /** S-P2 C8: the frozen lot's supplier's Short name (label field supplier_code). */
+  supplier_code?: string | null;
   item_name: string | null;
   item_name_ta: string | null;
   item_code: string | null;
@@ -159,6 +180,8 @@ interface JobDraft {
   resendOf: { id: string; accYear: string } | null;
   reasonCode: string | null;
   reasonNote: string | null;
+  /** S-P2: the document the job's lines come from; absent / null = MANUAL. */
+  source?: StickerJobSource | null;
   lines: FrozenStickerLine[];
   /** The label row of each line, given the job's number and time. */
   rowsFor: (job: { jobNo: string; printedOn: Date }) => Record<string, unknown>[];
@@ -209,6 +232,13 @@ export class StickerJobsService {
     private readonly requestContext: RequestContextService,
     private readonly lines: StickerLinesService,
     private readonly render: PrintRenderService,
+    // Injected by Nest; the default serves the S-P1 specs, which build this
+    // service with the first four only.
+    private readonly docs: StickerDocSourceService = new StickerDocSourceService(
+      prisma,
+      requestContext,
+      lines,
+    ),
   ) {}
 
   // ═══ Lines routes ═════════════════════════════════════════════════════════
@@ -362,7 +392,14 @@ export class StickerJobsService {
     printerDpi?: number | null;
     startAt?: number | null;
     priceLevel: number;
-    lines: Array<{ itemId: string; unitId: string; lotId?: string | null; labels: number }>;
+    lines: Array<{
+      itemId: string;
+      unitId: string;
+      lotId?: string | null;
+      labels: number;
+      srcLineId?: string | null;
+    }>;
+    source?: { docType: string; docId: string; accYear: string } | null;
   }): Promise<StickerPdfAnswer> {
     await this.lines.assertRight('print');
     await this.lines.assertBranchInCompany(body.companyId, body.branchId);
@@ -384,9 +421,36 @@ export class StickerJobsService {
       );
     }
 
+    // S-P2 §7.3: a source → the document (type, found, branch, posted) and its
+    // lines (srcLineId, item, lot, Def unit), before the lines are re-resolved,
+    // so a document line's own fault is named before what follows from it;
+    // "left" is re-counted by the guard inside the job's transaction under the
+    // document's lock, before the number and the render. No source → no
+    // document line (C6).
+    let source: StickerJobSource | null = null;
+    let doc: LabelRowDoc | null = null;
+    let guard: JobDraft['guard'];
+    let docSupplierCode: string | null = null;
+    if (body.source) {
+      const prepared = await this.docs.prepareDocJob({
+        companyId: body.companyId,
+        branchId: body.branchId,
+        source: body.source,
+        lines: body.lines,
+      });
+      source = prepared.source;
+      doc = { docNo: source.refno, docDate: dmyText(prepared.head.docDate) };
+      guard = prepared.guard;
+      docSupplierCode = prepared.head.supplierShort;
+    } else {
+      this.docs.refuseManualDocLines(body.lines);
+    }
+
     const scope: StickerScope = {
       ...(await this.jobScope(body.companyId, body.branchId, design, body.priceLevel)),
       purpose,
+      // F4: a lot with no supplier prints the document's supplier code.
+      ...(source ? { docSupplierCode } : {}),
     };
     const built = await this.lines.buildLines(
       scope,
@@ -423,7 +487,10 @@ export class StickerJobsService {
     this.assertLabelTotal(built.reduce((total, entry) => total + entry.line.labels, 0));
 
     const shop = await this.loadShop(body.companyId, body.branchId);
-    const frozen = built.map((entry, index) => this.freeze(entry, index + 1));
+    const frozen = built.map((entry, index) => ({
+      ...this.freeze(entry, index + 1),
+      ...(source ? { srcLineId: body.lines[index].srcLineId ?? null } : {}),
+    }));
     return this.makeJob({
       companyId: body.companyId,
       branchId: body.branchId,
@@ -441,8 +508,9 @@ export class StickerJobsService {
       resendOf: null,
       reasonCode: null,
       reasonNote: null,
+      ...(source ? { source, guard } : {}),
       lines: frozen,
-      rowsFor: (job) => built.map((entry) => labelRow(this.labelInput(entry), shop, job)),
+      rowsFor: (job) => built.map((entry) => labelRow(this.labelInput(entry), shop, job, doc)),
     });
   }
 
@@ -638,6 +706,9 @@ export class StickerJobsService {
     const shop = await this.loadShop(body.companyId, body.branchId);
     const levelShort = await this.priceLevelShort(original.lbj_price_level);
     picked.sort((left, right) => left.source.lbjl_line_no - right.source.lbjl_line_no);
+    // S-P2 §4.5: the reprint keeps its original's source; never limited (S6).
+    const docSource = this.sourceOf(original);
+    const doc = await this.labelDocOf(docSource);
     return this.makeJob({
       companyId: body.companyId,
       branchId: body.branchId,
@@ -655,11 +726,12 @@ export class StickerJobsService {
       resendOf: null,
       reasonCode: reason,
       reasonNote: note,
+      ...(docSource ? { source: docSource } : {}),
       lines: picked.map((entry, index) =>
         this.copyFrozen(entry.source, index + 1, entry.labels, entry.source.lbjl_id),
       ),
       rowsFor: (job) =>
-        picked.map((entry) => this.frozenLabelRow(entry.source, levelShort, shop, job)),
+        picked.map((entry) => this.frozenLabelRow(entry.source, levelShort, shop, job, doc)),
     });
   }
 
@@ -694,6 +766,11 @@ export class StickerJobsService {
     const sourceLines = await this.loadJobLines(body.companyId, failed);
     const shop = await this.loadShop(body.companyId, body.branchId);
     const levelShort = await this.priceLevelShort(failed.lbj_price_level);
+    // S-P2 §4.5: the resend keeps the failed job's source. F1 (review
+    // 2026-11-26): the FAILED job never counted, so its print lines are
+    // checked against left again, under the document's lock (below).
+    const docSource = this.sourceOf(failed);
+    const doc = await this.labelDocOf(docSource);
     return this.makeJob({
       companyId: body.companyId,
       branchId: body.branchId,
@@ -711,14 +788,37 @@ export class StickerJobsService {
       resendOf: { id: failed.lbj_id, accYear: failed.lbj_acc_year },
       reasonCode: null,
       reasonNote: null,
+      ...(docSource ? { source: docSource } : {}),
       lines: sourceLines.map((line, index) =>
         this.copyFrozen(line, index + 1, line.lbjl_labels, line.lbjl_reprint_of_line_id),
       ),
-      rowsFor: (job) => sourceLines.map((line) => this.frozenLabelRow(line, levelShort, shop, job)),
+      rowsFor: (job) =>
+        sourceLines.map((line) => this.frozenLabelRow(line, levelShort, shop, job, doc)),
       guard: async (tx) => {
         const lockKey = `${failed.lbj_id}|${failed.lbj_acc_year}`;
         await tx.$queryRaw`SELECT count(pg_advisory_xact_lock(hashtext('label_job_resend'), hashtext(${lockKey})))::int AS locked`;
         this.refuseIfResent(failed, await this.findResend(tx, failed));
+        // F1: then the document (order numbering → resend → document): still
+        // POSTED (STICKER_DOC_NOT_POSTED, as print), and the failed job's
+        // print lines ≤ left (STICKER_DOC_OVER_LEFT). A reprint's copies never
+        // count (F2), so they are not checked.
+        if (docSource) {
+          await this.docs.checkDocResend(tx, {
+            companyId: body.companyId,
+            branchId: body.branchId,
+            source: docSource,
+            lines: sourceLines
+              .filter((line) => !line.lbjl_reprint_of_line_id)
+              .map((line) => ({
+                itemId: line.lbjl_item_id,
+                unitId: line.lbjl_unit_id,
+                lotId: line.lbjl_lot_id,
+                labels: line.lbjl_labels,
+                srcLineId: line.lbjl_src_line_id ?? null,
+                itemName: line.item_name,
+              })),
+          });
+        }
       },
     });
   }
@@ -851,6 +951,12 @@ export class StickerJobsService {
         deviceId: job.lbj_device_id,
         deviceCode: facts?.device_code ?? null,
         deviceName: facts?.device_name ?? null,
+        // S-P2 §7.4: the document the job's lines come from (MANUAL: nulls).
+        srcKind: job.lbj_src_kind ?? 'MANUAL',
+        srcDocType: job.lbj_src_doc_type ?? null,
+        srcDocId: job.lbj_src_doc_id ?? null,
+        srcAccYear: job.lbj_src_acc_year ?? null,
+        srcRefno: job.lbj_src_refno ?? null,
       },
       lines: lines.map((line) => ({
         lineId: line.lbjl_id,
@@ -869,6 +975,7 @@ export class StickerJobsService {
         labels: line.lbjl_labels,
         reprintedLabels: line.reprinted,
         reprintOfLineId: line.lbjl_reprint_of_line_id,
+        srcLineId: line.lbjl_src_line_id ?? null,
       })),
       reprints: reprints.map((row) => ({
         jobId: row.lbj_id,
@@ -1038,6 +1145,16 @@ export class StickerJobsService {
             lbjResendOfAccYear: draft.resendOf?.accYear ?? null,
             lbjReasonCode: draft.reasonCode,
             lbjReasonNote: draft.reasonNote,
+            // S-P2: the source document, frozen (ck_lbj_src: all five or none).
+            ...(draft.source
+              ? {
+                  lbjSrcKind: 'DOCUMENT',
+                  lbjSrcDocType: draft.source.docType,
+                  lbjSrcDocId: draft.source.docId,
+                  lbjSrcAccYear: draft.source.accYear,
+                  lbjSrcRefno: draft.source.refno,
+                }
+              : {}),
             lbjLineCount: draft.lines.length,
             lbjLabelCount: labels,
             lbjPageCount: outcome.pageCount,
@@ -1060,6 +1177,7 @@ export class StickerJobsService {
                 lbjlPriceCode: line.priceCode,
                 lbjlLabels: line.labels,
                 lbjlReprintOfLineId: line.reprintOfLineId,
+                ...(line.srcLineId ? { lbjlSrcLineId: line.srcLineId } : {}),
               })),
             },
           },
@@ -1097,6 +1215,7 @@ export class StickerJobsService {
             accYear: draft.accYear,
             labels,
             pages: outcome.pageCount,
+            source: draft.source ?? null,
             lines: job.lines.map((line) => ({
               lineId: line.lbjlId,
               lineNo: line.lbjlLineNo,
@@ -1112,6 +1231,7 @@ export class StickerJobsService {
               costCode: line.lbjlCostCode,
               priceCode: line.lbjlPriceCode,
               labels: line.lbjlLabels,
+              srcLineId: line.lbjlSrcLineId ?? null,
             })),
             warnings,
           },
@@ -1355,6 +1475,13 @@ export class StickerJobsService {
              l.lbjl_mrp, l.lbjl_price, l.lbjl_batch_no,
              l.lbjl_mfg_date::text AS lbjl_mfg_date, l.lbjl_expiry_date::text AS lbjl_expiry_date,
              l.lbjl_cost_code, l.lbjl_price_code, l.lbjl_labels, l.lbjl_reprint_of_line_id,
+             l.lbjl_src_line_id,
+             (SELECT lt.slt_supplier_id FROM stock.stock_lot lt
+               WHERE lt.slt_id = l.lbjl_lot_id) AS lot_supplier_id,
+             (SELECT NULLIF(btrim(sp.sup_short), '')
+                FROM stock.stock_lot lt
+                JOIN purchase.suppliers sp ON sp.sup_id = lt.slt_supplier_id
+               WHERE lt.slt_id = l.lbjl_lot_id) AS supplier_code,
              i.item_name_en AS item_name, NULLIF(btrim(i.item_name_ta), '') AS item_name_ta,
              NULLIF(btrim(i.item_code), '') AS item_code, b.brand_name AS brand, g.itg_name AS group_name,
              um.unit_name, sz.isz_name AS size, cl.icl_name AS colour, NULLIF(btrim(sbd.sbd_model), '') AS model,
@@ -1467,7 +1594,36 @@ export class StickerJobsService {
       priceCode: source.lbjl_price_code,
       labels,
       reprintOfLineId,
+      ...(source.lbjl_src_line_id ? { srcLineId: source.lbjl_src_line_id } : {}),
     };
+  }
+
+  /** S-P2: a job's frozen source, or null for a MANUAL job. */
+  private sourceOf(job: JobRow): StickerJobSource | null {
+    return job.lbj_src_kind === 'DOCUMENT' &&
+      job.lbj_src_doc_type &&
+      job.lbj_src_doc_id &&
+      job.lbj_src_acc_year
+      ? {
+          docType: job.lbj_src_doc_type,
+          docId: job.lbj_src_doc_id,
+          accYear: job.lbj_src_acc_year,
+          refno: job.lbj_src_refno ?? '',
+        }
+      : null;
+  }
+
+  /**
+   * S-P2 §7.5: doc_no = the frozen number, doc_date = the document's date now,
+   * supplierCode = the document supplier's Short name (F4: for a lot with no
+   * supplier of its own).
+   */
+  private async labelDocOf(source: StickerJobSource | null): Promise<LabelRowDoc | null> {
+    if (!source) {
+      return null;
+    }
+    const facts = await this.docs.docLabelFacts(source);
+    return { docNo: source.refno || null, docDate: facts.docDate, supplierCode: facts.supplierCode };
   }
 
   private labelInput(entry: BuiltStickerLine) {
@@ -1491,6 +1647,7 @@ export class StickerJobsService {
       batchNo: line.batchNo,
       mfgDate: line.mfgDate,
       expiryDate: line.expiryDate,
+      supplierCode: facts.supplierCode ?? null,
     };
   }
 
@@ -1499,6 +1656,7 @@ export class StickerJobsService {
     levelShort: string | null,
     shop: LabelShop,
     job: { jobNo: string; printedOn: Date },
+    doc: LabelRowDoc | null = null,
   ): Record<string, unknown> {
     return labelRow(
       {
@@ -1520,9 +1678,15 @@ export class StickerJobsService {
         batchNo: source.lbjl_batch_no,
         mfgDate: isoDay(source.lbjl_mfg_date),
         expiryDate: isoDay(source.lbjl_expiry_date),
+        // C8 / F4: the lot's supplier; a lot with none takes the job's
+        // document's (a manual job has none). A blank Short name stays blank.
+        supplierCode: source.lot_supplier_id
+          ? (source.supplier_code ?? null)
+          : (doc?.supplierCode ?? null),
       },
       shop,
       job,
+      doc,
     );
   }
 }

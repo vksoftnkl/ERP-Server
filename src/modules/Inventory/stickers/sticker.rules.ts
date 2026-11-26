@@ -211,6 +211,14 @@ export function isoDay(value: Date | string | null | undefined): string | null {
   return typeof value === 'string' ? value.slice(0, 10) : value.toISOString().slice(0, 10);
 }
 
+/** A @db.Date or 'YYYY-MM-DD' as dd/MM/yyyy (S-P2 `doc_date`, `docDate`), or null. */
+export function dmyText(value: Date | string | null | undefined): string | null {
+  const day = isoDay(value);
+  return day && /^\d{4}-\d{2}-\d{2}$/.test(day)
+    ? `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`
+    : null;
+}
+
 /** 'YYYY-MM-DD' → the Date Prisma writes to a @db.Date column. */
 export function dayToDate(day: string | null): Date | null {
   return day ? new Date(`${day}T00:00:00.000Z`) : null;

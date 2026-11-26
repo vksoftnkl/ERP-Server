@@ -8,18 +8,17 @@ const fact = (o: Partial<GrnLineFact>): GrnLineFact => ({
 });
 
 describe('GRN strip + Check column', () => {
-  it('a clean line is OK with labels = saleable pieces', () => {
+  it('a clean line is OK', () => {
     const { issues, checks } = judgeGrnLines([fact({})], new Map(), 'WARN', new Set());
     expect(issues).toEqual([]);
     expect(checks.get(1)!.chips.map((c) => c.code)).toEqual(['OK']);
-    expect(checks.get(1)!.labels).toBe(10);
+    expect(checks.get(1)!).not.toHaveProperty('labels');
   });
   it('short vs challan and damage with no reason are WARN', () => {
     const f = fact({ challan: D(8), received: D(6), damaged: D(1), rows: [{ bucket: 'SALEABLE', qty: D(6), mfgDate: null, expiryDate: null, serialNo: null }, { bucket: 'DAMAGED', qty: D(1), mfgDate: null, expiryDate: null, serialNo: null }] });
     const { issues, checks } = judgeGrnLines([f], new Map(), 'WARN', new Set());
     expect(issues.map((i) => [i.code, i.level])).toEqual([['PUR_SHORT_VS_CHALLAN', 'WARN'], ['PUR_GRN_DAMAGE_NO_REASON', 'WARN']]);
     expect(checks.get(1)!.chips.map((c) => c.text)).toEqual(['SHORT 1', '1 DAMAGED']);
-    expect(checks.get(1)!.labels).toBe(6);
   });
   it('shelf life below the minimum: WARN, or REFUSE that an override may pass', () => {
     const shelf = new Map([[1, { pct: 41, min: 60, expired: false }]]);

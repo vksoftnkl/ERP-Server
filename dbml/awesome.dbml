@@ -3868,9 +3868,10 @@ Table label_job {
   lbjResendOfAccYear String
   lbjReasonCode String [note: 'REPRINT only: JAMMED | ROLL_OUT | TORN | OTHER (ck_lbj_reason_code).']
   lbjReasonNote String [note: 'Required for OTHER (ck_lbj_reprint).']
-  lbjSrcKind String [not null, default: 'MANUAL', note: 'MANUAL in S-P1 (ck_lbj_src); S-P2 widens it for GRN / purchase bill jobs.']
-  lbjSrcDocType String
-  lbjSrcDocId String
+  lbjSrcKind String [not null, default: 'MANUAL', note: 'MANUAL (typed / scanned lines) | DOCUMENT (ck_lbj_src). A reprint /
+resend copies its original\'s source. No FK to the documents (§5).']
+  lbjSrcDocType String [note: 'DOCUMENT: PURCHASE_BILL (pur_invoice) | SHORTAGE_RECEIPT (pur_shortage_receipt).']
+  lbjSrcDocId String [note: 'DOCUMENT: pi_id / psr_id. "Printed" of a document = its PRINT jobs not FAILED.']
   lbjSrcAccYear String
   lbjLineCount Int [not null]
   lbjLabelCount Int [not null]
@@ -3883,6 +3884,9 @@ Table label_job {
   lbjModifiedOn DateTime [note: 'The status step (no FK).']
   lbjModifiedBy String
   lbjSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  lbjSrcRefno String [note: 'DOCUMENT: the source document\'s full number (PUR/2026-2027/D8/01177),
+frozen at print, so the job reads right before the document syncs (§5).
+NULL for MANUAL (ck_lbj_src). Added by 20261127100000 (S-P2).']
   company companys [not null]
   branch branch_master [not null]
   device device_master [not null]
@@ -3926,11 +3930,14 @@ ck_lbj_status       SENT | PRINTED | FAILED
 ck_lbj_reason_code  NULL | JAMMED | ROLL_OUT | TORN | OTHER
 ck_lbj_reprint      REPRINT <=> reprint_of_id set <=> reason set; OTHER needs a note
 ck_lbj_resend       a resend is kind PRINT
-ck_lbj_src          MANUAL with no source document (S-P2 widens it)
+ck_lbj_src          MANUAL with no source column set, or DOCUMENT with all
+four set (PURCHASE_BILL | SHORTAGE_RECEIPT; S-P2,
+20261127100000; S-P3 adds the Make\'s type)
 ck_lbj_counts       line_count, label_count, start_at, slno >= 1
 ck_lbj_price_level  1-4
 Partial indexes (DB-only): ix_lbj_reprint_of, ix_lbj_resend_of (WHERE ...
-IS NOT NULL), ix_sync_pending_label_job.'
+IS NOT NULL), ix_sync_pending_label_job, ix_lbj_src_doc (lbjSrcDocId,
+lbjSrcAccYear WHERE lbj_src_doc_id IS NOT NULL: a document\'s jobs, S-P2).'
 }
 
 Table label_job_line {
@@ -3951,7 +3958,9 @@ Table label_job_line {
   lbjlPriceCode String
   lbjlLabels Int [not null, note: '1-9,999 (ck_lbjl_labels).']
   lbjlReprintOfLineId String [note: 'REPRINT job: the original job\'s line. No FK (§5).']
-  lbjlSrcLineId String [note: 'S-P2 hook: the GRN / purchase bill line.']
+  lbjlSrcLineId String [note: 'DOCUMENT jobs: the document line (pii_id / psri_id; the lowest line
+number when the Print list merged two lines of one item + batch). Trace
+only: a document\'s counts go by item + batch (S-P2).']
   lbjlSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
   job label_job [not null]
   item item_master [not null]

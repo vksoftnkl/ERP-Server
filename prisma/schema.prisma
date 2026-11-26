@@ -6255,11 +6255,14 @@ model Unit {
 ///   ck_lbj_reason_code  NULL | JAMMED | ROLL_OUT | TORN | OTHER
 ///   ck_lbj_reprint      REPRINT <=> reprint_of_id set <=> reason set; OTHER needs a note
 ///   ck_lbj_resend       a resend is kind PRINT
-///   ck_lbj_src          MANUAL with no source document (S-P2 widens it)
+///   ck_lbj_src          MANUAL with no source column set, or DOCUMENT with all
+///                       four set (PURCHASE_BILL | SHORTAGE_RECEIPT; S-P2,
+///                       20261127100000; S-P3 adds the Make's type)
 ///   ck_lbj_counts       line_count, label_count, start_at, slno >= 1
 ///   ck_lbj_price_level  1-4
 /// Partial indexes (DB-only): ix_lbj_reprint_of, ix_lbj_resend_of (WHERE ...
-/// IS NOT NULL), ix_sync_pending_label_job.
+/// IS NOT NULL), ix_sync_pending_label_job, ix_lbj_src_doc (lbjSrcDocId,
+/// lbjSrcAccYear WHERE lbj_src_doc_id IS NOT NULL: a document's jobs, S-P2).
 model LabelJob {
   lbjId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lbj_id")
   /// THE PARTITION KEY: the company's financial year at print.
@@ -6300,12 +6303,17 @@ model LabelJob {
   /// Required for OTHER (ck_lbj_reprint).
   lbjReasonNote         String?   @db.VarChar(250)                     @map("lbj_reason_note")
 
-  // ── Source (S-P2 hook) ──────────────────────────────────────────────
-  /// MANUAL in S-P1 (ck_lbj_src); S-P2 widens it for GRN / purchase bill jobs.
+  // ── Source: none, or one posted document (S-P2) ──────────────────────
+  /// MANUAL (typed / scanned lines) | DOCUMENT (ck_lbj_src). A reprint /
+  /// resend copies its original's source. No FK to the documents (§5).
   lbjSrcKind            String    @default("MANUAL") @db.VarChar(20)   @map("lbj_src_kind")
+  /// DOCUMENT: PURCHASE_BILL (pur_invoice) | SHORTAGE_RECEIPT (pur_shortage_receipt).
   lbjSrcDocType         String?   @db.VarChar(30)                      @map("lbj_src_doc_type")
+  /// DOCUMENT: pi_id / psr_id. "Printed" of a document = its PRINT jobs not FAILED.
   lbjSrcDocId           String?   @db.Uuid                             @map("lbj_src_doc_id")
   lbjSrcAccYear         String?   @db.Char(9)                          @map("lbj_src_acc_year")
+  // lbjSrcRefno (the document's number) sits at the end of the table: it was
+  // added by 20261127100000, and the fields follow the table's column order.
 
   // ── Counts ──────────────────────────────────────────────────────────
   lbjLineCount          Int       @db.SmallInt                         @map("lbj_line_count")
@@ -6326,6 +6334,10 @@ model LabelJob {
   lbjModifiedBy         String?   @db.Uuid                             @map("lbj_modified_by")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   lbjSyncDate           DateTime? @db.Timestamptz(6)                   @map("lbj_sync_date")
+  /// DOCUMENT: the source document's full number (PUR/2026-2027/D8/01177),
+  /// frozen at print, so the job reads right before the document syncs (§5).
+  /// NULL for MANUAL (ck_lbj_src). Added by 20261127100000 (S-P2).
+  lbjSrcRefno           String?   @db.VarChar(40)                      @map("lbj_src_refno")
 
   // ── Relations ───────────────────────────────────────────────────────
   company               Company              @relation("LabelJobCompany",   fields: [lbjCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_company")
@@ -6390,7 +6402,9 @@ model LabelJobLine {
 
   /// REPRINT job: the original job's line. No FK (§5).
   lbjlReprintOfLineId   String?   @db.Uuid                             @map("lbjl_reprint_of_line_id")
-  /// S-P2 hook: the GRN / purchase bill line.
+  /// DOCUMENT jobs: the document line (pii_id / psri_id; the lowest line
+  /// number when the Print list merged two lines of one item + batch). Trace
+  /// only: a document's counts go by item + batch (S-P2).
   lbjlSrcLineId         String?   @db.Uuid                             @map("lbjl_src_line_id")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   lbjlSyncDate          DateTime? @db.Timestamptz(6)                   @map("lbjl_sync_date")

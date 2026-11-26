@@ -5,7 +5,7 @@ import { AccountLedgerMastersModule } from 'src/modules/accountsModule/accountLe
 import { SellingPriceBulkModule } from 'src/modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { PurchaseAgentController, PurchaseAgentService } from './agent/purchase-agent';
 import { PurchaseSupplierItemController, PurchaseSupplierItemService } from './supplier-item/purchase-supplier-item';
-import { PurchaseGrnController, PurchaseGrnService, PurchaseLabelsController } from './grn/purchase-grn';
+import { PurchaseGrnController, PurchaseGrnService } from './grn/purchase-grn';
 import { PurchaseInvoiceController } from './invoice/purchase-invoice.controller';
 import { PurchaseLookupController, PurchaseLookupService } from './lookup/purchase-lookup';
 import { PurchaseSisterController, PurchaseSisterService } from './sister/purchase-sister';
@@ -27,7 +27,7 @@ import { PurchaseTermsController, PurchaseTermsService } from './terms/purchase-
  */
 @Module({
   imports: [AuditLogModule, CommonPostingModule, StockPostingModule, AccountLedgerMastersModule, SellingPriceBulkModule],
-  controllers: [PurchaseReorderController, PurchaseInvoiceController, PurchaseOrderController, PurchaseGrnController, PurchaseLabelsController, PurchaseReturnController, PurchaseShortageController,
+  controllers: [PurchaseReorderController, PurchaseInvoiceController, PurchaseOrderController, PurchaseGrnController, PurchaseReturnController, PurchaseShortageController,
                 PurchaseAgentController, PurchaseSupplierItemController, PurchaseLookupController, PurchaseSisterController, PurchaseAttachmentController, PurchaseSupplierDuesController,
                 PurchaseTermsController],
   providers: [PurchaseReorderService, PurchaseInvoiceService, PurchaseOrderService, PurchaseGrnService, PurchaseReturnService, PurchaseShortageService,

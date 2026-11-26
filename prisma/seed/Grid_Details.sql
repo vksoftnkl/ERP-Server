@@ -1,4 +1,4 @@
--- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (126 rows).
+-- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (127 rows).
 --
 -- 116 MAIN LIST - DELIVERY CHALLANS as migration 20261118100000_dc_dc_return leaves it: days,
 -- open_pkgs, open_kg, age_level and the tokens iamber_days / iold_days (an unsent one reads as
@@ -11,9 +11,19 @@
 -- users) and Last Login as IST 12-hour text.
 --
 -- 223 MAIN LIST - STICKER JOBS (Sticker Printing, menu 32, Printed jobs) as migration
--- 20261126100000_sticker_printing_sp1 inserts it: tokens icompany_id, ibranch_id, ifrom_date,
--- ito_date, idevice_id, iuser_id, iitem_text, every one always sent and compared as text;
--- Printed at as IST 12-hour text; newest first. Its 16 columns are in Grid_Columns.sql.
+-- 20261126100000_sticker_printing_sp1 inserts it and 20261127100000_sticker_printing_sp2 leaves
+-- it: tokens icompany_id, ibranch_id, ifrom_date, ito_date, idevice_id, iuser_id, iitem_text,
+-- isrc_text (S-P2), every one always sent and compared as text; Printed at as IST 12-hour text;
+-- Source = lbj_src_refno, Manual when none; newest first. Its 20 columns are in Grid_Columns.sql.
+--
+-- 224 POPUP - STICKER SOURCE DOCUMENTS (Sticker Printing, menu 32, Load from a document ·
+-- Ctrl+O) as migration 20261127100000_sticker_printing_sp2 inserts it: posted Purchase Entries
+-- and Shortage Receipts of the branch with their sticker counts per document + item + batch
+-- (needed, printed, carried from a cancelled bill of the same GRN lines); tokens icompany_id,
+-- ibranch_id, ifrom_date, ito_date, idoc_type, isupplier_id, idoc_text, ishow, isticker_only,
+-- every one always sent and compared as text. As 20261127100100_sticker_sp2_fixes leaves it
+-- (F2): printed and carried count only lines with lbjl_reprint_of_line_id IS NULL (a resend
+-- of a failed reprint is a reprint). Its 13 columns are in Grid_Columns.sql.
 --
 -- grid_sql is user-configurable SQL executed by the grid "run" endpoint through the
 -- read-only pool, with p_* named tokens bound as parameters (bindGridParams). It is
@@ -2210,7 +2220,7 @@ WHERE t.atc_id::text = 'iatc_id'
   AND t.atc_acc_year = 'iacc_year'
   AND t.atc_company_id::text = 'icompany_id'
   AND NOT j.abj_is_deleted$seed$)
-    ,(223, 'MAIN LIST - STICKER JOBS', 'Sticker Printing (menu 32) Printed jobs tab: one row per sticker job of this branch, newest first. Tokens (send every one): icompany_id, ibranch_id, ifrom_date, ito_date (yyyy-MM-dd on the IST print date; '''' = no bound), idevice_id ('''' = all counters), iuser_id ('''' = all users), iitem_text ('''' = all; else jobs with a line whose item name contains it). Kind = Print or Reprint of <job no>; Reason = the fixed reason words, then ": note". Hidden: lbj_id, lbj_acc_year, status_code, kind_code, lbj_device_id.', 'lbj_id', 'Descending', 'Desktop', true , false, 'system', $seed$SELECT j.lbj_refno,
+    ,(223, 'MAIN LIST - STICKER JOBS', 'Sticker Printing (menu 32) Printed jobs tab: one row per sticker job of this branch, newest first. Tokens (send every one): icompany_id, ibranch_id, ifrom_date, ito_date (yyyy-MM-dd on the IST print date; '''' = no bound), idevice_id ('''' = all counters), iuser_id ('''' = all users), iitem_text ('''' = all; else jobs with a line whose item name contains it), isrc_text ('''' = all; else jobs whose source document number contains it; an unsent isrc_text also reads as all, so a caller from before S-P2 still lists every job). Kind = Print or Reprint of <job no>; Source = the source document number (lbj_src_refno), Manual when none; Reason = the fixed reason words, then ": note". Hidden: lbj_id, lbj_acc_year, status_code, kind_code, lbj_device_id, lbj_src_doc_type, lbj_src_doc_id, lbj_src_acc_year.', 'lbj_id', 'Descending', 'Desktop', true , false, 'system', $seed$SELECT j.lbj_refno,
        to_char(j.lbj_printed_on AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY HH12:MI AM') AS printed_at,
        COALESCE(u.usr_login_name, '') AS by_name,
        COALESCE(NULLIF(d.dev_device_name, ''), d.dev_code, '') AS counter_name,
@@ -2220,6 +2230,7 @@ WHERE t.atc_id::text = 'iatc_id'
        j.lbj_label_count,
        CASE WHEN j.lbj_kind = 'REPRINT' THEN 'Reprint of ' || COALESCE(o.lbj_refno, '')
             ELSE 'Print' END AS kind_text,
+       COALESCE(j.lbj_src_refno, 'Manual') AS source_text,
        CASE j.lbj_reason_code WHEN 'JAMMED' THEN 'Labels jammed / spoiled'
                               WHEN 'ROLL_OUT' THEN 'Roll ran out in the middle'
                               WHEN 'TORN' THEN 'Label torn / fell off'
@@ -2236,7 +2247,10 @@ WHERE t.atc_id::text = 'iatc_id'
        j.lbj_acc_year,
        j.lbj_status AS status_code,
        j.lbj_kind AS kind_code,
-       j.lbj_device_id
+       j.lbj_device_id,
+       j.lbj_src_doc_type,
+       j.lbj_src_doc_id,
+       j.lbj_src_acc_year
   FROM inventory.label_job j
   LEFT JOIN public.user_master u ON u.usr_id = j.lbj_printed_by
   LEFT JOIN fixed.device_master d ON d.dev_id = j.lbj_device_id
@@ -2256,7 +2270,274 @@ WHERE t.atc_id::text = 'iatc_id'
                     WHERE l.lbjl_job_id = j.lbj_id
                       AND l.lbjl_acc_year = j.lbj_acc_year
                       AND i.item_name_en ILIKE '%' || 'iitem_text' || '%'))
+   AND ('isrc_text' IN ('', 'isrc' || '_text') OR COALESCE(j.lbj_src_refno, '') ILIKE '%' || 'isrc_text' || '%')
  ORDER BY j.lbj_printed_on DESC, j.lbj_id DESC$seed$)
+    ,(224, 'POPUP - STICKER SOURCE DOCUMENTS', 'Sticker Printing (menu 32) Load from a document picker (Ctrl+O): one row per posted Purchase Entry or Shortage Receipt of this branch, newest document date first, with the stickers it needs and those printed. Tokens (send every one; compared as text): icompany_id, ibranch_id, ifrom_date, ito_date (yyyy-MM-dd on the document date; '''' = no bound), idoc_type ('''' / PURCHASE_BILL / SHORTAGE_RECEIPT), isupplier_id ('''' = all), idoc_text ('''' = all; else part of the number), ishow (NOTPART = not printed + part printed, the default; NOT / PART / DONE / ALL), isticker_only (1 = items ticked Sticker only, and documents with nothing to print left out; 0 = every item). Per document + item + batch: Labels = saleable received + free in the item''s default unit, rounded down, at least 1 (1 when that unit has decimals); Printed = the labels of the document''s PRINT jobs that did not fail plus, for a bill made from a GRN, the labels of cancelled bills of the same GRN lines, at most Labels; a line that reprints another (a resend of a failed reprint) never counts. Lines = lines ticked Sticker of all lines. Hidden: doc_type, doc_id, acc_year, state_code (NONE / NOT / PART / DONE), source_kind.', 'refno', 'Descending', 'Desktop', true , false, 'system', $seed$WITH docs AS (
+    SELECT 'PURCHASE_BILL'::text AS doc_type,
+           p.pi_id AS doc_id,
+           p.pi_acc_year AS acc_year,
+           p.pi_refno AS refno,
+           p.pi_doc_date AS doc_date,
+           p.pi_supplier_id AS supplier_id,
+           p.pi_source_kind::text AS source_kind
+      FROM purchase.pur_invoice p
+     WHERE p.pi_company_id = (SELECT c.comp_id FROM public.companys c WHERE c.comp_id::text = 'icompany_id')
+       AND p.pi_branch_id = (SELECT b.br_id FROM public.branch_master b WHERE b.br_id::text = 'ibranch_id')
+       AND p.pi_is_deleted = false
+       AND p.pi_status = 'POSTED'
+       AND 'idoc_type' IN ('', 'PURCHASE_BILL')
+       AND (NULLIF('ifrom_date', '') IS NULL OR to_char(p.pi_doc_date, 'YYYY-MM-DD') >= 'ifrom_date')
+       AND (NULLIF('ito_date', '') IS NULL OR to_char(p.pi_doc_date, 'YYYY-MM-DD') <= 'ito_date')
+       AND ('isupplier_id' = '' OR p.pi_supplier_id::text = 'isupplier_id')
+       AND ('idoc_text' = '' OR p.pi_refno ILIKE '%' || 'idoc_text' || '%')
+    UNION ALL
+    SELECT 'SHORTAGE_RECEIPT'::text,
+           r.psr_id,
+           r.psr_acc_year,
+           r.psr_refno,
+           r.psr_doc_date,
+           r.psr_supplier_id,
+           NULL::text
+      FROM purchase.pur_shortage_receipt r
+     WHERE r.psr_company_id = (SELECT c.comp_id FROM public.companys c WHERE c.comp_id::text = 'icompany_id')
+       AND r.psr_branch_id = (SELECT b.br_id FROM public.branch_master b WHERE b.br_id::text = 'ibranch_id')
+       AND r.psr_is_deleted = false
+       AND r.psr_status = 'POSTED'
+       AND 'idoc_type' IN ('', 'SHORTAGE_RECEIPT')
+       AND (NULLIF('ifrom_date', '') IS NULL OR to_char(r.psr_doc_date, 'YYYY-MM-DD') >= 'ifrom_date')
+       AND (NULLIF('ito_date', '') IS NULL OR to_char(r.psr_doc_date, 'YYYY-MM-DD') <= 'ito_date')
+       AND ('isupplier_id' = '' OR r.psr_supplier_id::text = 'isupplier_id')
+       AND ('idoc_text' = '' OR r.psr_refno ILIKE '%' || 'idoc_text' || '%')
+),
+lines AS (
+    SELECT d.doc_type,
+           d.doc_id,
+           d.acc_year,
+           l.pii_item_id AS item_id,
+           COALESCE(NULLIF(l.pii_to_base_factor, 0), 1) AS factor,
+           CASE WHEN l.pii_src_doc_type = 'GRN' THEN 'GRN' ELSE 'PURCHASE_BILL' END AS alloc_type,
+           CASE WHEN l.pii_src_doc_type = 'GRN' THEN l.pii_src_item_id ELSE l.pii_id END AS alloc_line_id,
+           CASE WHEN l.pii_src_doc_type = 'GRN' THEN l.pii_src_doc_year ELSE l.pii_acc_year END AS alloc_year,
+           CASE WHEN l.pii_src_doc_type = 'GRN' THEN l.pii_src_item_id END AS grn_line_id,
+           CASE WHEN l.pii_src_doc_type = 'GRN' THEN l.pii_src_doc_year END AS grn_year
+      FROM docs d
+      JOIN purchase.pur_invoice_item l
+        ON l.pii_pi_id = d.doc_id
+       AND l.pii_acc_year = d.acc_year
+       AND l.pii_is_deleted = false
+     WHERE d.doc_type = 'PURCHASE_BILL'
+    UNION ALL
+    SELECT d.doc_type,
+           d.doc_id,
+           d.acc_year,
+           l.psri_item_id,
+           COALESCE(NULLIF(l.psri_to_base_factor, 0), 1),
+           'SHORTAGE_RECEIPT'::text,
+           l.psri_id,
+           l.psri_acc_year,
+           NULL::uuid,
+           NULL::character(9)
+      FROM docs d
+      JOIN purchase.pur_shortage_receipt_item l
+        ON l.psri_psr_id = d.doc_id
+       AND l.psri_acc_year = d.acc_year
+       AND l.psri_is_deleted = false
+     WHERE d.doc_type = 'SHORTAGE_RECEIPT'
+),
+items AS (
+    SELECT i.item_id,
+           i.item_barcode_sticker AS ticked,
+           COALESCE(u.factor, 1) AS def_factor,
+           COALESCE(u.decimals, 0) AS def_decimals
+      FROM (SELECT DISTINCT item_id FROM lines) x
+      JOIN inventory.item_master i ON i.item_id = x.item_id
+      LEFT JOIN LATERAL (
+            SELECT COALESCE(NULLIF(c.iuc_to_base_factor, 0), 1) AS factor,
+                   COALESCE(m.unit_decimal_count, 0) AS decimals
+              FROM inventory.item_unit_conversion c
+              LEFT JOIN inventory.item_unit_master m ON m.unit_id = c.iuc_unit_id
+             WHERE c.iuc_item_id = i.item_id
+               AND c.iuc_is_deleted = false
+             ORDER BY c.iuc_is_default_unit DESC, c.iuc_is_base_unit DESC, c.iuc_unit_slno
+             LIMIT 1) u ON true
+),
+alloc AS (
+    SELECT ln.doc_type,
+           ln.doc_id,
+           ln.acc_year,
+           ln.item_id,
+           a.pia_lot_id AS lot_id,
+           SUM((a.pia_qty + a.pia_free_qty) * ln.factor) AS base_qty
+      FROM lines ln
+      JOIN purchase.pur_item_alloc a
+        ON a.pia_doc_type = ln.alloc_type
+       AND a.pia_line_id = ln.alloc_line_id
+       AND a.pia_acc_year = ln.alloc_year
+       AND a.pia_is_deleted = false
+     WHERE a.pia_bucket = 'SALEABLE'
+       AND a.pia_lot_id IS NOT NULL
+     GROUP BY ln.doc_type, ln.doc_id, ln.acc_year, ln.item_id, a.pia_lot_id
+),
+need AS (
+    SELECT a.doc_type,
+           a.doc_id,
+           a.acc_year,
+           a.item_id,
+           a.lot_id,
+           CASE WHEN a.base_qty <= 0 THEN 0
+                WHEN it.def_decimals > 0 THEN 1
+                ELSE GREATEST(1, floor(round(a.base_qty / it.def_factor, 6)))
+           END AS needed
+      FROM alloc a
+      JOIN items it ON it.item_id = a.item_id
+     WHERE 'isticker_only' = '0' OR it.ticked
+),
+printed AS (
+    SELECT k.doc_id,
+           k.acc_year,
+           l.lbjl_item_id AS item_id,
+           l.lbjl_lot_id AS lot_id,
+           SUM(l.lbjl_labels) AS labels
+      FROM (SELECT DISTINCT doc_type, doc_id, acc_year FROM need) k
+      JOIN inventory.label_job j
+        ON j.lbj_src_doc_id = k.doc_id
+       AND j.lbj_src_acc_year = k.acc_year
+       AND j.lbj_src_doc_type = k.doc_type
+       AND j.lbj_src_doc_id IS NOT NULL
+      JOIN inventory.label_job_line l
+        ON l.lbjl_job_id = j.lbj_id
+       AND l.lbjl_acc_year = j.lbj_acc_year
+     WHERE j.lbj_kind = 'PRINT'
+       AND j.lbj_status <> 'FAILED'
+       AND l.lbjl_reprint_of_line_id IS NULL
+     GROUP BY k.doc_id, k.acc_year, l.lbjl_item_id, l.lbjl_lot_id
+),
+carried_from AS (
+    SELECT DISTINCT ln.doc_id,
+           ln.acc_year,
+           ln.item_id,
+           x.pi_id AS from_id,
+           x.pi_acc_year AS from_year
+      FROM lines ln
+      JOIN purchase.pur_invoice_item xl
+        ON xl.pii_src_doc_type = 'GRN'
+       AND xl.pii_src_item_id = ln.grn_line_id
+       AND xl.pii_src_doc_year = ln.grn_year
+       AND xl.pii_src_item_id IS NOT NULL
+       AND xl.pii_is_deleted = false
+       AND xl.pii_item_id = ln.item_id
+      JOIN purchase.pur_invoice x
+        ON x.pi_id = xl.pii_pi_id
+       AND x.pi_acc_year = xl.pii_acc_year
+       AND x.pi_status = 'CANCELLED'
+     WHERE ln.grn_line_id IS NOT NULL
+       AND x.pi_id <> ln.doc_id
+),
+carried AS (
+    SELECT cf.doc_id,
+           cf.acc_year,
+           l.lbjl_item_id AS item_id,
+           l.lbjl_lot_id AS lot_id,
+           SUM(l.lbjl_labels) AS labels
+      FROM carried_from cf
+      JOIN inventory.label_job j
+        ON j.lbj_src_doc_id = cf.from_id
+       AND j.lbj_src_acc_year = cf.from_year
+       AND j.lbj_src_doc_type = 'PURCHASE_BILL'
+       AND j.lbj_src_doc_id IS NOT NULL
+      JOIN inventory.label_job_line l
+        ON l.lbjl_job_id = j.lbj_id
+       AND l.lbjl_acc_year = j.lbj_acc_year
+       AND l.lbjl_item_id = cf.item_id
+     WHERE j.lbj_kind = 'PRINT'
+       AND j.lbj_status <> 'FAILED'
+       AND l.lbjl_reprint_of_line_id IS NULL
+     GROUP BY cf.doc_id, cf.acc_year, l.lbjl_item_id, l.lbjl_lot_id
+),
+per_doc AS (
+    SELECT n.doc_id,
+           n.acc_year,
+           SUM(n.needed) AS needed,
+           SUM(LEAST(n.needed, COALESCE(p.labels, 0) + COALESCE(c.labels, 0))) AS printed,
+           SUM(COALESCE(p.labels, 0) + COALESCE(c.labels, 0)) AS done_all,
+           bool_and(COALESCE(p.labels, 0) + COALESCE(c.labels, 0) >= n.needed) AS all_done
+      FROM need n
+      LEFT JOIN printed p
+        ON p.doc_id = n.doc_id
+       AND p.acc_year = n.acc_year
+       AND p.item_id = n.item_id
+       AND p.lot_id = n.lot_id
+      LEFT JOIN carried c
+        ON c.doc_id = n.doc_id
+       AND c.acc_year = n.acc_year
+       AND c.item_id = n.item_id
+       AND c.lot_id = n.lot_id
+     GROUP BY n.doc_id, n.acc_year
+),
+line_counts AS (
+    SELECT ln.doc_id,
+           ln.acc_year,
+           count(*) AS lines_all,
+           count(*) FILTER (WHERE it.ticked) AS lines_ticked
+      FROM lines ln
+      JOIN items it ON it.item_id = ln.item_id
+     GROUP BY ln.doc_id, ln.acc_year
+),
+shown AS (
+    SELECT d.doc_type,
+           d.doc_id,
+           d.acc_year,
+           d.refno,
+           d.doc_date,
+           d.supplier_id,
+           d.source_kind,
+           COALESCE(pd.needed, 0)::int AS needed,
+           COALESCE(pd.printed, 0)::int AS printed,
+           COALESCE(lc.lines_all, 0)::int AS lines_all,
+           COALESCE(lc.lines_ticked, 0)::int AS lines_ticked,
+           CASE WHEN COALESCE(pd.needed, 0) = 0 THEN 'NONE'
+                WHEN COALESCE(pd.done_all, 0) = 0 THEN 'NOT'
+                WHEN pd.all_done THEN 'DONE'
+                ELSE 'PART'
+           END AS state_code
+      FROM docs d
+      LEFT JOIN per_doc pd
+        ON pd.doc_id = d.doc_id
+       AND pd.acc_year = d.acc_year
+      LEFT JOIN line_counts lc
+        ON lc.doc_id = d.doc_id
+       AND lc.acc_year = d.acc_year
+)
+SELECT COALESCE(s.refno, '') AS refno,
+       to_char(s.doc_date, 'DD-MM-YYYY') AS doc_date_text,
+       CASE WHEN s.doc_type = 'SHORTAGE_RECEIPT' THEN 'Shortage Receipt'
+            WHEN s.source_kind = 'GRN' THEN 'Purchase Entry · from GRN'
+            WHEN s.source_kind = 'SISTER_SALE' THEN 'Purchase Entry · sister'
+            ELSE 'Purchase Entry'
+       END AS type_text,
+       COALESCE(sp.sup_name, '') AS supplier_name,
+       s.lines_ticked || ' of ' || s.lines_all AS lines_text,
+       s.needed,
+       s.printed,
+       CASE s.state_code WHEN 'NOT' THEN 'Not printed'
+                         WHEN 'PART' THEN 'Part · ' || s.printed || ' of ' || s.needed
+                         WHEN 'DONE' THEN 'Printed'
+                         ELSE 'No labels'
+       END AS state_text,
+       s.doc_type,
+       s.doc_id,
+       s.acc_year,
+       s.state_code,
+       s.source_kind
+  FROM shown s
+  LEFT JOIN purchase.suppliers sp ON sp.sup_id = s.supplier_id
+ WHERE ('isticker_only' = '0' OR s.needed > 0)
+   AND (   'ishow' = 'ALL'
+        OR ('ishow' = 'NOT' AND s.state_code = 'NOT')
+        OR ('ishow' = 'PART' AND s.state_code = 'PART')
+        OR ('ishow' = 'DONE' AND s.state_code = 'DONE')
+        OR ('ishow' NOT IN ('ALL', 'NOT', 'PART', 'DONE') AND s.state_code IN ('NOT', 'PART')))
+ ORDER BY s.doc_date DESC, s.refno DESC$seed$)
 ON CONFLICT (grid_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

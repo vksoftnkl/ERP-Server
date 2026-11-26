@@ -50,6 +50,35 @@ export const STICKER_ERROR = {
   BARCODE_TOO_LONG: 'STICKER_BARCODE_TOO_LONG',
   /** The batch is longer than the job line keeps (60); worded in catalogue 2026-11-25.2. */
   BATCH_TOO_LONG: 'STICKER_BATCH_TOO_LONG',
+
+  // ── S-P2: stickers of a document (plan S-P2 §6.6 / §7, catalogue 2026-11-27.1) ──
+  // The wording rows read `{doc}`, `{status}`, `{item}`, `{printed}`, `{needed}`,
+  // `{left}` from the error's `params` (the refusals fill them). ALREADY_LISTED,
+  // ASK and PRINTED are worded for Qt's own popups / sentences and filled there.
+  /** docType is not PURCHASE_BILL or SHORTAGE_RECEIPT (422). */
+  DOC_TYPE_INVALID: 'STICKER_DOC_TYPE_INVALID',
+  /** No such live document in this company (404). */
+  DOC_NOT_FOUND: 'STICKER_DOC_NOT_FOUND',
+  /** The document is another branch's (422, Q17). */
+  DOC_OTHER_BRANCH: 'STICKER_DOC_OTHER_BRANCH',
+  /** The document is not POSTED (draft, cancelled) (422). */
+  DOC_NOT_POSTED: 'STICKER_DOC_NOT_POSTED',
+  /** stickerOnly and no line of the document is ticked Sticker (422, C9). */
+  DOC_NOTHING_TICKED: 'STICKER_DOC_NOTHING_TICKED',
+  /** Qt's popup only: the document is already in the Print list. */
+  DOC_ALREADY_LISTED: 'STICKER_DOC_ALREADY_LISTED',
+  /** More labels than are left (422). Plain: nothing left; variant rule=LEFT: some left. */
+  DOC_OVER_LEFT: 'STICKER_DOC_OVER_LEFT',
+  /**
+   * A job line that is not on the document (422): plain = not a line of it /
+   * not its item / not its lot / a source job line with no srcLineId / a
+   * manual job line with one (C6); variant rule=UNIT = not the Def unit (C2).
+   */
+  DOC_LINE_NOT_ON_DOC: 'STICKER_DOC_LINE_NOT_ON_DOC',
+  /** Qt's question after Post (variant rule=CARRIED). */
+  DOC_ASK: 'STICKER_DOC_ASK',
+  /** Qt's sentence in the cancel reason box (variant rule=GRN_BILL). */
+  DOC_PRINTED: 'STICKER_DOC_PRINTED',
 } as const;
 
 export type StickerErrorCode = (typeof STICKER_ERROR)[keyof typeof STICKER_ERROR];

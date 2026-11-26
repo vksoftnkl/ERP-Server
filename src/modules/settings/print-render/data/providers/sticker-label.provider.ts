@@ -16,7 +16,8 @@ import { PrintDataProvider, PrintDataProviderField, PrintRow } from '../print-da
  *
  * A field with no value prints blank (null). Money is a number with 2 dp,
  * `packed_on` / `use_by` are ISO `YYYY-MM-DD` (for the `date` transform),
- * `printed_on` is display text dd/MM/yyyy hh:mm AM.
+ * `printed_on` is display text dd/MM/yyyy hh:mm AM, `doc_date` (S-P2) is
+ * display text dd/MM/yyyy.
  */
 
 export const STICKER_LABEL_PROVIDER_CODE = 'stickers.label';
@@ -60,6 +61,7 @@ export const STICKER_LABEL_FIELDS: readonly PrintDataProviderField[] = [
   { name: 'copy_count', group: 'Print', label: 'Copies' },
   { name: 'job_no', group: 'Print', label: 'Job no' },
   { name: 'doc_no', group: 'Print', label: 'Document no' },
+  { name: 'doc_date', group: 'Print', label: 'Document date' },
   { name: 'supplier_code', group: 'Print', label: 'Supplier code' },
 ];
 
@@ -78,6 +80,10 @@ const SAMPLE_PACKER = {
   company: 'SAMPLE TRADERS',
   printed_on: '25/11/2026 10:30 AM',
   job_no: 'D1-000001',
+  // S-P2 (plan §7.5): a document job's number and date, the lot supplier's Short name.
+  doc_no: 'PUR/2026-2027/D8/00001',
+  doc_date: '26/11/2026',
+  supplier_code: 'SMA',
 };
 
 /**

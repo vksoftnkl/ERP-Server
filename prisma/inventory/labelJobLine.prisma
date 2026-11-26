@@ -41,7 +41,9 @@ model LabelJobLine {
 
   /// REPRINT job: the original job's line. No FK (§5).
   lbjlReprintOfLineId   String?   @db.Uuid                             @map("lbjl_reprint_of_line_id")
-  /// S-P2 hook: the GRN / purchase bill line.
+  /// DOCUMENT jobs: the document line (pii_id / psri_id; the lowest line
+  /// number when the Print list merged two lines of one item + batch). Trace
+  /// only: a document's counts go by item + batch (S-P2).
   lbjlSrcLineId         String?   @db.Uuid                             @map("lbjl_src_line_id")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   lbjlSyncDate          DateTime? @db.Timestamptz(6)                   @map("lbjl_sync_date")
