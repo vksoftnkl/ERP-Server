@@ -61,6 +61,25 @@ model PrintTemplateVersion {
   /// Characters per line for the text engines. Meaningless for a page one.
   ptvColumns          Int?      @db.SmallInt                                 @map("ptv_columns")
 
+  // ── The label sheet (sticker designs, 20261126100000) ───────────────────
+  // Set only on a label purpose's design (ITEM_LABEL / PACK_LABEL /
+  // SHELF_LABEL), NULL / 0 on every other. ONE label as a person reads it; the
+  // server works out ptvWidthMm / ptvHeightMm from it at save for LABEL paper.
+  // DB-only CHECKs: ck_ptv_label_sheet (width, height, across, down, dpi all
+  // NULL or all set: width > 0, height > 0, across 1-20, down 1-50, dpi 203 /
+  // 300 / 600), ck_ptv_label_gaps (>= 0), ck_ptv_label_rotate (0 / 90 / 180 / 270).
+  ptvLabelWidthMm     Decimal?  @db.Decimal(8, 2)                            @map("ptv_label_width_mm")
+  ptvLabelHeightMm    Decimal?  @db.Decimal(8, 2)                            @map("ptv_label_height_mm")
+  ptvLabelAcross      Int?      @db.SmallInt                                 @map("ptv_label_across")
+  /// 1 = a roll, more = a sheet (A4).
+  ptvLabelDown        Int?      @db.SmallInt                                 @map("ptv_label_down")
+  ptvLabelGapXMm      Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_label_gap_x_mm")
+  /// Put on the page only for a sheet; a roll's gap is the printer's sensor.
+  ptvLabelGapYMm      Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_label_gap_y_mm")
+  ptvLabelRotate      Int       @default(0) @db.SmallInt                     @map("ptv_label_rotate")
+  /// Snap-to dpi; the printer's own dpi wins when Qt reports it.
+  ptvLabelDpi         Int?      @db.SmallInt                                 @map("ptv_label_dpi")
+
   // ── Language ────────────────────────────────────────────────────────────
   // The DEFAULT, not a resolution key. A render may override it. Language must
   // never fork a template the way pstyl_platform forked every one of 3.0's.
@@ -121,6 +140,8 @@ model PrintTemplateVersion {
   datasets            PrintTemplateDataset[] @relation("PrintTemplateDatasetVersion")
 
   printLogs           PrintLog[]             @relation("PrintLogVersion")
+  /// Sticker jobs printed with this exact revision (frozen on the job).
+  labelJobs           LabelJob[]             @relation("LabelJobVersion")
 
   /// Version numbers are dense and unique per template. NOT partial on
   /// is_deleted, unlike every other unique index in this module, because the

@@ -57,6 +57,9 @@ model ItemUnitConversion {
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemUnit")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemUnit")
 
+  // ── Sticker printing (20261126100000): the label unit of a job line ─────
+  labelJobLines         LabelJobLine[]            @relation("LabelJobLineUnit")
+
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,

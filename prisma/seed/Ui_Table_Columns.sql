@@ -1,4 +1,4 @@
--- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2496 rows).
+-- Seed: fixed.ui_table_columns -- the column layout of every entry-screen item grid (2560 rows).
 --
 -- Purchase 56-59 / 62 and Supplier Dues 65 / 66 as migration 20261029140000 left them, and 56 / 57
 -- as 20261102140000 left them (56: + 45..53, 57: + 23..27), and 59 as 20261104120000 left it
@@ -98,6 +98,14 @@
 -- focus off; the columns that were at 1..27 one place up (Unit 2 ... Min 28); Company (47) hidden, Branch
 -- (35) shown (the user's Q10); the other 27 shown widths scaled by 88.00 / 96.46 (Company too, 3.23; the
 -- rounding rest to Branch, 9.26), so the 28 shown add up to 100.00 again; 29..58 unchanged.
+-- 88 / 89 / 90 Sticker Printing (menu 32) as 20261126100000_sticker_printing_sp1 created them (ids
+-- 2838-2864 / 2865-2875 / 2876-2882; plan-sticker-printing-sp1 §6.7): numbers are the screen's column enums.
+-- 88 the Print list (editable): 1..11 shown (#, Item, Unit, Barcode, Batch, Expiry, MRP, Our price, Labels,
+-- Design, Last printed), Item / Barcode / Batch / Labels take focus, 0 RowKind and 12..26 hidden; 89 a Printed
+-- job's lines (read-only): 0..8 shown (#, Item, Unit, Barcode, Batch, MRP, Our price, Labels, Reprinted), 9 LineId
+-- / 10 ItemId hidden; 90 the Reprint dialog's lines: 0..5 shown (#, Item, Batch, Printed, Before, Reprint now),
+-- only Reprint now takes focus, 6 LineId hidden. Shown widths are the mockup PNGs' pixel widths in proportion,
+-- 100.00 per table (the rounding rest to the widest).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- A grid column exists for the client only if it has a row here: the entry screens
@@ -2377,6 +2385,54 @@ SELECT v.* FROM (VALUES
     ,(2811, 87  , 22 , 'UnitKg'              , 0.00             , false, false, 22 , false, NULL, NULL, true , false, 'system')
     ,(2812, 87  , 23 , 'SplitOf'             , 0.00             , false, false, 23 , false, NULL, NULL, true , false, 'system')
     ,(2813, 87  , 24 , 'SdriId'              , 0.00             , false, false, 24 , false, NULL, NULL, true , false, 'system')
+    -- ============ STICKER PRINTING - PRINT LIST (id 88) ============
+    ,(2838, 88  , 0  , 'RowKind'             , 0.00             , false, false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2839, 88  , 1  , '#'                   , 2.69             , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2840, 88  , 2  , 'Item'                , 23.80            , true , true , 2  , false, NULL, NULL, true , false, 'system')
+    ,(2841, 88  , 3  , 'Unit'                , 4.55             , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2842, 88  , 4  , 'Barcode'             , 11.39            , true , true , 4  , false, NULL, NULL, true , false, 'system')
+    ,(2843, 88  , 5  , 'Batch'               , 7.87             , true , true , 5  , false, NULL, NULL, true , false, 'system')
+    ,(2844, 88  , 6  , 'Expiry'              , 6.42             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2845, 88  , 7  , 'MRP'                 , 6.63             , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2846, 88  , 8  , 'Our price'           , 7.25             , true , false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2847, 88  , 9  , 'Labels'              , 5.59             , true , true , 9  , false, NULL, NULL, true , false, 'system')
+    ,(2848, 88  , 10 , 'Design'              , 13.46            , true , false, 10 , false, NULL, NULL, true , false, 'system')
+    ,(2849, 88  , 11 , 'Last printed'        , 10.35            , true , false, 11 , false, NULL, NULL, true , false, 'system')
+    ,(2850, 88  , 12 , 'ItemId'              , 0.00             , false, false, 12 , false, NULL, NULL, true , false, 'system')
+    ,(2851, 88  , 13 , 'UnitId'              , 0.00             , false, false, 13 , false, NULL, NULL, true , false, 'system')
+    ,(2852, 88  , 14 , 'LotId'               , 0.00             , false, false, 14 , false, NULL, NULL, true , false, 'system')
+    ,(2853, 88  , 15 , 'TemplateId'          , 0.00             , false, false, 15 , false, NULL, NULL, true , false, 'system')
+    ,(2854, 88  , 16 , 'DesignSource'        , 0.00             , false, false, 16 , false, NULL, NULL, true , false, 'system')
+    ,(2855, 88  , 17 , 'LotRequired'         , 0.00             , false, false, 17 , false, NULL, NULL, true , false, 'system')
+    ,(2856, 88  , 18 , 'NoBarcode'           , 0.00             , false, false, 18 , false, NULL, NULL, true , false, 'system')
+    ,(2857, 88  , 19 , 'LabelW'              , 0.00             , false, false, 19 , false, NULL, NULL, true , false, 'system')
+    ,(2858, 88  , 20 , 'LabelH'              , 0.00             , false, false, 20 , false, NULL, NULL, true , false, 'system')
+    ,(2859, 88  , 21 , 'Across'              , 0.00             , false, false, 21 , false, NULL, NULL, true , false, 'system')
+    ,(2860, 88  , 22 , 'Key'                 , 0.00             , false, false, 22 , false, NULL, NULL, true , false, 'system')
+    ,(2861, 88  , 23 , 'CostCode'            , 0.00             , false, false, 23 , false, NULL, NULL, true , false, 'system')
+    ,(2862, 88  , 24 , 'PriceCode'           , 0.00             , false, false, 24 , false, NULL, NULL, true , false, 'system')
+    ,(2863, 88  , 25 , 'StockQty'            , 0.00             , false, false, 25 , false, NULL, NULL, true , false, 'system')
+    ,(2864, 88  , 26 , 'Problem'             , 0.00             , false, false, 26 , false, NULL, NULL, true , false, 'system')
+    -- ============ STICKER PRINTING - JOB LINES (id 89) ============
+    ,(2865, 89  , 0  , '#'                   , 3.25             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2866, 89  , 1  , 'Item'                , 33.75            , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2867, 89  , 2  , 'Unit'                , 6.25             , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2868, 89  , 3  , 'Barcode'             , 14.75            , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2869, 89  , 4  , 'Batch'               , 8.75             , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2870, 89  , 5  , 'MRP'                 , 8.25             , true , false, 5  , false, NULL, NULL, true , false, 'system')
+    ,(2871, 89  , 6  , 'Our price'           , 9.00             , true , false, 6  , false, NULL, NULL, true , false, 'system')
+    ,(2872, 89  , 7  , 'Labels'              , 7.25             , true , false, 7  , false, NULL, NULL, true , false, 'system')
+    ,(2873, 89  , 8  , 'Reprinted'           , 8.75             , true , false, 8  , false, NULL, NULL, true , false, 'system')
+    ,(2874, 89  , 9  , 'LineId'              , 0.00             , false, false, 9  , false, NULL, NULL, true , false, 'system')
+    ,(2875, 89  , 10 , 'ItemId'              , 0.00             , false, false, 10 , false, NULL, NULL, true , false, 'system')
+    -- ============ STICKER PRINTING - REPRINT LINES (id 90) ============
+    ,(2876, 90  , 0  , '#'                   , 4.64             , true , false, 0  , false, NULL, NULL, true , false, 'system')
+    ,(2877, 90  , 1  , 'Item'                , 44.64            , true , false, 1  , false, NULL, NULL, true , false, 'system')
+    ,(2878, 90  , 2  , 'Batch'               , 12.50            , true , false, 2  , false, NULL, NULL, true , false, 'system')
+    ,(2879, 90  , 3  , 'Printed'             , 11.79            , true , false, 3  , false, NULL, NULL, true , false, 'system')
+    ,(2880, 90  , 4  , 'Before'              , 11.07            , true , false, 4  , false, NULL, NULL, true , false, 'system')
+    ,(2881, 90  , 5  , 'Reprint now'         , 15.36            , true , true , 5  , false, NULL, NULL, true , false, 'system')
+    ,(2882, 90  , 6  , 'LineId'              , 0.00             , false, false, 6  , false, NULL, NULL, true , false, 'system')
     -- ============ (unnamed) (id null) ============
     ,(879 , NULL, 0  , '#'                     , 48               , false, false, 0  , false, NULL, NULL, true , false, 'system')
     ,(1   , NULL, 1  , 'Unit'                  , 325              , true , false, 1  , false, NULL, NULL, true , false, 'system')

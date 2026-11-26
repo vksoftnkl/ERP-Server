@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PrintTemplate, PrintTemplateDataset, PrintTemplateVersion } from '@prisma/client';
+import { Prisma, PrintTemplate, PrintTemplateDataset, PrintTemplateVersion } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import {
   buildSettingsErrorResponse,
@@ -19,7 +19,17 @@ import {
   PrintRenderDefinitionError,
   buildDefinition,
   buildDefinitionFromBody,
+  labelSheetOf,
 } from './definition/definition-from-version';
+import {
+  STICKER_LABEL_DATASET_NAME,
+  STICKER_LABEL_PROVIDER_CODE,
+  stickerSampleRows,
+} from './data/providers/sticker-label.provider';
+import { isUsableDpi } from './engine/label/bar-snap';
+import { LabelSheetSpec, cellTransform, impose } from './engine/label/label-sheet';
+import { LayoutPage } from './engine/layout/layout-tree.types';
+import { LabelSheetCell } from './engine/renderers/pdfkit.renderer';
 import { OutputMode, TemplateDefinition } from './definition/template-definition.schema';
 import { LayoutEngine } from './engine/layout/layout.engine';
 import { LayoutTree } from './engine/layout/layout-tree.types';
@@ -143,6 +153,40 @@ export interface RecordPrintRequest {
   readonly byteCount?: number;
 }
 
+/** One sticker line as the label path lays it out (plan §4.4). */
+export interface LabelRunRow {
+  /** The `label` dataset's row: the keys of STICKER_LABEL_FIELDS. */
+  readonly row: Record<string, unknown>;
+  /** How many of this label (1-9,999). */
+  readonly labels: number;
+}
+
+export interface LabelRenderRequest {
+  readonly versionId: string;
+  readonly context: RenderContext;
+  /** Empty = the SAMPLE rows of stickers.label, 2 labels each (the designer's Preview). */
+  readonly rows: readonly LabelRunRow[];
+  /** First cell on a SHEET (labels down > 1); a roll always starts at 1. */
+  readonly startAt?: number | null;
+  /** The printer's own dpi when Qt reports it; else the design's snap dpi. */
+  readonly printDpi?: number | null;
+  /** An unsaved body, DRAFT revisions only (as /preview). */
+  readonly body?: Record<string, unknown>;
+  /** One label as a person reads it, alone on its page (the sticker preview pane). */
+  readonly singleLabel?: boolean;
+  /** Bands built in code standing in for the stored ones (Test print). */
+  readonly bands?: TemplateDefinition['bands'];
+}
+
+export interface LabelRenderOutcome extends RenderOutcome {
+  readonly labelCount: number;
+  /** The dpi the page and the bars were snapped to. */
+  readonly printDpi: number;
+  /** The start cell actually used (1 on a roll). */
+  readonly startAt: number;
+  readonly sheet: LabelSheetSpec;
+}
+
 export interface PrintOutcome extends RenderOutcome {
     readonly printLogIds: readonly string[];
     readonly assignment: {
@@ -160,6 +204,9 @@ export class PrintRenderService {
 
   private readonly renderers: Readonly<Partial<Record<OutputMode, IRenderer>>>;
 
+  /** The label path draws through the PDF renderer's own label method. */
+  private readonly pdfRenderer: PdfKitRenderer;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly datasetRunner: DatasetRunnerService,
@@ -171,6 +218,7 @@ export class PrintRenderService {
     escp: EscPRenderer,
   ) {
     this.renderers = { PDF: pdf, ESCPOS: escpos, ESCP_DOTMATRIX: escp };
+    this.pdfRenderer = pdf;
   }
 
   // ─── Preview ───────────────────────────────────────────────────────────
@@ -184,6 +232,19 @@ export class PrintRenderService {
    */
   async preview(request: PreviewRequest): Promise<RenderOutcome> {
     const bundle = await this.loadVersion(request.versionId, request.context.companyId);
+
+    // Sticker printing S-P1 (plan §4.4): a label design previews through the
+    // ONE label path — the SAMPLE rows of stickers.label, imposed on the
+    // worked-out page — never as a one-page document.
+    if (labelSheetOf(bundle.version)) {
+      return this.renderLabelBundle(bundle, {
+        versionId: request.versionId,
+        context: request.context,
+        rows: [],
+        ...(request.body ? { body: request.body } : {}),
+      });
+    }
+
     const context = await this.withCurrentAccYear(request.context);
 
     const definition = request.body
@@ -202,6 +263,260 @@ export class PrintRenderService {
       docType: 'PREVIEW',
       ...(request.docIds && request.docIds.length > 0 ? { docIds: request.docIds } : {}),
     });
+  }
+
+  // ─── Labels (sticker printing S-P1) ────────────────────────────────────
+
+  /**
+   * THE label path (plan §4.4, decision 24): the designer's Preview of a label
+   * design, the sticker jobs, the sticker preview and Test print all render
+   * here, so what the designer shows is what the printer gets.
+   *
+   *   1. the definition is built from the revision with the paper = ONE label
+   *      (w × h, margins 0) — the label as a person reads it;
+   *   2. each row is laid out once with the `label` dataset = that row (once
+   *      per copy only when the body reads `copy_no`);
+   *   3. the labels are imposed across, then down, continuing in the free
+   *      cells, from `startAt` on a sheet; the last page's spare cells blank;
+   *   4. cell origins and the page are whole dots of the print dpi, and a
+   *      linear barcode with `moduleDots` becomes vector bars on whole dots.
+   *
+   * Nothing is logged here: a sticker job is its own log (decision 25).
+   */
+  async renderLabels(request: LabelRenderRequest): Promise<LabelRenderOutcome> {
+    const bundle = await this.loadVersion(request.versionId, request.context.companyId);
+    return this.renderLabelBundle(bundle, request);
+  }
+
+  private async renderLabelBundle(
+    bundle: RevisionBundle,
+    request: LabelRenderRequest,
+  ): Promise<LabelRenderOutcome> {
+    const stored = labelSheetOf(bundle.version);
+    if (!stored) {
+      throwSettingsBadRequest<PrintRenderErrorDetail, PrintRenderErrorResponse>(
+        'This design has no label sheet',
+        [
+          {
+            field: 'versionId',
+            code: PrintRenderErrorCode.LABEL_SHEET_MISSING,
+            message:
+              `Revision ${bundle.version.ptvRevNo} of ${bundle.template.ptlCode} has no label sheet ` +
+              '(label size, across, down, dpi), so it cannot be printed as labels.',
+          },
+        ],
+      );
+    }
+    const context = await this.withCurrentAccYear(request.context);
+    const dpi = isUsableDpi(request.printDpi) ? Math.round(request.printDpi) : stored.dpi;
+
+    // The sticker preview pane shows one label as it is read: no cells, no turn.
+    const sheet: LabelSheetSpec = request.singleLabel
+      ? {
+          ...stored,
+          across: 1,
+          down: 1,
+          gapXMm: 0,
+          gapYMm: 0,
+          rotate: 0,
+          paperCode: 'LABEL',
+          marginLeftMm: 0,
+          marginRightMm: 0,
+          marginTopMm: 0,
+          marginBottomMm: 0,
+        }
+      : stored;
+
+    // 1. The definition, on ONE label's paper. The version still wins for the
+    // datasets; only the page is the label instead of the sheet.
+    const zero = new Prisma.Decimal(0);
+    const onLabel: RevisionBundle = {
+      ...bundle,
+      version: {
+        ...bundle.version,
+        ptvPaperCode: 'LABEL',
+        ptvOrientation: 'PORTRAIT',
+        ptvWidthMm: new Prisma.Decimal(stored.labelWidthMm),
+        ptvHeightMm: new Prisma.Decimal(stored.labelHeightMm),
+        ptvMarginTopMm: zero,
+        ptvMarginBottomMm: zero,
+        ptvMarginLeftMm: zero,
+        ptvMarginRightMm: zero,
+        ...(request.bands ? { ptvBody: JSON.stringify({ bands: request.bands }) } : {}),
+      },
+    };
+    const built =
+      request.body && !request.bands
+        ? this.buildFromUnsavedBody(onLabel, request.body)
+        : this.build(onLabel);
+    if (built.layoutMode !== 'GRAPHIC') {
+      throwSettingsBadRequest<PrintRenderErrorDetail, PrintRenderErrorResponse>(
+        'A label design must be a page design',
+        [
+          {
+            field: 'ptvEngine',
+            code: PrintRenderErrorCode.LABEL_NOT_PAGE_DESIGN,
+            message: 'Label designs use the JSON_BANDS engine; this revision lays out in character cells.',
+          },
+        ],
+      );
+    }
+    const definition = built.definition;
+
+    // The label dataset binds per row; any other dataset the design declares
+    // (a letterhead, say) is read once for the whole run.
+    const labelDataset = bundle.datasets.find(
+      (dataset) =>
+        dataset.ptdSourceKind === 'PROVIDER' &&
+        (dataset.ptdProviderCode ?? '').toLowerCase() === STICKER_LABEL_PROVIDER_CODE,
+    );
+    const labelName = labelDataset?.ptdName ?? STICKER_LABEL_DATASET_NAME;
+    const others = bundle.datasets.filter((dataset) => dataset !== labelDataset);
+    const params = this.resolveParams(bundle.version, {});
+    const pass =
+      others.length > 0
+        ? await this.runDatasets({ ...bundle, datasets: others }, { ...context, docId: null }, params)
+        : { data: {} as Record<string, unknown>, resolved: [] as readonly ResolvedDataset[], warnings: [] };
+
+    const rows: readonly LabelRunRow[] =
+      request.rows.length > 0 ? request.rows : stickerSampleRows().map((row) => ({ row, labels: 2 }));
+
+    // 2. Layout: once per row, or per copy when the body reads copy_no.
+    const perCopy = (request.bands ? JSON.stringify(request.bands) : onLabel.version.ptvBody).includes(
+      'copy_no',
+    );
+    const started = Date.now();
+    const warnings: RenderWarning[] = [...pass.warnings];
+    const seen = new Set<string>();
+    const note = (kind: string, message: string): void => {
+      if (!seen.has(message)) {
+        seen.add(message);
+        warnings.push({ kind, message });
+      }
+    };
+    const layouts: LayoutPage[][] = rows.map((entry) => {
+      const copies = perCopy ? Math.max(1, Math.trunc(entry.labels)) : 1;
+      return Array.from({ length: copies }, (_unused, copyIndex) => {
+        const row = {
+          ...entry.row,
+          copy_no: copyIndex + 1,
+          copy_count: entry.labels,
+        };
+        const tree = this.layout.render({
+          definition,
+          datasets: { ...pass.data, [labelName]: row, [STICKER_LABEL_DATASET_NAME]: row },
+          ctx: {
+            ...params,
+            companyId: context.companyId,
+            branchId: context.branchId,
+            accYear: context.accYear,
+            docId: null,
+            docType: 'LABEL_JOB',
+            userId: context.userId,
+            deviceId: context.deviceId,
+            lang: bundle.version.ptvLang,
+            copyNo: copyIndex + 1,
+            copyLabel: '',
+            copies: entry.labels,
+            params,
+          },
+          sys: {
+            now: new Date().toISOString(),
+            template: bundle.template.ptlName,
+            templateCode: bundle.template.ptlCode,
+            revNo: bundle.version.ptvRevNo,
+          },
+        });
+        for (const warning of tree.warnings) {
+          note(warning.kind, warning.message);
+        }
+        if (tree.pageCount > 1) {
+          note(
+            'overflow',
+            `The label for "${typeof entry.row.item_name === 'string' ? entry.row.item_name : ''}" needs ` +
+              "more than one label's height; " +
+              'only the first part is printed.',
+          );
+        }
+        return tree.pages[0] ?? { index: 0, primitives: [] };
+      });
+    });
+    const layoutMs = Date.now() - started;
+
+    // 3. Impose, on whole dots of the print dpi.
+    const run = impose(
+      sheet,
+      rows.map((entry) => entry.labels),
+      { startAt: request.startAt ?? 1, dpi },
+    );
+    const pages: LabelSheetCell[][] = run.pages.map((page) =>
+      page.map((placed) => ({
+        ...cellTransform(sheet, placed, dpi),
+        label: layouts[placed.rowIndex][perCopy ? placed.copyIndex : 0],
+      })),
+    );
+
+    // 4. Draw.
+    const renderStarted = Date.now();
+    const label = `${bundle.template.ptlCode} rev ${bundle.version.ptvRevNo} (${run.labelCount} labels)`;
+    const rendered = await this.withTimeout(
+      this.pdfRenderer.renderLabelSheet(
+        {
+          pageWidthPt: run.page.widthPt,
+          pageHeightPt: run.page.heightPt,
+          dpi,
+          labelWidthMm: stored.labelWidthMm,
+          labelHeightMm: stored.labelHeightMm,
+          pages,
+          warnings: [],
+        },
+        { creationDate: new Date() },
+      ),
+      RENDER_TIMEOUT_MS * Math.max(1, Math.ceil(run.pages.length / 200)),
+      label,
+    );
+    for (const message of rendered.warnings) {
+      note('renderer', message);
+    }
+    if (warnings.length > 0) {
+      this.logger.warn(
+        `Label render of ${label} produced ${warnings.length} warning(s): ${warnings
+          .slice(0, 5)
+          .map((warning) => warning.message)
+          .join(' | ')}`,
+      );
+    }
+    this.logger.log(
+      `Rendered labels ${label} · ${run.pages.length}p · ${dpi} dpi · layout ${layoutMs}ms · ` +
+        `render ${rendered.durationMs}ms · ${(rendered.bytes.length / 1024).toFixed(0)}KB`,
+    );
+
+    return {
+      bytes: rendered.bytes,
+      contentType: rendered.contentType,
+      extension: rendered.extension,
+      outputMode: 'PDF',
+      pageCount: run.pages.length,
+      pagesPerCopy: [run.pages.length],
+      copies: 1,
+      copyLabels: [''],
+      templateId: bundle.template.ptlId,
+      templateName: bundle.template.ptlName,
+      versionId: bundle.version.ptvId,
+      revNo: bundle.version.ptvRevNo,
+      status: bundle.version.ptvStatus,
+      engine: bundle.version.ptvEngine,
+      paperCode: sheet.paperCode,
+      layoutMs,
+      renderMs: Date.now() - renderStarted,
+      detailRows: rows.length,
+      datasets: pass.resolved,
+      warnings,
+      labelCount: run.labelCount,
+      printDpi: dpi,
+      startAt: run.startAt,
+      sheet,
+    };
   }
 
   // ─── Print ─────────────────────────────────────────────────────────────

@@ -98,4 +98,11 @@ export enum ItemErrorCode {
   RESTORE_CODE_TAKEN = 'ITEM_RESTORE_CODE_TAKEN',
   /** Restore refused: another live item has taken this item's SKU since it was deleted. */
   RESTORE_SKU_TAKEN = 'ITEM_RESTORE_SKU_TAKEN',
+  /**
+   * Sticker printing S-P1 (plan §7.3): item_barcode_sticker_id, when set and
+   * changed, must name a live, active, published LABEL design (Item / Pack /
+   * Shelf label purpose) that is shipped or of the item's company (any
+   * company's when the item is shared).
+   */
+  STICKER_DESIGN_INVALID = 'ITEM_STICKER_DESIGN_INVALID',
 }

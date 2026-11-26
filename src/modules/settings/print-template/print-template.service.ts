@@ -18,7 +18,10 @@ import {
   PTV_DEFAULT_LANG,
   PTV_DEFAULT_ORIENTATION,
   PTV_DEFAULT_STATUS,
+  PTV_LABEL_SHEET_KEYS,
+  isLabelPurposeCode,
 } from './print-template.constants';
+import { workedOutPage } from '../print-render/engine/label/label-sheet';
 import {
   PrintTemplateDeleteResult,
   PrintTemplateErrorDetail,
@@ -30,11 +33,15 @@ import { PrintTemplateErrorCode } from './types/print-template-error-codes';
 import {
   EffectiveDataset,
   EffectiveTemplate,
+  EffectiveLabelSheet,
   EffectiveVersion,
   collectDatasetInvariantErrors,
   collectDatasetSetInvariantErrors,
+  collectLabelBodyErrors,
+  collectLabelSheetErrors,
   collectTemplateInvariantErrors,
   collectVersionInvariantErrors,
+  hasLabelSheet,
 } from './utils/print-template-invariants';
 import { changedVersionKeys, datasetsDifference } from './utils/print-template-frozen-compare';
 import {
@@ -59,9 +66,18 @@ import {
   throwSettingsBadRequest,
   throwSettingsConflict,
   throwSettingsNotFound,
+  throwUnprocessable,
 } from 'src/common/utils/module-service.utils';
 
 const TEMPLATE_TABLE_NAME = 'print template';
+
+/** The label rules, refused as a 422 (plan §7.4) rather than the save's usual 400. */
+const LABEL_RULE_CODES: ReadonlySet<string> = new Set([
+  PrintTemplateErrorCode.LABEL_SHEET_REQUIRED,
+  PrintTemplateErrorCode.LABEL_SHEET_INVALID,
+  PrintTemplateErrorCode.LABEL_SHEET_NOT_LABEL,
+  PrintTemplateErrorCode.LABEL_BODY_INVALID,
+]);
 const VERSION_TABLE_NAME = 'print template version';
 const DATASET_TABLE_NAME = 'print template dataset';
 
@@ -96,6 +112,11 @@ interface VersionPlan {
   releasesPointer: boolean;
   /// Explicit ptvIsDeleted: true. Omitting a version does NOT do this.
   deletes: boolean;
+  /// Sticker printing S-P1: the label sheet as the save leaves it.
+  label: EffectiveLabelSheet;
+  /// A label design's page, worked out by the server (plan §4.1): written over
+  /// ptvWidthMm / ptvHeightMm (NULL on A4) and the right margin (= side on a roll).
+  derivedPage: { widthMm: number | null; heightMm: number | null; marginRightMm: number } | null;
 }
 
 /**
@@ -276,9 +297,18 @@ export class PrintTemplateService {
         // request is answered with all of its problems rather than the first.
         const errors: PrintTemplateErrorDetail[] = [];
         const header = this.planHeader(existing, dto, errors);
-        const versionPlans = this.planVersions(existing, dto.versions, errors);
+        const purposeId = String(header.create.ptlPurposeId ?? '');
+        const isLabelPurpose =
+          existing && existing.ptlPurposeId === purposeId
+            ? isLabelPurposeCode(existing.purpose?.ppoCode)
+            : await this.isLabelPurpose(tx, purposeId);
+        const versionPlans = this.planVersions(existing, dto.versions, errors, isLabelPurpose);
         const pointer = this.planPointer(existing, dto, versionPlans, errors);
         if (errors.length > 0) {
+          // Sticker printing S-P1 (plan §7.4): the label-sheet / label-body rules are 422s.
+          if (errors.some((error) => LABEL_RULE_CODES.has(error.code))) {
+            throwUnprocessable<PrintTemplateErrorDetail>('Validation failed', errors);
+          }
           this.throwBadRequest('Validation failed', errors);
         }
         await this.assertCodeIsFree(
@@ -554,10 +584,23 @@ export class PrintTemplateService {
 
   // ═══ Phase A — the versions ══════════════════════════════════════════════
 
+  /** Sticker printing S-P1: is this purpose one of the three label purposes? */
+  private async isLabelPurpose(tx: Prisma.TransactionClient, purposeId: string): Promise<boolean> {
+    if (!purposeId) {
+      return false;
+    }
+    const purpose = await tx.printPurpose.findUnique({
+      where: { ppoId: purposeId },
+      select: { ppoCode: true },
+    });
+    return isLabelPurposeCode(purpose?.ppoCode);
+  }
+
   private planVersions(
     existing: TemplateWithChildren | null,
     rows: SavePrintTemplateVersionDto[] | undefined,
     errors: PrintTemplateErrorDetail[],
+    isLabelPurpose = false,
   ): VersionPlan[] {
     if (rows === undefined) {
       return [];
@@ -627,6 +670,27 @@ export class PrintTemplateService {
       const publishes = effective.ptvStatus === 'PUBLISHED' && current?.ptvStatus !== 'PUBLISHED';
       const datasets = this.planDatasets(current ?? null, row.datasets, path, errors);
 
+      // Sticker printing S-P1 (plan §7.3): the label sheet, the worked-out
+      // page, and — when a label revision is published — its body shape.
+      const label = this.effectiveLabelSheet(current ?? null, row);
+      const labelErrors = collectLabelSheetErrors({ ...effective, ...label }, isLabelPurpose, path);
+      errors.push(...labelErrors);
+      if (isLabelPurpose && publishes) {
+        errors.push(
+          ...collectLabelBodyErrors(
+            effective.ptvBody,
+            datasets
+              ? datasets.plans.map((plan) => plan.effective)
+              : (current?.datasets ?? []).filter((dataset) => !dataset.ptdIsDeleted),
+            path,
+          ),
+        );
+      }
+      const derivedPage =
+        isLabelPurpose && labelErrors.length === 0 && hasLabelSheet(label)
+          ? this.workedOutPageOf(effective, label)
+          : null;
+
       plans.push({
         path,
         row,
@@ -636,6 +700,8 @@ export class PrintTemplateService {
         publishes,
         releasesPointer: false,
         deletes: false,
+        label,
+        derivedPage,
       });
     });
 
@@ -714,6 +780,8 @@ export class PrintTemplateService {
       // unresolvable, which is precisely what withdrawing a design means.
       releasesPointer: existing?.ptlPublishedRevId === current.ptvId,
       deletes: false,
+      label: this.effectiveLabelSheet(current, {}),
+      derivedPage: null,
     };
   }
 
@@ -762,6 +830,8 @@ export class PrintTemplateService {
       publishes: false,
       releasesPointer: false,
       deletes: true,
+      label: this.effectiveLabelSheet(current, {}),
+      derivedPage: null,
     };
   }
 
@@ -785,8 +855,68 @@ export class PrintTemplateService {
       'ptvFontFamily',
       'ptvParams',
       'ptvNote',
+      ...PTV_LABEL_SHEET_KEYS,
     ];
     return designKeys.filter((key) => isPresentField(row, key));
+  }
+
+  /** The label sheet the save leaves on this revision (sticker printing S-P1). */
+  private effectiveLabelSheet(
+    current: VersionRow | null,
+    row: SavePrintTemplateVersionDto,
+  ): EffectiveLabelSheet {
+    const nullable = (
+      key: 'ptvLabelWidthMm' | 'ptvLabelHeightMm',
+      stored: Prisma.Decimal | null | undefined,
+    ): number | null => (row[key] !== undefined ? (row[key] ?? null) : numberOrNull(stored));
+    const nullableInt = (
+      key: 'ptvLabelAcross' | 'ptvLabelDown' | 'ptvLabelDpi',
+      stored: number | null | undefined,
+    ): number | null => (row[key] !== undefined ? (row[key] ?? null) : (stored ?? null));
+    return {
+      ptvLabelWidthMm: nullable('ptvLabelWidthMm', current?.ptvLabelWidthMm),
+      ptvLabelHeightMm: nullable('ptvLabelHeightMm', current?.ptvLabelHeightMm),
+      ptvLabelAcross: nullableInt('ptvLabelAcross', current?.ptvLabelAcross),
+      ptvLabelDown: nullableInt('ptvLabelDown', current?.ptvLabelDown),
+      ptvLabelGapXMm:
+        row.ptvLabelGapXMm !== undefined ? row.ptvLabelGapXMm : numberOr(current?.ptvLabelGapXMm, 0),
+      ptvLabelGapYMm:
+        row.ptvLabelGapYMm !== undefined ? row.ptvLabelGapYMm : numberOr(current?.ptvLabelGapYMm, 0),
+      ptvLabelRotate: row.ptvLabelRotate !== undefined ? row.ptvLabelRotate : (current?.ptvLabelRotate ?? 0),
+      ptvLabelDpi: nullableInt('ptvLabelDpi', current?.ptvLabelDpi),
+    };
+  }
+
+  /**
+   * Plan §4.1 "Page worked out": stored at save so every existing reader of the
+   * page still works. LABEL paper: 2 × side + across × cell + gaps wide, down ×
+   * cell + gaps + top + bottom high, right margin = side. A4: the preset page
+   * (ptvWidthMm / ptvHeightMm NULL), margins as typed.
+   */
+  private workedOutPageOf(
+    version: EffectiveVersion,
+    label: EffectiveLabelSheet,
+  ): { widthMm: number | null; heightMm: number | null; marginRightMm: number } {
+    const paperCode = version.ptvPaperCode.trim().toUpperCase();
+    if (paperCode !== 'LABEL') {
+      return { widthMm: null, heightMm: null, marginRightMm: version.ptvMarginRightMm };
+    }
+    const page = workedOutPage({
+      labelWidthMm: label.ptvLabelWidthMm ?? 0,
+      labelHeightMm: label.ptvLabelHeightMm ?? 0,
+      across: label.ptvLabelAcross ?? 1,
+      down: label.ptvLabelDown ?? 1,
+      gapXMm: label.ptvLabelGapXMm,
+      gapYMm: label.ptvLabelGapYMm,
+      rotate: label.ptvLabelRotate as 0 | 90 | 180 | 270,
+      paperCode,
+      marginLeftMm: version.ptvMarginLeftMm,
+      marginRightMm: version.ptvMarginLeftMm,
+      marginTopMm: version.ptvMarginTopMm,
+      marginBottomMm: version.ptvMarginBottomMm,
+      dpi: label.ptvLabelDpi ?? 203,
+    });
+    return { widthMm: page.widthMm, heightMm: page.heightMm, marginRightMm: version.ptvMarginLeftMm };
   }
 
   /** The existing revision overlaid with whatever this request writes. */
@@ -1058,6 +1188,7 @@ export class PrintTemplateService {
       ptvApprovedBy: effective.ptvApprovedBy,
       ptvApprovedOn: effective.ptvStatus === 'PUBLISHED' ? new Date() : null,
       ptvCreatedBy: this.resolveWriteActor(plan.row.ptvCreatedBy),
+      ...this.labelSheetData(plan, true),
     };
 
     const version = await tx.printTemplateVersion.create({ data });
@@ -1114,6 +1245,8 @@ export class PrintTemplateService {
       data.ptvNote = normalizeNullableString(row.ptvNote) ?? null;
     }
 
+    Object.assign(data, this.labelSheetData(plan, false));
+
     // Publishing is the one transition that stamps a signature and a time. Both
     // are the server's to write: an approver who could choose their own
     // approval timestamp is not an approver.
@@ -1141,6 +1274,34 @@ export class PrintTemplateService {
         : `Print template revision ${updated.ptvRevNo} updated`,
     );
     return updated;
+  }
+
+  /**
+   * The label-sheet columns to write (sticker printing S-P1): on a create all
+   * eight, on an update only those sent; and on a label design the worked-out
+   * page over ptvWidthMm / ptvHeightMm / ptvMarginRightMm every time.
+   */
+  private labelSheetData(
+    plan: VersionPlan,
+    creating: boolean,
+  ): Partial<Prisma.PrintTemplateVersionUncheckedCreateInput> {
+    const data: Partial<Prisma.PrintTemplateVersionUncheckedCreateInput> = {};
+    const sent = (key: (typeof PTV_LABEL_SHEET_KEYS)[number]): boolean =>
+      creating || isPresentField(plan.row, key);
+    if (sent('ptvLabelWidthMm')) data.ptvLabelWidthMm = plan.label.ptvLabelWidthMm;
+    if (sent('ptvLabelHeightMm')) data.ptvLabelHeightMm = plan.label.ptvLabelHeightMm;
+    if (sent('ptvLabelAcross')) data.ptvLabelAcross = plan.label.ptvLabelAcross;
+    if (sent('ptvLabelDown')) data.ptvLabelDown = plan.label.ptvLabelDown;
+    if (sent('ptvLabelGapXMm')) data.ptvLabelGapXMm = plan.label.ptvLabelGapXMm;
+    if (sent('ptvLabelGapYMm')) data.ptvLabelGapYMm = plan.label.ptvLabelGapYMm;
+    if (sent('ptvLabelRotate')) data.ptvLabelRotate = plan.label.ptvLabelRotate;
+    if (sent('ptvLabelDpi')) data.ptvLabelDpi = plan.label.ptvLabelDpi;
+    if (plan.derivedPage) {
+      data.ptvWidthMm = plan.derivedPage.widthMm;
+      data.ptvHeightMm = plan.derivedPage.heightMm;
+      data.ptvMarginRightMm = plan.derivedPage.marginRightMm;
+    }
+    return data;
   }
 
   private async deleteVersion(

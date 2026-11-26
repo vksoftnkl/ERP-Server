@@ -38,4 +38,9 @@ export enum AppSettingsErrorCode {
   VALUE_BELOW_MIN = 'APP_SETTING_VALUE_BELOW_MIN',
   /** The value is above the setting's maximum. */
   VALUE_ABOVE_MAX = 'APP_SETTING_VALUE_ABOVE_MAX',
+  /**
+   * Sticker printing S-P1: inventory.label_cost_code must be exactly 10
+   * letters A-Z, none twice (the first stands for 0). A 422.
+   */
+  COST_CODE_INVALID = 'APP_SETTING_COST_CODE_INVALID',
 }

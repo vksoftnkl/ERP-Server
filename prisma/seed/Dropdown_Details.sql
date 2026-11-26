@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (69 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (65 rows).
 --
 -- 75 QTY PRICE - SELLING LEVELS (menu 244's Price level picker) as migration
 -- 20261106160000_qty_price_layout_fixes inserts it.
@@ -12,6 +12,11 @@
 -- 20261118100000_dc_dc_return inserts it.
 -- 80 BRANCHES - THIS COMPANY (Change Selling Price's Filter popup Branch picker, head office) as
 -- migration 20261124090000_change_selling_price_rework_p1 inserts it.
+-- 81 STICKER DESIGNS (item card Sticker design; Sticker Printing Design filter and F7), 82 DEVICES - THIS
+-- BRANCH and 83 USERS - THIS COMPANY (Printed jobs Counter / User filters) as migration
+-- 20261126100000_sticker_printing_sp1 inserts them.
+-- 82 also lists the counters with no branch of their own that printed sticker jobs at this branch
+-- (D8 VKPOS1 at Acme CBE), as migration 20261126100100_sticker_sp1_wording leaves it.
 -- 48 PRINT PURPOSES - DESKTOP returns ppo_company_id (Voucher Types decision 61) as migration
 -- 20261116130000_print_purpose_dropdown_company sets it.
 -- 8 company and 5 branch list active, not-deleted rows only, regional SQL NULL (review list
@@ -609,6 +614,47 @@ ORDER BY e.emp_name$seed$, NULL)
    AND br_is_active = true
    AND br_comp_id::text = 'icompany_id'
  ORDER BY br_name$seed$, NULL)
+    ,(81, 'STICKER DESIGNS', 'Sticker designs: live, active templates with a published revision of the label purposes ITEM_LABEL / PACK_LABEL / SHELF_LABEL, shipped or this company''s, with their label size. Item card Sticker design (ippo_code ''''), Sticker Printing Design filter and F7 (ippo_code = the list''s purpose). Params icompany_id, ippo_code, always sent; compared as text, never cast.', 'ptl_name'           , 'asc'      , 10, true , 0   , 'Desktop', 'ptl_name'         , 'system', $seed$SELECT t.ptl_id,
+       t.ptl_name,
+       COALESCE(trim_scale(v.ptv_label_width_mm)::text || ' × ' || trim_scale(v.ptv_label_height_mm)::text
+                || ' mm · ' || v.ptv_label_across::text || ' across', '') AS label_size,
+       p.ppo_code,
+       v.ptv_label_width_mm,
+       v.ptv_label_height_mm,
+       v.ptv_label_across
+  FROM public.print_template t
+  JOIN public.print_purpose p ON p.ppo_id = t.ptl_purpose_id
+  JOIN public.print_template_version v ON v.ptv_id = t.ptl_published_rev_id
+ WHERE t.ptl_is_deleted = false
+   AND t.ptl_is_active = true
+   AND p.ppo_is_deleted = false
+   AND p.ppo_code IN ('ITEM_LABEL', 'PACK_LABEL', 'SHELF_LABEL')
+   AND v.ptv_status = 'PUBLISHED'
+   AND v.ptv_is_deleted = false
+   AND (t.ptl_company_id IS NULL OR t.ptl_company_id::text = 'icompany_id')
+   AND (p.ppo_company_id IS NULL OR p.ppo_company_id::text = 'icompany_id')
+   AND ('ippo_code' = '' OR p.ppo_code = 'ippo_code')
+ ORDER BY p.ppo_sort_order, t.ptl_name$seed$, NULL)
+    ,(82, 'DEVICES - THIS BRANCH', 'Sticker Printing Printed jobs Counter filter: live, active devices (counters) of this branch, and the counters with no branch of their own (or another one) that printed sticker jobs at this branch, by name. Param ibranch_id, always sent; compared as text, never cast.', 'dev_device_name'    , 'asc'      , 10, true , 0   , 'Desktop', 'dev_device_name'  , 'system', $seed$SELECT d.dev_id,
+       COALESCE(d.dev_code, '') AS dev_code,
+       COALESCE(d.dev_device_name, '') AS dev_device_name
+  FROM fixed.device_master d
+ WHERE d.dev_is_deleted = false
+   AND d.dev_is_active = true
+   AND (d.dev_branch_id::text = 'ibranch_id'
+        OR EXISTS (SELECT 1
+                     FROM inventory.label_job j
+                    WHERE j.lbj_device_id = d.dev_id
+                      AND j.lbj_branch_id::text = 'ibranch_id'))
+ ORDER BY d.dev_device_name, d.dev_code$seed$, NULL)
+    ,(83, 'USERS - THIS COMPANY', 'Sticker Printing Printed jobs User filter: live, active users of this company and the users with no company (all-company logins, as dropdown 68), by login. Param icompany_id, always sent; compared as text, never cast.', 'usr_login_name'     , 'asc'      , 10, true , 0   , 'Desktop', 'usr_login_name'   , 'system', $seed$SELECT u.usr_id,
+       u.usr_login_name,
+       COALESCE(u.usr_full_name, '') AS usr_full_name
+  FROM public.user_master u
+ WHERE u.usr_is_deleted = false
+   AND u.usr_is_active = true
+   AND (u.usr_company_id IS NULL OR u.usr_company_id::text = 'icompany_id')
+ ORDER BY u.usr_login_name$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

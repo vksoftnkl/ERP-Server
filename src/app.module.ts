@@ -150,6 +150,7 @@ import { ItemsQtyPriceMasterModule } from './modules/Inventory/items-qty-price-m
 import { ItemQtyRatesModule } from './modules/Inventory/item-qty-rates/item-qty-rates.module';
 import { ItemsTaxHistoryMasterModule } from './modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from './modules/Inventory/items-master/items-master.module';
+import { StickersModule } from './modules/Inventory/stickers/stickers.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -211,6 +212,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemQtyRatesModule,
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,
+    // Sticker printing S-P1 (menu 32): /stickers/*.
+    StickersModule,
     AccGroupMasterModule,
     OpeningBalanceModule,
     AccountLedgerMastersModule,

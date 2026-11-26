@@ -1,0 +1,322 @@
+{
+  "schemaVersion": 1,
+  "layoutMode": "GRAPHIC",
+  "meta": {
+    "name": "SAMPLE pack 75 x 50",
+    "note": "SAMPLE FOR TESTING (S10): a long field list on one label (Legal Metrology + FSSAI). 75 x 50 mm, 1 across. Net qty, unit sale price, food mark and label note come with the kit's Made from tab (S-P3) and print blank until then. The veg mark and the fssai box are shapes (no logo image).",
+    "gridSnapMm": 0.2
+  },
+  "bands": [
+    {
+      "type": "REPORT_HEADER",
+      "heightMm": 50,
+      "elements": [
+        {
+          "kind": "FIELD",
+          "id": "name",
+          "x": 2,
+          "y": 1.5,
+          "w": 62,
+          "h": 5.6,
+          "value": "{{ label.item_name|upper }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 12,
+            "bold": true
+          },
+          "align": "left",
+          "ellipsis": true
+        },
+        {
+          "kind": "FIELD",
+          "id": "name_ta",
+          "x": 2,
+          "y": 7.2,
+          "w": 62,
+          "h": 4.2,
+          "value": "{{ label.item_name_ta }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 9,
+            "bold": false
+          },
+          "align": "left",
+          "ellipsis": true
+        },
+        {
+          "kind": "RECT",
+          "id": "veg_box",
+          "x": 66.5,
+          "y": 2,
+          "w": 6,
+          "h": 6,
+          "style": {
+            "stroke": "#1B8E3E",
+            "strokeWidthPt": 1
+          },
+          "visible": "{{ label.food_mark == 'VEG' }}"
+        },
+        {
+          "kind": "RECT",
+          "id": "veg_dot",
+          "x": 68,
+          "y": 3.5,
+          "w": 3,
+          "h": 3,
+          "shape": "ELLIPSE",
+          "style": {
+            "fill": "#1B8E3E"
+          },
+          "visible": "{{ label.food_mark == 'VEG' }}"
+        },
+        {
+          "kind": "LINE",
+          "id": "rule1",
+          "x1": 2,
+          "y1": 12.2,
+          "x2": 73,
+          "y2": 12.2,
+          "widthPt": 0.5
+        },
+        {
+          "kind": "FIELD",
+          "id": "net_qty",
+          "x": 2,
+          "y": 13.0,
+          "w": 36,
+          "h": 4.4,
+          "value": "Net qty: {{ label.net_qty }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 10,
+            "bold": true
+          },
+          "align": "left",
+          "visible": "{{ label.net_qty }}"
+        },
+        {
+          "kind": "FIELD",
+          "id": "mrp",
+          "x": 38,
+          "y": 12.8,
+          "w": 35,
+          "h": 4.8,
+          "value": "MRP ₹{{ label.mrp|fmt('0.00') }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 12,
+            "bold": true
+          },
+          "align": "right",
+          "visible": "{{ label.mrp }}"
+        },
+        {
+          "kind": "FIELD",
+          "id": "unit_price",
+          "x": 2,
+          "y": 17.5,
+          "w": 36,
+          "h": 2.9,
+          "value": "Unit sale price ₹{{ label.unit_price }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 6.5,
+            "bold": false
+          },
+          "align": "left",
+          "visible": "{{ label.unit_price }}"
+        },
+        {
+          "kind": "TEXT",
+          "id": "incl_tax",
+          "x": 38,
+          "y": 17.7,
+          "w": 35,
+          "h": 2.6,
+          "value": "(incl. of all taxes)",
+          "font": {
+            "family": "NotoSans",
+            "size": 5.5,
+            "bold": false
+          },
+          "align": "right"
+        },
+        {
+          "kind": "RECT",
+          "id": "dates_box",
+          "x": 2,
+          "y": 21,
+          "w": 33,
+          "h": 7.4,
+          "style": {
+            "stroke": "#000000",
+            "strokeWidthPt": 0.5
+          }
+        },
+        {
+          "kind": "FIELD",
+          "id": "packed_on",
+          "x": 3,
+          "y": 21.6,
+          "w": 31,
+          "h": 3.1,
+          "value": "Packed on: {{ label.packed_on|date('MMM yyyy')|upper }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 7,
+            "bold": true
+          },
+          "align": "left",
+          "visible": "{{ label.packed_on }}"
+        },
+        {
+          "kind": "FIELD",
+          "id": "use_by",
+          "x": 3,
+          "y": 24.8,
+          "w": 31,
+          "h": 3.1,
+          "value": "Use by: {{ label.use_by|date('MMM yyyy')|upper }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 7,
+            "bold": true
+          },
+          "align": "left",
+          "visible": "{{ label.use_by }}"
+        },
+        {
+          "kind": "BARCODE",
+          "id": "barcode",
+          "x": 38,
+          "y": 20.4,
+          "w": 35,
+          "h": 10.6,
+          "symbology": "auto",
+          "value": "{{ label.barcode }}",
+          "showText": true,
+          "moduleDots": 2
+        },
+        {
+          "kind": "FIELD",
+          "id": "batch",
+          "x": 2,
+          "y": 29.2,
+          "w": 33,
+          "h": 3,
+          "value": "Batch: {{ label.batch }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 7,
+            "bold": false
+          },
+          "align": "left",
+          "visible": "{{ label.batch }}"
+        },
+        {
+          "kind": "FIELD",
+          "id": "label_note",
+          "x": 2,
+          "y": 32.3,
+          "w": 71,
+          "h": 2.8,
+          "value": "{{ label.label_note }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 6,
+            "bold": false
+          },
+          "align": "left",
+          "ellipsis": true
+        },
+        {
+          "kind": "LINE",
+          "id": "rule2",
+          "x1": 2,
+          "y1": 35.6,
+          "x2": 73,
+          "y2": 35.6,
+          "widthPt": 0.5
+        },
+        {
+          "kind": "FIELD",
+          "id": "packer",
+          "x": 2,
+          "y": 36.2,
+          "w": 71,
+          "h": 5.4,
+          "value": "Packed & Marketed by: {{ label.packer_name }}, {{ label.packer_address }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 6,
+            "bold": false
+          },
+          "align": "left",
+          "wrap": true
+        },
+        {
+          "kind": "RECT",
+          "id": "fssai_box",
+          "x": 2,
+          "y": 42.4,
+          "w": 10,
+          "h": 4.2,
+          "style": {
+            "stroke": "#1B8E3E",
+            "strokeWidthPt": 0.8
+          }
+        },
+        {
+          "kind": "TEXT",
+          "id": "fssai_word",
+          "x": 2,
+          "y": 42.8,
+          "w": 10,
+          "h": 3.6,
+          "value": "fssai",
+          "font": {
+            "family": "NotoSans",
+            "size": 7,
+            "bold": true
+          },
+          "align": "center",
+          "style": {
+            "color": "#1B8E3E"
+          }
+        },
+        {
+          "kind": "FIELD",
+          "id": "fssai_no",
+          "x": 13,
+          "y": 43.0,
+          "w": 29,
+          "h": 3.2,
+          "value": "Lic. No. {{ label.fssai_no }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 6,
+            "bold": true
+          },
+          "align": "left",
+          "visible": "{{ label.fssai_no }}"
+        },
+        {
+          "kind": "FIELD",
+          "id": "care",
+          "x": 42.5,
+          "y": 43.1,
+          "w": 30.5,
+          "h": 3.0,
+          "value": "Care: {{ label.care_phone }} · {{ label.care_email }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 5,
+            "bold": false
+          },
+          "align": "right",
+          "ellipsis": true
+        }
+      ]
+    }
+  ]
+}

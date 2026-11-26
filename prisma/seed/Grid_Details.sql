@@ -1,4 +1,4 @@
--- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (125 rows).
+-- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (126 rows).
 --
 -- 116 MAIN LIST - DELIVERY CHALLANS as migration 20261118100000_dc_dc_return leaves it: days,
 -- open_pkgs, open_kg, age_level and the tokens iamber_days / iold_days (an unsent one reads as
@@ -9,6 +9,11 @@
 -- 62 MAIN LIST - COMPUTER USERS as migration 20261120110000_users_step6_show_deleted_disc_limit
 -- leaves it: Show deleted through the token iusr_is_deleted (read as text; unsent = live
 -- users) and Last Login as IST 12-hour text.
+--
+-- 223 MAIN LIST - STICKER JOBS (Sticker Printing, menu 32, Printed jobs) as migration
+-- 20261126100000_sticker_printing_sp1 inserts it: tokens icompany_id, ibranch_id, ifrom_date,
+-- ito_date, idevice_id, iuser_id, iitem_text, every one always sent and compared as text;
+-- Printed at as IST 12-hour text; newest first. Its 16 columns are in Grid_Columns.sql.
 --
 -- grid_sql is user-configurable SQL executed by the grid "run" endpoint through the
 -- read-only pool, with p_* named tokens bound as parameters (bindGridParams). It is
@@ -2205,6 +2210,53 @@ WHERE t.atc_id::text = 'iatc_id'
   AND t.atc_acc_year = 'iacc_year'
   AND t.atc_company_id::text = 'icompany_id'
   AND NOT j.abj_is_deleted$seed$)
+    ,(223, 'MAIN LIST - STICKER JOBS', 'Sticker Printing (menu 32) Printed jobs tab: one row per sticker job of this branch, newest first. Tokens (send every one): icompany_id, ibranch_id, ifrom_date, ito_date (yyyy-MM-dd on the IST print date; '''' = no bound), idevice_id ('''' = all counters), iuser_id ('''' = all users), iitem_text ('''' = all; else jobs with a line whose item name contains it). Kind = Print or Reprint of <job no>; Reason = the fixed reason words, then ": note". Hidden: lbj_id, lbj_acc_year, status_code, kind_code, lbj_device_id.', 'lbj_id', 'Descending', 'Desktop', true , false, 'system', $seed$SELECT j.lbj_refno,
+       to_char(j.lbj_printed_on AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY HH12:MI AM') AS printed_at,
+       COALESCE(u.usr_login_name, '') AS by_name,
+       COALESCE(NULLIF(d.dev_device_name, ''), d.dev_code, '') AS counter_name,
+       COALESCE(t.ptl_name, '') AS design_name,
+       j.lbj_printer_name,
+       j.lbj_line_count,
+       j.lbj_label_count,
+       CASE WHEN j.lbj_kind = 'REPRINT' THEN 'Reprint of ' || COALESCE(o.lbj_refno, '')
+            ELSE 'Print' END AS kind_text,
+       CASE j.lbj_reason_code WHEN 'JAMMED' THEN 'Labels jammed / spoiled'
+                              WHEN 'ROLL_OUT' THEN 'Roll ran out in the middle'
+                              WHEN 'TORN' THEN 'Label torn / fell off'
+                              WHEN 'OTHER' THEN 'Other'
+                              ELSE '' END
+       || CASE WHEN j.lbj_reason_code IS NOT NULL AND length(btrim(COALESCE(j.lbj_reason_note, ''))) > 0
+               THEN ': ' || btrim(j.lbj_reason_note)
+               ELSE '' END AS reason_text,
+       CASE j.lbj_status WHEN 'PRINTED' THEN 'Printed'
+                         WHEN 'FAILED' THEN 'Failed'
+                         WHEN 'SENT' THEN 'Sent'
+                         ELSE j.lbj_status END AS status_text,
+       j.lbj_id,
+       j.lbj_acc_year,
+       j.lbj_status AS status_code,
+       j.lbj_kind AS kind_code,
+       j.lbj_device_id
+  FROM inventory.label_job j
+  LEFT JOIN public.user_master u ON u.usr_id = j.lbj_printed_by
+  LEFT JOIN fixed.device_master d ON d.dev_id = j.lbj_device_id
+  LEFT JOIN public.print_template t ON t.ptl_id = j.lbj_template_id
+  LEFT JOIN inventory.label_job o ON o.lbj_id = j.lbj_reprint_of_id
+                                 AND o.lbj_acc_year = j.lbj_reprint_of_acc_year
+ WHERE j.lbj_company_id::text = 'icompany_id'
+   AND j.lbj_branch_id::text = 'ibranch_id'
+   AND (NULLIF('ifrom_date', '') IS NULL OR to_char(j.lbj_printed_on AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') >= 'ifrom_date')
+   AND (NULLIF('ito_date', '') IS NULL OR to_char(j.lbj_printed_on AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') <= 'ito_date')
+   AND ('idevice_id' = '' OR j.lbj_device_id::text = 'idevice_id')
+   AND ('iuser_id' = '' OR j.lbj_printed_by::text = 'iuser_id')
+   AND ('iitem_text' = ''
+        OR EXISTS (SELECT 1
+                     FROM inventory.label_job_line l
+                     JOIN inventory.item_master i ON i.item_id = l.lbjl_item_id
+                    WHERE l.lbjl_job_id = j.lbj_id
+                      AND l.lbjl_acc_year = j.lbj_acc_year
+                      AND i.item_name_en ILIKE '%' || 'iitem_text' || '%'))
+ ORDER BY j.lbj_printed_on DESC, j.lbj_id DESC$seed$)
 ON CONFLICT (grid_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

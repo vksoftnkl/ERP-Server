@@ -86,6 +86,10 @@ export const BARCODE_SYMBOLOGIES = [
   'pdf417',
   'datamatrix',
   'azteccode',
+  // Sticker printing S-P1 (SM3): EAN-13 when the value is a valid EAN-13 (13
+  // digits, right check digit), anything else Code 128. Resolved per value by
+  // BarcodeFactory.resolveAuto, so one label design prints both kinds of code.
+  'auto',
 ] as const;
 
 /**
@@ -442,6 +446,13 @@ export const barcodeElementSchema = elementBase.extend({
   value: expressionString,
   /** Print the human-readable digits under the bars. */
   showText: z.boolean().default(false),
+  /**
+   * Sticker printing S-P1 (STK-06): the narrow bar in PRINTER DOTS (1-10). Read
+   * only by the label path (print-render README "Labels"), which draws a linear
+   * barcode as vector bars on whole dots at the print dpi; every other render
+   * keeps the PNG barcode and ignores it.
+   */
+  moduleDots: z.number().int().min(1).max(10).optional(),
 });
 
 export const qrcodeElementSchema = elementBase.extend({

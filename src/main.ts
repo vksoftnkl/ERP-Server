@@ -200,6 +200,8 @@ async function bootstrap(): Promise<void> {
         'X-Print-Pages',
         'X-Print-Copies',
         'X-Print-Warnings',
+        // Sticker printing: the warning strings themselves (base64 JSON array).
+        'X-Print-Warning-Texts',
         'X-Print-Log-Ids',
         'X-Print-Scope',
         // Set by HttpCacheInterceptor on every cacheable route.

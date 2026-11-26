@@ -108,6 +108,7 @@ model BranchMaster {
 
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileBranch")
   printLogs             PrintLog[]                @relation("PrintLogBranch")
+  labelJobs             LabelJob[]                @relation("LabelJobBranch")
 
   // ── GST provider integration ───────────────────────────────────────────
   // Only a branch that holds its OWN registration (br_gstin_no) is named on a

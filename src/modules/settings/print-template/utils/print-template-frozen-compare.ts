@@ -77,6 +77,9 @@ export const VERSION_DESIGN_COMPARE: Record<string, CompareKind> = {
   ptvRevNo: 'number', ptvEngine: 'text', ptvBody: 'body', ptvSchemaVer: 'number', ptvPaperCode: 'text', ptvOrientation: 'text',
   ptvWidthMm: 'number', ptvHeightMm: 'number', ptvMarginTopMm: 'number', ptvMarginBottomMm: 'number', ptvMarginLeftMm: 'number',
   ptvMarginRightMm: 'number', ptvColumns: 'number', ptvLang: 'text', ptvFontFamily: 'text', ptvParams: 'json', ptvNote: 'text',
+  // Sticker printing S-P1: the label sheet is design too (frozen with the revision).
+  ptvLabelWidthMm: 'number', ptvLabelHeightMm: 'number', ptvLabelAcross: 'number', ptvLabelDown: 'number',
+  ptvLabelGapXMm: 'number', ptvLabelGapYMm: 'number', ptvLabelRotate: 'number', ptvLabelDpi: 'number',
 };
 
 /** Of the design keys a row SENT, those whose value differs from the stored revision. */

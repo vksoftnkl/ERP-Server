@@ -22,6 +22,8 @@ import {
   TextPrimitive,
 } from '../layout/layout-tree.types';
 import { mmToPoints } from '../units/units';
+import { layoutBars, snapMmToDot } from '../label/bar-snap';
+import { LabelRotate } from '../label/label-sheet';
 import { BarcodeFactory } from './barcode.factory';
 import { ImageCache } from './image.cache';
 import { IRenderer, RenderOptions, RenderResult } from './renderer.types';
@@ -42,6 +44,43 @@ import { IRenderer, RenderOptions, RenderResult } from './renderer.types';
  * renderer does its own text positioning rather than handing strings to
  * PDFKit's own layout.
  */
+
+/**
+ * Sticker printing S-P1 — one label put into one cell of a label page.
+ *
+ * `label` is a page laid out at the size of ONE label as a person reads it;
+ * its coordinates start at the label's own top-left. The renderer translates
+ * to the cell and turns it (clockwise, y down) before drawing it.
+ */
+export interface LabelSheetCell {
+  readonly translateXMm: number;
+  readonly translateYMm: number;
+  readonly rotate: LabelRotate;
+  readonly label: LayoutPage;
+}
+
+/** A label run, imposed: every page's cells, the page in whole dots. */
+export interface LabelSheetDocument {
+  /** Whole dots of `dpi`, in points (decision 39: Qt's raster scale is dpi / 72). */
+  readonly pageWidthPt: number;
+  readonly pageHeightPt: number;
+  /** The PRINT dpi: bars and spaces are whole dots of it. */
+  readonly dpi: number;
+  readonly labelWidthMm: number;
+  readonly labelHeightMm: number;
+  readonly pages: readonly (readonly LabelSheetCell[])[];
+  /** Layout warnings to carry into the result. */
+  readonly warnings: readonly string[];
+}
+
+/** The 2-D symbologies, which keep their PNG even on a label. */
+const TWO_DIMENSIONAL_BARCODES: ReadonlySet<string> = new Set(['pdf417', 'datamatrix', 'azteccode']);
+
+/** A barcode the label path draws as vector bars on whole dots. */
+const isDotBarcode = (primitive: LayoutPage['primitives'][number]): boolean =>
+  primitive.k === 'barcode' &&
+  primitive.moduleDots !== undefined &&
+  !TWO_DIMENSIONAL_BARCODES.has(primitive.symbology);
 
 /** Millimetres of slack allowed before a primitive is reported as off-page. */
 const OVERFLOW_TOLERANCE_MM = 0.5;
@@ -159,6 +198,212 @@ export class PdfKitRenderer implements IRenderer {
     };
   }
 
+  // ─── Labels (sticker printing S-P1, print-render README "Labels") ───────
+
+  /**
+   * A label run: every label already laid out once, placed into its cell.
+   *
+   * The same primitives and the same drawing code as `render`, with three
+   * differences that are the whole point of the label path: the page is the
+   * worked-out label page in whole printer dots; each cell is translated (and
+   * turned) to its own origin and clipped to its own label; and a linear barcode carrying `moduleDots` is
+   * drawn as vector bars, every bar and space a whole number of dots at `dpi`,
+   * instead of a scaled picture (STK-06). Everything else — invoices, reports —
+   * never reaches this method and keeps its PNG barcodes.
+   */
+  async renderLabelSheet(sheet: LabelSheetDocument, options: RenderOptions = {}): Promise<RenderResult> {
+    const startedAt = Date.now();
+    const warnings: string[] = [...sheet.warnings];
+
+    const document = new PdfDocument({
+      size: [sheet.pageWidthPt, sheet.pageHeightPt],
+      margin: 0,
+      autoFirstPage: false,
+      compress: true,
+      info: {
+        Producer: 'VK Nex ERP',
+        Creator: 'VK Nex ERP label engine',
+        CreationDate: options.creationDate ?? new Date(),
+      },
+    });
+
+    const chunks: Buffer[] = [];
+    document.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const finished = new Promise<void>((resolveFinished, rejectFinished) => {
+      document.on('end', () => resolveFinished());
+      document.on('error', rejectFinished);
+    });
+
+    this.registerFonts(document);
+
+    // One label is laid out once and placed many times: its pictures are
+    // resolved once per LAYOUT, not once per cell.
+    const assetsByLabel = new Map<LayoutPage, Map<number, Buffer>>();
+    for (const page of sheet.pages) {
+      for (const cell of page) {
+        if (!assetsByLabel.has(cell.label)) {
+          assetsByLabel.set(cell.label, await this.prepareAssets(cell.label, options, isDotBarcode));
+        }
+      }
+    }
+
+    sheet.pages.forEach((page, pageIndex) => {
+      document.addPage({ size: [sheet.pageWidthPt, sheet.pageHeightPt], margin: 0 });
+      for (const cell of page) {
+        document.save();
+        document.translate(mmToPoints(cell.translateXMm), mmToPoints(cell.translateYMm));
+        if (cell.rotate) {
+          document.rotate(cell.rotate);
+        }
+        // Clip to the label's own rectangle (its w × h, before the turn), so
+        // nothing drawn for this label — a barcode wider than its box, text
+        // past the edge — ever lands on the next label or the gap (review
+        // SF3). The warnings below still tell the operator it was cut.
+        document
+          .rect(0, 0, mmToPoints(sheet.labelWidthMm), mmToPoints(sheet.labelHeightMm))
+          .clip();
+        this.drawLabel(
+          document,
+          cell.label,
+          assetsByLabel.get(cell.label) ?? new Map<number, Buffer>(),
+          sheet,
+          pageIndex,
+          warnings,
+        );
+        document.restore();
+      }
+    });
+
+    document.end();
+    await finished;
+
+    for (const message of [...this.barcodes.drainWarnings(), ...this.images.drainWarnings()]) {
+      if (!warnings.includes(message)) {
+        warnings.push(message);
+      }
+    }
+
+    const bytes = Buffer.concat(chunks);
+    const durationMs = Date.now() - startedAt;
+    this.logger.log(
+      `Label PDF rendered: ${sheet.pages.length} page(s) at ${sheet.dpi} dpi, ` +
+        `${(bytes.length / 1024).toFixed(0)}KB, ${durationMs}ms`,
+    );
+
+    return {
+      bytes,
+      contentType: 'application/pdf',
+      extension: 'pdf',
+      pageCount: sheet.pages.length,
+      durationMs,
+      warnings,
+    };
+  }
+
+  /** One label's primitives, in its own coordinates (the cell transform is set). */
+  private drawLabel(
+    document: PDFKit.PDFDocument,
+    label: LayoutPage,
+    assets: Map<number, Buffer>,
+    sheet: LabelSheetDocument,
+    pageIndex: number,
+    warnings: string[],
+  ): void {
+    label.primitives.forEach((primitive, index) => {
+      this.reportOverflow(primitive, pageIndex, sheet.labelWidthMm, sheet.labelHeightMm, warnings);
+      if (primitive.k === 'barcode' && isDotBarcode(primitive)) {
+        this.drawDotBarcode(document, primitive, sheet.dpi, warnings);
+        return;
+      }
+      switch (primitive.k) {
+        case 'rect':
+          this.drawRect(document, primitive);
+          break;
+        case 'line':
+          this.drawLine(document, primitive);
+          break;
+        case 'path':
+          this.drawPath(document, primitive);
+          break;
+        case 'text':
+          this.drawText(document, primitive);
+          break;
+        case 'image':
+          this.drawImage(document, primitive, assets.get(index));
+          break;
+        case 'barcode':
+          this.drawBarcode(document, primitive, assets.get(index));
+          break;
+        case 'qrcode':
+          this.drawQrCode(document, primitive, assets.get(index));
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
+  /**
+   * A linear barcode as vector bars on whole dots (STK-06): the narrow bar is
+   * `moduleDots` dots, the left edge is snapped to a dot, the digits sit
+   * centred under the bars when `showText`. A symbol wider than its box still
+   * prints, with a warning naming a narrower bar width.
+   */
+  private drawDotBarcode(
+    document: PDFKit.PDFDocument,
+    primitive: BarcodePrimitive,
+    dpi: number,
+    warnings: string[],
+  ): void {
+    const raw = this.barcodes.rawBars(primitive.symbology, primitive.value);
+    if (!raw) {
+      return;
+    }
+    const moduleDots = primitive.moduleDots ?? 2;
+    const bars = layoutBars(raw.sbs, moduleDots, dpi, primitive.x);
+    if (bars.widthMm > primitive.w + 0.05) {
+      const message =
+        `Barcode wider than its box at ${moduleDots} dot${moduleDots === 1 ? '' : 's'}: ` +
+        (moduleDots > 1 ? `use ${moduleDots - 1} dot${moduleDots - 1 === 1 ? '' : 's'} or a wider box` : 'use a wider box');
+      if (!warnings.includes(message)) {
+        warnings.push(message);
+      }
+    }
+
+    // Digits: a small face that fits under the bars, 5-8 pt by the box height.
+    const digitsPt = Math.min(8, Math.max(5, mmToPoints(primitive.h * 0.26)));
+    const digitsMm = primitive.showText ? (digitsPt / mmToPoints(1)) * 1.15 : 0;
+    const topMm = snapMmToDot(primitive.y, dpi);
+    const barHeightMm = Math.max(1, primitive.h - digitsMm);
+
+    for (const bar of bars.bars) {
+      document.rect(
+        mmToPoints(bar.xMm),
+        mmToPoints(topMm),
+        mmToPoints(bar.widthMm),
+        mmToPoints(barHeightMm),
+      );
+    }
+    document.fillColor('#000000').fill();
+
+    if (primitive.showText) {
+      this.drawText(document, {
+        k: 'text',
+        x: bars.leftMm,
+        y: topMm + barHeightMm,
+        w: bars.widthMm,
+        h: digitsMm,
+        text: primitive.value,
+        font: { family: 'NotoSans', sizePt: digitsPt, bold: false, italic: false, underline: false },
+        align: 'center',
+        vAlign: 'top',
+        color: '#000000',
+        lines: [primitive.value],
+        lineHeightMm: digitsMm,
+      });
+    }
+  }
+
   // ─── Setup ─────────────────────────────────────────────────────────────
 
   /**
@@ -206,6 +451,8 @@ export class PdfKitRenderer implements IRenderer {
   private async prepareAssets(
     page: LayoutPage,
     options: RenderOptions,
+    /** The label path: primitives it draws itself (vector bars) need no picture. */
+    skip?: (primitive: LayoutPage['primitives'][number]) => boolean,
   ): Promise<Map<number, Buffer>> {
     const assets = new Map<number, Buffer>();
     const resolveImage =
@@ -213,6 +460,9 @@ export class PdfKitRenderer implements IRenderer {
 
     await Promise.all(
       page.primitives.map(async (primitive, index) => {
+        if (skip?.(primitive)) {
+          return;
+        }
         switch (primitive.k) {
           case 'image': {
             const bytes = await resolveImage(primitive.src);

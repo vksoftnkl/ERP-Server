@@ -1,0 +1,119 @@
+/// inventory.label_job — Sticker Printing (menu 32): one row per printed design
+/// group, a sticker job (plan printing/sticker-printing S-P1 §6.3, migration
+/// 20261126100000_sticker_printing_sp1).
+///
+/// LIST-partitioned by lbjAccYear (the company's financial year at print), PK
+/// (lbjId, lbjAccYear). Partitions come from public.ensure_acc_year_partitions,
+/// which 20261126100000 taught about this table.
+///
+/// Numbered per COUNTER: lbjRefno = dev_code || '-' || the 6-digit lbjSlno
+/// (D8-000127), the serial restarting each financial year (PQ3). Only one
+/// counter writes its series, so ux_lbj_device_no cannot clash at sync.
+///
+/// Everything is frozen at print: the design revision (lbjVersionId), the
+/// printer, the price level and every line's figures (LabelJobLine). Nothing is
+/// edited afterwards except the one status step SENT -> PRINTED / FAILED
+/// (lbjStatus, lbjStatusOn, lbjPrinterMessage, lbjModifiedOn / By), which
+/// txn_status_log records (doc type LABEL_JOB). A reprint (kind REPRINT, with a
+/// reason) or a resend of a failed job (kind PRINT, lbjResendOfId) is a NEW job.
+/// Sticker jobs do not write print_log.
+///
+/// lbjReprintOfId / lbjResendOfId carry NO foreign key: a reprint and its
+/// source may reach the cloud in either order (§5).
+///
+/// CHECK constraints (DB-only):
+///   ck_lbj_kind         PRINT | REPRINT
+///   ck_lbj_status       SENT | PRINTED | FAILED
+///   ck_lbj_reason_code  NULL | JAMMED | ROLL_OUT | TORN | OTHER
+///   ck_lbj_reprint      REPRINT <=> reprint_of_id set <=> reason set; OTHER needs a note
+///   ck_lbj_resend       a resend is kind PRINT
+///   ck_lbj_src          MANUAL with no source document (S-P2 widens it)
+///   ck_lbj_counts       line_count, label_count, start_at, slno >= 1
+///   ck_lbj_price_level  1-4
+/// Partial indexes (DB-only): ix_lbj_reprint_of, ix_lbj_resend_of (WHERE ...
+/// IS NOT NULL), ix_sync_pending_label_job.
+model LabelJob {
+  lbjId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lbj_id")
+  /// THE PARTITION KEY: the company's financial year at print.
+  lbjAccYear            String    @db.Char(9)                          @map("lbj_acc_year")
+  lbjCompanyId          String    @db.Uuid                             @map("lbj_company_id")
+  lbjBranchId           String    @db.Uuid                             @map("lbj_branch_id")
+  /// The counter that printed (fixed.device_master); it owns the number series.
+  lbjDeviceId           String    @db.Uuid                             @map("lbj_device_id")
+  /// Per company + branch + device + year (ux_lbj_device_no).
+  lbjSlno               Int                                            @map("lbj_slno")
+  /// D8-000127
+  lbjRefno              String    @db.VarChar(30)                      @map("lbj_refno")
+
+  // ── What was printed, where ─────────────────────────────────────────
+  lbjPurposeId          String    @db.Uuid                             @map("lbj_purpose_id")
+  lbjTemplateId         String    @db.Uuid                             @map("lbj_template_id")
+  /// The frozen design revision; a reprint uses the original job's.
+  lbjVersionId          String    @db.Uuid                             @map("lbj_version_id")
+  lbjPrinterName        String    @db.VarChar(150)                     @map("lbj_printer_name")
+  /// What Qt reported for the queue; NULL = the design's snap dpi.
+  lbjPrinterDpi         Int?      @db.SmallInt                         @map("lbj_printer_dpi")
+  /// 1-4 (ck_lbj_price_level): the level "Our price" was read at.
+  lbjPriceLevel         Int       @db.SmallInt                         @map("lbj_price_level")
+  /// The first cell on a sheet (labels down > 1); 1 on a roll.
+  lbjStartAt            Int       @default(1) @db.SmallInt             @map("lbj_start_at")
+
+  // ── Kind: print, reprint (with a reason), resend of a failed job ───
+  /// PRINT | REPRINT (ck_lbj_kind).
+  lbjKind               String    @default("PRINT") @db.VarChar(10)    @map("lbj_kind")
+  /// REPRINT: the original job (never a reprint). No FK (§5).
+  lbjReprintOfId        String?   @db.Uuid                             @map("lbj_reprint_of_id")
+  lbjReprintOfAccYear   String?   @db.Char(9)                          @map("lbj_reprint_of_acc_year")
+  /// A FAILED job sent again (kind PRINT, no reason). No FK (§5).
+  lbjResendOfId         String?   @db.Uuid                             @map("lbj_resend_of_id")
+  lbjResendOfAccYear    String?   @db.Char(9)                          @map("lbj_resend_of_acc_year")
+  /// REPRINT only: JAMMED | ROLL_OUT | TORN | OTHER (ck_lbj_reason_code).
+  lbjReasonCode         String?   @db.VarChar(10)                      @map("lbj_reason_code")
+  /// Required for OTHER (ck_lbj_reprint).
+  lbjReasonNote         String?   @db.VarChar(250)                     @map("lbj_reason_note")
+
+  // ── Source (S-P2 hook) ──────────────────────────────────────────────
+  /// MANUAL in S-P1 (ck_lbj_src); S-P2 widens it for GRN / purchase bill jobs.
+  lbjSrcKind            String    @default("MANUAL") @db.VarChar(20)   @map("lbj_src_kind")
+  lbjSrcDocType         String?   @db.VarChar(30)                      @map("lbj_src_doc_type")
+  lbjSrcDocId           String?   @db.Uuid                             @map("lbj_src_doc_id")
+  lbjSrcAccYear         String?   @db.Char(9)                          @map("lbj_src_acc_year")
+
+  // ── Counts ──────────────────────────────────────────────────────────
+  lbjLineCount          Int       @db.SmallInt                         @map("lbj_line_count")
+  lbjLabelCount         Int                                            @map("lbj_label_count")
+  lbjPageCount          Int?                                           @map("lbj_page_count")
+
+  // ── Status: the one step SENT -> PRINTED / FAILED ───────────────────
+  /// SENT | PRINTED | FAILED (ck_lbj_status).
+  lbjStatus             String    @default("SENT") @db.VarChar(10)     @map("lbj_status")
+  lbjStatusOn           DateTime? @db.Timestamptz(6)                   @map("lbj_status_on")
+  /// The printer's message on FAILED.
+  lbjPrinterMessage     String?   @db.VarChar(250)                     @map("lbj_printer_message")
+
+  lbjPrintedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("lbj_printed_on")
+  lbjPrintedBy          String    @db.Uuid                             @map("lbj_printed_by")
+  /// The status step (no FK).
+  lbjModifiedOn         DateTime? @db.Timestamptz(6)                   @map("lbj_modified_on")
+  lbjModifiedBy         String?   @db.Uuid                             @map("lbj_modified_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  lbjSyncDate           DateTime? @db.Timestamptz(6)                   @map("lbj_sync_date")
+
+  // ── Relations ───────────────────────────────────────────────────────
+  company               Company              @relation("LabelJobCompany",   fields: [lbjCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_company")
+  branch                BranchMaster         @relation("LabelJobBranch",    fields: [lbjBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_branch")
+  device                DeviceMaster         @relation("LabelJobDevice",    fields: [lbjDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_device")
+  purpose               PrintPurpose         @relation("LabelJobPurpose",   fields: [lbjPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_purpose")
+  template              PrintTemplate        @relation("LabelJobTemplate",  fields: [lbjTemplateId], references: [ptlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_template")
+  version               PrintTemplateVersion @relation("LabelJobVersion",   fields: [lbjVersionId],  references: [ptvId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_version")
+  printedByUser         UserMaster           @relation("LabelJobPrintedBy", fields: [lbjPrintedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_printed_by")
+  lines                 LabelJobLine[]       @relation("LabelJobLines")
+
+  @@id([lbjId, lbjAccYear], map: "pk_label_job")
+  /// Numbers are per counter (offline-safe).
+  @@unique([lbjCompanyId, lbjBranchId, lbjDeviceId, lbjAccYear, lbjSlno], map: "ux_lbj_device_no")
+  /// The Printed jobs list (grid 223), newest first.
+  @@index([lbjCompanyId, lbjBranchId, lbjPrintedOn(sort: Desc)], map: "ix_lbj_list")
+  @@map("label_job")
+  @@schema("inventory")
+}

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { PrintDataProvider } from './print-data-provider.types';
+import { PrintDataProvider, PrintDataProviderField } from './print-data-provider.types';
 
 /** The injection token every shipped provider is collected under. */
 export const PRINT_DATA_PROVIDERS = Symbol('PRINT_DATA_PROVIDERS');
@@ -53,13 +53,19 @@ export class PrintDataProviderRegistry {
     return [...this.byCode.keys()].sort();
   }
 
-  /** What a designer's dataset picker offers. */
-  describe(): Array<{ code: string; label: string; cardinality: 'one' | 'many' }> {
+  /** What a designer's dataset picker offers (`fields` only where a provider publishes them). */
+  describe(): Array<{
+    code: string;
+    label: string;
+    cardinality: 'one' | 'many';
+    fields?: PrintDataProviderField[];
+  }> {
     return [...this.byCode.values()]
       .map((provider) => ({
         code: provider.code,
         label: provider.label,
         cardinality: provider.cardinality,
+        ...(provider.fields ? { fields: provider.fields.map((field) => ({ ...field })) } : {}),
       }))
       .sort((left, right) => left.code.localeCompare(right.code));
   }

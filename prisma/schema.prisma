@@ -4522,6 +4522,8 @@ model DeviceMaster {
 
   printerProfiles  PrinterProfile[]          @relation("PrinterProfileDevice")
   printLogs        PrintLog[]                @relation("PrintLogDevice")
+  /// Sticker jobs; the counter owns their number series (20261126100000).
+  labelJobs        LabelJob[]                @relation("LabelJobDevice")
 
   @@index([devDeviceUid], name: "idx_device_uid")
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
@@ -5351,6 +5353,9 @@ model ItemMaster {
   itemAllowFreight     Boolean  @default(false) @map("item_allow_freight")
   itemRandomStock      Boolean  @default(false) @map("item_random_stock")
   itemBarcodeSticker   Boolean  @default(false) @map("item_barcode_sticker")
+  /// The item's own sticker design (item card "Sticker design"): a live,
+  /// published label design; FK fk_item_barcode_sticker (20261126100000), SET
+  /// NULL when the design row goes. Partial ix_item_barcode_sticker is DB-only.
   itemBarcodeStickerId String?  @db.Uuid @map("item_barcode_sticker_id")
   // Tax / HSN
   itemDefaultTaxId     String?  @db.Uuid @map("item_default_tax_id")
@@ -5387,6 +5392,7 @@ model ItemMaster {
   // Relations
   group                ItemGroupMaster @relation(fields: [itemGroupId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
   trackPreset          StockTrackPreset? @relation("ItemTrackPreset", fields: [itemTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_item_track_preset")
+  stickerDesign        PrintTemplate?  @relation("ItemStickerDesign", fields: [itemBarcodeStickerId], references: [ptlId], onUpdate: Cascade, onDelete: SetNull, map: "fk_item_barcode_sticker")
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   // Repointed at inventory.tax_rate_master by migration
@@ -5430,6 +5436,9 @@ model ItemMaster {
   deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemItem")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
+
+  // ── Sticker printing (20261126100000) ───────────────────────────────────
+  labelJobLines         LabelJobLine[]            @relation("LabelJobLineItem")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   itemSyncDate DateTime? @db.Timestamptz(6) @map("item_sync_date")
 
@@ -6135,6 +6144,9 @@ model ItemUnitConversion {
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemUnit")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemUnit")
 
+  // ── Sticker printing (20261126100000): the label unit of a job line ─────
+  labelJobLines         LabelJobLine[]            @relation("LabelJobLineUnit")
+
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,
@@ -6211,6 +6223,190 @@ model Unit {
   @@schema("inventory")
   @@index([unit_is_active], map: "idx_unit_active")
   @@index([unit_base_unit_id], map: "idx_unit_base")
+}
+
+// ----- prisma/inventory/labelJob.prisma -----
+/// inventory.label_job — Sticker Printing (menu 32): one row per printed design
+/// group, a sticker job (plan printing/sticker-printing S-P1 §6.3, migration
+/// 20261126100000_sticker_printing_sp1).
+///
+/// LIST-partitioned by lbjAccYear (the company's financial year at print), PK
+/// (lbjId, lbjAccYear). Partitions come from public.ensure_acc_year_partitions,
+/// which 20261126100000 taught about this table.
+///
+/// Numbered per COUNTER: lbjRefno = dev_code || '-' || the 6-digit lbjSlno
+/// (D8-000127), the serial restarting each financial year (PQ3). Only one
+/// counter writes its series, so ux_lbj_device_no cannot clash at sync.
+///
+/// Everything is frozen at print: the design revision (lbjVersionId), the
+/// printer, the price level and every line's figures (LabelJobLine). Nothing is
+/// edited afterwards except the one status step SENT -> PRINTED / FAILED
+/// (lbjStatus, lbjStatusOn, lbjPrinterMessage, lbjModifiedOn / By), which
+/// txn_status_log records (doc type LABEL_JOB). A reprint (kind REPRINT, with a
+/// reason) or a resend of a failed job (kind PRINT, lbjResendOfId) is a NEW job.
+/// Sticker jobs do not write print_log.
+///
+/// lbjReprintOfId / lbjResendOfId carry NO foreign key: a reprint and its
+/// source may reach the cloud in either order (§5).
+///
+/// CHECK constraints (DB-only):
+///   ck_lbj_kind         PRINT | REPRINT
+///   ck_lbj_status       SENT | PRINTED | FAILED
+///   ck_lbj_reason_code  NULL | JAMMED | ROLL_OUT | TORN | OTHER
+///   ck_lbj_reprint      REPRINT <=> reprint_of_id set <=> reason set; OTHER needs a note
+///   ck_lbj_resend       a resend is kind PRINT
+///   ck_lbj_src          MANUAL with no source document (S-P2 widens it)
+///   ck_lbj_counts       line_count, label_count, start_at, slno >= 1
+///   ck_lbj_price_level  1-4
+/// Partial indexes (DB-only): ix_lbj_reprint_of, ix_lbj_resend_of (WHERE ...
+/// IS NOT NULL), ix_sync_pending_label_job.
+model LabelJob {
+  lbjId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lbj_id")
+  /// THE PARTITION KEY: the company's financial year at print.
+  lbjAccYear            String    @db.Char(9)                          @map("lbj_acc_year")
+  lbjCompanyId          String    @db.Uuid                             @map("lbj_company_id")
+  lbjBranchId           String    @db.Uuid                             @map("lbj_branch_id")
+  /// The counter that printed (fixed.device_master); it owns the number series.
+  lbjDeviceId           String    @db.Uuid                             @map("lbj_device_id")
+  /// Per company + branch + device + year (ux_lbj_device_no).
+  lbjSlno               Int                                            @map("lbj_slno")
+  /// D8-000127
+  lbjRefno              String    @db.VarChar(30)                      @map("lbj_refno")
+
+  // ── What was printed, where ─────────────────────────────────────────
+  lbjPurposeId          String    @db.Uuid                             @map("lbj_purpose_id")
+  lbjTemplateId         String    @db.Uuid                             @map("lbj_template_id")
+  /// The frozen design revision; a reprint uses the original job's.
+  lbjVersionId          String    @db.Uuid                             @map("lbj_version_id")
+  lbjPrinterName        String    @db.VarChar(150)                     @map("lbj_printer_name")
+  /// What Qt reported for the queue; NULL = the design's snap dpi.
+  lbjPrinterDpi         Int?      @db.SmallInt                         @map("lbj_printer_dpi")
+  /// 1-4 (ck_lbj_price_level): the level "Our price" was read at.
+  lbjPriceLevel         Int       @db.SmallInt                         @map("lbj_price_level")
+  /// The first cell on a sheet (labels down > 1); 1 on a roll.
+  lbjStartAt            Int       @default(1) @db.SmallInt             @map("lbj_start_at")
+
+  // ── Kind: print, reprint (with a reason), resend of a failed job ───
+  /// PRINT | REPRINT (ck_lbj_kind).
+  lbjKind               String    @default("PRINT") @db.VarChar(10)    @map("lbj_kind")
+  /// REPRINT: the original job (never a reprint). No FK (§5).
+  lbjReprintOfId        String?   @db.Uuid                             @map("lbj_reprint_of_id")
+  lbjReprintOfAccYear   String?   @db.Char(9)                          @map("lbj_reprint_of_acc_year")
+  /// A FAILED job sent again (kind PRINT, no reason). No FK (§5).
+  lbjResendOfId         String?   @db.Uuid                             @map("lbj_resend_of_id")
+  lbjResendOfAccYear    String?   @db.Char(9)                          @map("lbj_resend_of_acc_year")
+  /// REPRINT only: JAMMED | ROLL_OUT | TORN | OTHER (ck_lbj_reason_code).
+  lbjReasonCode         String?   @db.VarChar(10)                      @map("lbj_reason_code")
+  /// Required for OTHER (ck_lbj_reprint).
+  lbjReasonNote         String?   @db.VarChar(250)                     @map("lbj_reason_note")
+
+  // ── Source (S-P2 hook) ──────────────────────────────────────────────
+  /// MANUAL in S-P1 (ck_lbj_src); S-P2 widens it for GRN / purchase bill jobs.
+  lbjSrcKind            String    @default("MANUAL") @db.VarChar(20)   @map("lbj_src_kind")
+  lbjSrcDocType         String?   @db.VarChar(30)                      @map("lbj_src_doc_type")
+  lbjSrcDocId           String?   @db.Uuid                             @map("lbj_src_doc_id")
+  lbjSrcAccYear         String?   @db.Char(9)                          @map("lbj_src_acc_year")
+
+  // ── Counts ──────────────────────────────────────────────────────────
+  lbjLineCount          Int       @db.SmallInt                         @map("lbj_line_count")
+  lbjLabelCount         Int                                            @map("lbj_label_count")
+  lbjPageCount          Int?                                           @map("lbj_page_count")
+
+  // ── Status: the one step SENT -> PRINTED / FAILED ───────────────────
+  /// SENT | PRINTED | FAILED (ck_lbj_status).
+  lbjStatus             String    @default("SENT") @db.VarChar(10)     @map("lbj_status")
+  lbjStatusOn           DateTime? @db.Timestamptz(6)                   @map("lbj_status_on")
+  /// The printer's message on FAILED.
+  lbjPrinterMessage     String?   @db.VarChar(250)                     @map("lbj_printer_message")
+
+  lbjPrintedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("lbj_printed_on")
+  lbjPrintedBy          String    @db.Uuid                             @map("lbj_printed_by")
+  /// The status step (no FK).
+  lbjModifiedOn         DateTime? @db.Timestamptz(6)                   @map("lbj_modified_on")
+  lbjModifiedBy         String?   @db.Uuid                             @map("lbj_modified_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  lbjSyncDate           DateTime? @db.Timestamptz(6)                   @map("lbj_sync_date")
+
+  // ── Relations ───────────────────────────────────────────────────────
+  company               Company              @relation("LabelJobCompany",   fields: [lbjCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_company")
+  branch                BranchMaster         @relation("LabelJobBranch",    fields: [lbjBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_branch")
+  device                DeviceMaster         @relation("LabelJobDevice",    fields: [lbjDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_device")
+  purpose               PrintPurpose         @relation("LabelJobPurpose",   fields: [lbjPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_purpose")
+  template              PrintTemplate        @relation("LabelJobTemplate",  fields: [lbjTemplateId], references: [ptlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_template")
+  version               PrintTemplateVersion @relation("LabelJobVersion",   fields: [lbjVersionId],  references: [ptvId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_version")
+  printedByUser         UserMaster           @relation("LabelJobPrintedBy", fields: [lbjPrintedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lbj_printed_by")
+  lines                 LabelJobLine[]       @relation("LabelJobLines")
+
+  @@id([lbjId, lbjAccYear], map: "pk_label_job")
+  /// Numbers are per counter (offline-safe).
+  @@unique([lbjCompanyId, lbjBranchId, lbjDeviceId, lbjAccYear, lbjSlno], map: "ux_lbj_device_no")
+  /// The Printed jobs list (grid 223), newest first.
+  @@index([lbjCompanyId, lbjBranchId, lbjPrintedOn(sort: Desc)], map: "ix_lbj_list")
+  @@map("label_job")
+  @@schema("inventory")
+}
+
+// ----- prisma/inventory/labelJobLine.prisma -----
+/// inventory.label_job_line — the frozen lines of a sticker job (plan
+/// printing/sticker-printing S-P1 §6.4, migration
+/// 20261126100000_sticker_printing_sp1).
+///
+/// LIST-partitioned by lbjlAccYear (= its job's year), PK (lbjlId, lbjlAccYear).
+/// The server re-resolves every line at print and stores what it printed: the
+/// label unit, the lot, barcode, MRP, Our price, batch, packed on / use by and
+/// the cost / price code. It never stores a figure the client sent, and a line
+/// is never updated.
+///
+/// A REPRINT job's line points at the line it reprints (lbjlReprintOfLineId,
+/// no FK, §5); "Reprinted" on a line = SUM(labels) of the lines pointing at it.
+/// "Last printed" (item + unit at a branch) reads ix_lbjl_item.
+///
+/// CHECK constraints (DB-only): ck_lbjl_line_no (>= 1), ck_lbjl_labels (1-9,999).
+/// Partial indexes (DB-only): ix_lbjl_reprint_of (WHERE NOT NULL),
+/// ix_sync_pending_label_job_line.
+model LabelJobLine {
+  lbjlId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lbjl_id")
+  /// THE PARTITION KEY: the job's year.
+  lbjlAccYear           String    @db.Char(9)                          @map("lbjl_acc_year")
+  lbjlJobId             String    @db.Uuid                             @map("lbjl_job_id")
+  lbjlLineNo            Int       @db.SmallInt                         @map("lbjl_line_no")
+
+  lbjlItemId            String    @db.Uuid                             @map("lbjl_item_id")
+  /// The label unit (inventory.item_unit_conversion.iuc_id).
+  lbjlUnitId            String    @db.Uuid                             @map("lbjl_unit_id")
+  lbjlLotId             String?   @db.Uuid                             @map("lbjl_lot_id")
+
+  // ── As printed ──────────────────────────────────────────────────────
+  lbjlBarcode           String?   @db.VarChar(50)                      @map("lbjl_barcode")
+  lbjlMrp               Decimal?  @db.Decimal(14, 2)                   @map("lbjl_mrp")
+  lbjlPrice             Decimal?  @db.Decimal(14, 2)                   @map("lbjl_price")
+  lbjlBatchNo           String?   @db.VarChar(60)                      @map("lbjl_batch_no")
+  lbjlMfgDate           DateTime? @db.Date                             @map("lbjl_mfg_date")
+  lbjlExpiryDate        DateTime? @db.Date                             @map("lbjl_expiry_date")
+  lbjlCostCode          String?   @db.VarChar(12)                      @map("lbjl_cost_code")
+  lbjlPriceCode         String?   @db.VarChar(12)                      @map("lbjl_price_code")
+  /// 1-9,999 (ck_lbjl_labels).
+  lbjlLabels            Int                                            @map("lbjl_labels")
+
+  /// REPRINT job: the original job's line. No FK (§5).
+  lbjlReprintOfLineId   String?   @db.Uuid                             @map("lbjl_reprint_of_line_id")
+  /// S-P2 hook: the GRN / purchase bill line.
+  lbjlSrcLineId         String?   @db.Uuid                             @map("lbjl_src_line_id")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  lbjlSyncDate          DateTime? @db.Timestamptz(6)                   @map("lbjl_sync_date")
+
+  // ── Relations ───────────────────────────────────────────────────────
+  job                   LabelJob           @relation("LabelJobLines",    fields: [lbjlJobId, lbjlAccYear], references: [lbjId, lbjAccYear], onUpdate: Cascade, onDelete: Cascade,  map: "fk_lbjl_job")
+  item                  ItemMaster         @relation("LabelJobLineItem", fields: [lbjlItemId],             references: [itemId],            onUpdate: Cascade, onDelete: Restrict, map: "fk_lbjl_item")
+  unit                  ItemUnitConversion @relation("LabelJobLineUnit", fields: [lbjlUnitId],             references: [iucId],             onUpdate: Cascade, onDelete: Restrict, map: "fk_lbjl_unit")
+  lot                   StockLot?          @relation("LabelJobLineLot",  fields: [lbjlLotId],              references: [sltId],             onUpdate: Cascade, onDelete: Restrict, map: "fk_lbjl_lot")
+
+  @@id([lbjlId, lbjlAccYear], map: "pk_label_job_line")
+  @@index([lbjlJobId, lbjlAccYear, lbjlLineNo], map: "ix_lbjl_job")
+  /// "Last printed" per item + unit.
+  @@index([lbjlItemId, lbjlUnitId], map: "ix_lbjl_item")
+  @@map("label_job_line")
+  @@schema("inventory")
 }
 
 // ----- prisma/inventory/taxRateMaster.prisma -----
@@ -6878,6 +7074,7 @@ model BranchMaster {
 
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileBranch")
   printLogs             PrintLog[]                @relation("PrintLogBranch")
+  labelJobs             LabelJob[]                @relation("LabelJobBranch")
 
   // ── GST provider integration ───────────────────────────────────────────
   // Only a branch that holds its OWN registration (br_gstin_no) is named on a
@@ -7172,6 +7369,7 @@ model Company {
 
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileCompany")
   printLogs             PrintLog[]                @relation("PrintLogCompany")
+  labelJobs             LabelJob[]                @relation("LabelJobCompany")
 
   // ── GST provider integration ───────────────────────────────────────────
   // comp_gstin_no is UNIQUE, so a company row IS a GSTIN registration: the
@@ -8623,6 +8821,8 @@ model PrintPurpose {
   assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentPurpose")
 
   printLogs           PrintLog[]                @relation("PrintLogPurpose")
+  /// Sticker jobs (ITEM_LABEL / PACK_LABEL / SHELF_LABEL, 20261126100000).
+  labelJobs           LabelJob[]                @relation("LabelJobPurpose")
   voucherTypes        AccVoucherType[]          @relation("VoucherTypePrintPurpose")
 
   @@map("print_purpose")
@@ -8767,6 +8967,11 @@ model PrintTemplate {
   assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentTemplate")
 
   printLogs           PrintLog[]                @relation("PrintLogTemplate")
+  /// Sticker jobs printed with this design (20261126100000).
+  labelJobs           LabelJob[]                @relation("LabelJobTemplate")
+  /// Items whose card names this as their own Sticker design
+  /// (item_master.item_barcode_sticker_id, fk_item_barcode_sticker, SET NULL).
+  stickerItems        ItemMaster[]              @relation("ItemStickerDesign")
 
   /// The target of §5's composite fk_pta_template. ptlId alone is already the
   /// primary key, so this constrains nothing new; it exists so that a foreign
@@ -9131,6 +9336,25 @@ model PrintTemplateVersion {
   /// Characters per line for the text engines. Meaningless for a page one.
   ptvColumns          Int?      @db.SmallInt                                 @map("ptv_columns")
 
+  // ── The label sheet (sticker designs, 20261126100000) ───────────────────
+  // Set only on a label purpose's design (ITEM_LABEL / PACK_LABEL /
+  // SHELF_LABEL), NULL / 0 on every other. ONE label as a person reads it; the
+  // server works out ptvWidthMm / ptvHeightMm from it at save for LABEL paper.
+  // DB-only CHECKs: ck_ptv_label_sheet (width, height, across, down, dpi all
+  // NULL or all set: width > 0, height > 0, across 1-20, down 1-50, dpi 203 /
+  // 300 / 600), ck_ptv_label_gaps (>= 0), ck_ptv_label_rotate (0 / 90 / 180 / 270).
+  ptvLabelWidthMm     Decimal?  @db.Decimal(8, 2)                            @map("ptv_label_width_mm")
+  ptvLabelHeightMm    Decimal?  @db.Decimal(8, 2)                            @map("ptv_label_height_mm")
+  ptvLabelAcross      Int?      @db.SmallInt                                 @map("ptv_label_across")
+  /// 1 = a roll, more = a sheet (A4).
+  ptvLabelDown        Int?      @db.SmallInt                                 @map("ptv_label_down")
+  ptvLabelGapXMm      Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_label_gap_x_mm")
+  /// Put on the page only for a sheet; a roll's gap is the printer's sensor.
+  ptvLabelGapYMm      Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_label_gap_y_mm")
+  ptvLabelRotate      Int       @default(0) @db.SmallInt                     @map("ptv_label_rotate")
+  /// Snap-to dpi; the printer's own dpi wins when Qt reports it.
+  ptvLabelDpi         Int?      @db.SmallInt                                 @map("ptv_label_dpi")
+
   // ── Language ────────────────────────────────────────────────────────────
   // The DEFAULT, not a resolution key. A render may override it. Language must
   // never fork a template the way pstyl_platform forked every one of 3.0's.
@@ -9191,6 +9415,8 @@ model PrintTemplateVersion {
   datasets            PrintTemplateDataset[] @relation("PrintTemplateDatasetVersion")
 
   printLogs           PrintLog[]             @relation("PrintLogVersion")
+  /// Sticker jobs printed with this exact revision (frozen on the job).
+  labelJobs           LabelJob[]             @relation("LabelJobVersion")
 
   /// Version numbers are dense and unique per template. NOT partial on
   /// is_deleted, unlike every other unique index in this module, because the
@@ -10086,6 +10312,7 @@ model UserMaster {
   printerProfilesCreated     PrinterProfile[]          @relation("PrinterProfileCreatedBy")
   printerProfilesModified    PrinterProfile[]          @relation("PrinterProfileModifiedBy")
   printLogs                  PrintLog[]                @relation("PrintLogPrintedBy")
+  labelJobsPrinted           LabelJob[]                @relation("LabelJobPrintedBy")
 
   // ── Indexes ────────────────────────────────────────────────────────────────
   //   CREATE UNIQUE INDEX uix_user_login_name
@@ -16446,6 +16673,18 @@ model SaleReturn {
   /// the refund cap (D48).
   srVoucherShareAmt     Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_voucher_share_amt")
 
+  // ── Mobile upload (20261120170000_mobile_sale_returns) ──────────────────
+  /// The phone's own id for a return uploaded from the mobile app
+  /// (/mobile/returns/create). A resend with the same (company, client uuid)
+  /// answers the return already saved, or re-saves its DRAFT; NULL on desktop
+  /// returns. The year is in ux_sr_client_uuid only because a unique index on
+  /// a partitioned table must hold the partition key: the server checks across
+  /// years under a lock. Written with raw SQL by the mobile module, on the
+  /// uploaded return's own row only.
+  srClientUuid          String?   @db.Uuid                             @map("sr_client_uuid")
+  /// The phone's own number (D12). srUsrRefno keeps its desktop meaning.
+  srMobileRefno         String?   @db.VarChar(30)                      @map("sr_mobile_refno")
+
   // Relations
   bill                  SaleBill?          @relation("SaleReturnBill",       fields: [srBillId, srBillAccYear], references: [sbId, sbAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_bill")
   customer              Customer           @relation("SaleReturnCustomer",   fields: [srCustId],      references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_cust")
@@ -16465,6 +16704,7 @@ model SaleReturn {
   @@unique([srCompanyId, srBranchId, srAccYear, srReturnRefno], map: "ux_sr_refno")
   /// Numbers are per DEVICE (D16; 20261113160000 replaced ux_sr_counter_slno).
   @@unique([srCompanyId, srBranchId, srAccYear, srDeviceId, srReturnSlno], map: "ux_sr_device_slno")
+  @@unique([srCompanyId, srClientUuid, srAccYear], map: "ux_sr_client_uuid")
 
   // Partial indexes are DB-only: ix_sr_company_branch_date, ix_sr_bill,
   // ix_sr_cust, and FK-covering ix_sr_pos_state / ix_sr_reason / ix_sr_driver
@@ -17816,6 +18056,9 @@ model StockLot {
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemLot")
 
   saleBillItems         SaleBillItem[]            @relation("SaleBillItemLot")
+
+  // ── Sticker printing (20261126100000): the lot a label was printed from ─
+  labelJobLines         LabelJobLine[]            @relation("LabelJobLineLot")
 
   @@map("stock_lot")
   @@schema("stock")

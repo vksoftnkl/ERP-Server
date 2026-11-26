@@ -91,6 +91,11 @@ model PrintTemplate {
   assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentTemplate")
 
   printLogs           PrintLog[]                @relation("PrintLogTemplate")
+  /// Sticker jobs printed with this design (20261126100000).
+  labelJobs           LabelJob[]                @relation("LabelJobTemplate")
+  /// Items whose card names this as their own Sticker design
+  /// (item_master.item_barcode_sticker_id, fk_item_barcode_sticker, SET NULL).
+  stickerItems        ItemMaster[]              @relation("ItemStickerDesign")
 
   /// The target of §5's composite fk_pta_template. ptlId alone is already the
   /// primary key, so this constrains nothing new; it exists so that a foreign

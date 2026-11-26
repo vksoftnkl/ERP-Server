@@ -82,4 +82,10 @@ export enum PrintRenderErrorCode {
   PARAM_SERVER_OWNED = 'PRINT_RENDER_PARAM_SERVER_OWNED',
   /** An answer for a prompt the revision does not declare was sent. */
   PARAM_UNKNOWN = 'PRINT_RENDER_PARAM_UNKNOWN',
+
+  // ─── Labels (sticker printing S-P1) ──────────────────────────────────────
+  /** The label path was asked to render a design with no label sheet (the sticker module's word for it). */
+  LABEL_SHEET_MISSING = 'STICKER_DESIGN_NOT_LABEL',
+  /** A label design whose engine lays out in character cells (field=ptvEngine wording). */
+  LABEL_NOT_PAGE_DESIGN = 'PRINT_TEMPLATE_LABEL_SHEET_INVALID',
 }

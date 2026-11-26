@@ -1,0 +1,61 @@
+/// inventory.label_job_line — the frozen lines of a sticker job (plan
+/// printing/sticker-printing S-P1 §6.4, migration
+/// 20261126100000_sticker_printing_sp1).
+///
+/// LIST-partitioned by lbjlAccYear (= its job's year), PK (lbjlId, lbjlAccYear).
+/// The server re-resolves every line at print and stores what it printed: the
+/// label unit, the lot, barcode, MRP, Our price, batch, packed on / use by and
+/// the cost / price code. It never stores a figure the client sent, and a line
+/// is never updated.
+///
+/// A REPRINT job's line points at the line it reprints (lbjlReprintOfLineId,
+/// no FK, §5); "Reprinted" on a line = SUM(labels) of the lines pointing at it.
+/// "Last printed" (item + unit at a branch) reads ix_lbjl_item.
+///
+/// CHECK constraints (DB-only): ck_lbjl_line_no (>= 1), ck_lbjl_labels (1-9,999).
+/// Partial indexes (DB-only): ix_lbjl_reprint_of (WHERE NOT NULL),
+/// ix_sync_pending_label_job_line.
+model LabelJobLine {
+  lbjlId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lbjl_id")
+  /// THE PARTITION KEY: the job's year.
+  lbjlAccYear           String    @db.Char(9)                          @map("lbjl_acc_year")
+  lbjlJobId             String    @db.Uuid                             @map("lbjl_job_id")
+  lbjlLineNo            Int       @db.SmallInt                         @map("lbjl_line_no")
+
+  lbjlItemId            String    @db.Uuid                             @map("lbjl_item_id")
+  /// The label unit (inventory.item_unit_conversion.iuc_id).
+  lbjlUnitId            String    @db.Uuid                             @map("lbjl_unit_id")
+  lbjlLotId             String?   @db.Uuid                             @map("lbjl_lot_id")
+
+  // ── As printed ──────────────────────────────────────────────────────
+  lbjlBarcode           String?   @db.VarChar(50)                      @map("lbjl_barcode")
+  lbjlMrp               Decimal?  @db.Decimal(14, 2)                   @map("lbjl_mrp")
+  lbjlPrice             Decimal?  @db.Decimal(14, 2)                   @map("lbjl_price")
+  lbjlBatchNo           String?   @db.VarChar(60)                      @map("lbjl_batch_no")
+  lbjlMfgDate           DateTime? @db.Date                             @map("lbjl_mfg_date")
+  lbjlExpiryDate        DateTime? @db.Date                             @map("lbjl_expiry_date")
+  lbjlCostCode          String?   @db.VarChar(12)                      @map("lbjl_cost_code")
+  lbjlPriceCode         String?   @db.VarChar(12)                      @map("lbjl_price_code")
+  /// 1-9,999 (ck_lbjl_labels).
+  lbjlLabels            Int                                            @map("lbjl_labels")
+
+  /// REPRINT job: the original job's line. No FK (§5).
+  lbjlReprintOfLineId   String?   @db.Uuid                             @map("lbjl_reprint_of_line_id")
+  /// S-P2 hook: the GRN / purchase bill line.
+  lbjlSrcLineId         String?   @db.Uuid                             @map("lbjl_src_line_id")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  lbjlSyncDate          DateTime? @db.Timestamptz(6)                   @map("lbjl_sync_date")
+
+  // ── Relations ───────────────────────────────────────────────────────
+  job                   LabelJob           @relation("LabelJobLines",    fields: [lbjlJobId, lbjlAccYear], references: [lbjId, lbjAccYear], onUpdate: Cascade, onDelete: Cascade,  map: "fk_lbjl_job")
+  item                  ItemMaster         @relation("LabelJobLineItem", fields: [lbjlItemId],             references: [itemId],            onUpdate: Cascade, onDelete: Restrict, map: "fk_lbjl_item")
+  unit                  ItemUnitConversion @relation("LabelJobLineUnit", fields: [lbjlUnitId],             references: [iucId],             onUpdate: Cascade, onDelete: Restrict, map: "fk_lbjl_unit")
+  lot                   StockLot?          @relation("LabelJobLineLot",  fields: [lbjlLotId],              references: [sltId],             onUpdate: Cascade, onDelete: Restrict, map: "fk_lbjl_lot")
+
+  @@id([lbjlId, lbjlAccYear], map: "pk_label_job_line")
+  @@index([lbjlJobId, lbjlAccYear, lbjlLineNo], map: "ix_lbjl_job")
+  /// "Last printed" per item + unit.
+  @@index([lbjlItemId, lbjlUnitId], map: "ix_lbjl_item")
+  @@map("label_job_line")
+  @@schema("inventory")
+}

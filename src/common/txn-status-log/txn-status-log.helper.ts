@@ -65,6 +65,9 @@ export enum TxnStatusDocType {
   // Delivery tracking (20261117100000, ck_tsl_src_doc_type): the Delivery
   // Note / gate pass (menu 305) — CREATED, POSTED, GOODS_BACK, CANCELLED.
   DELIVERY_NOTE = 'DELIVERY_NOTE',
+  // Sticker printing S-P1 (20261126100000, ck_tsl_src_doc_type): a sticker job
+  // (inventory.label_job, menu 32) — SENT, then PRINTED or PRINT_FAILED.
+  LABEL_JOB = 'LABEL_JOB',
   OTHER = 'OTHER',
 }
 // tsl_event has no value CHECK of its own — ck_tsl_event_shape only demands a
@@ -138,6 +141,11 @@ export enum TxnStatusEvent {
   // wml_id.
   WHATSAPP_SENT = 'WHATSAPP_SENT',
   WHATSAPP_FAILED = 'WHATSAPP_FAILED',
+  // Sticker printing S-P1: the counter that printed a sticker job reports what
+  // its printer did with it (seq 2 after SENT). to = PRINTED / FAILED,
+  // remarks = the printer's message on a failure.
+  PRINTED = 'PRINTED',
+  PRINT_FAILED = 'PRINT_FAILED',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

@@ -152,6 +152,64 @@ export class SavePrintTemplateVersionDto {
   @NullableInteger()
   ptvColumns?: number | null;
 
+  // ── Sticker printing S-P1: the label sheet (plan §4.1). Label purposes
+  // (ITEM_LABEL / PACK_LABEL / SHELF_LABEL) only; NULL / 0 on every other.
+  // Ranges are the service's to refuse (PRINT_TEMPLATE_LABEL_SHEET_INVALID,
+  // variant field=<key>), so the DTO only checks the type.
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 50,
+    description:
+      'ONE label as a person reads it: width in mm, > 0 and ≤ 500. With the paper LABEL the ' +
+      'server works out ptvWidthMm / ptvHeightMm from the sheet at save.',
+  })
+  @NullableNumber()
+  ptvLabelWidthMm?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 25, description: 'Label height in mm, > 0 and ≤ 500.' })
+  @NullableNumber()
+  ptvLabelHeightMm?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 2, description: 'Labels across, 1-20.' })
+  @NullableInteger()
+  ptvLabelAcross?: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 1,
+    description: 'Labels down, 1-50: 1 = a roll, more = a sheet (A4).',
+  })
+  @NullableInteger()
+  ptvLabelDown?: number | null;
+
+  @ApiPropertyOptional({ default: 0, example: 2, description: 'Gap across in mm, 0 or more.' })
+  @OptionalNumber()
+  ptvLabelGapXMm?: number;
+
+  @ApiPropertyOptional({
+    default: 0,
+    description: 'Gap down in mm, 0 or more. On the page only for a sheet; a roll’s gap is the printer’s sensor.',
+  })
+  @OptionalNumber()
+  ptvLabelGapYMm?: number;
+
+  @ApiPropertyOptional({
+    default: 0,
+    enum: [0, 90, 180, 270],
+    description: 'How the label sits on the liner, clockwise degrees.',
+  })
+  @OptionalInteger()
+  ptvLabelRotate?: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: [203, 300, 600],
+    description: 'Snap to: the label printer’s dots per inch. Bars and cells land on whole dots of it.',
+  })
+  @NullableInteger()
+  ptvLabelDpi?: number | null;
+
   @ApiPropertyOptional({
     default: 'en-IN',
     example: 'ta-IN',

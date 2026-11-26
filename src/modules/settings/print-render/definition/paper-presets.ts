@@ -38,6 +38,16 @@ export const PAPER_PRESETS: readonly PaperPreset[] = [
     layoutMode: 'GRAPHIC',
   },
   {
+    // Sticker printing S-P1: a label roll. A PLACEHOLDER size only — a label
+    // design's version always states its own page (the server works it out from
+    // the label sheet at save), so this row exists so the code is known.
+    code: 'LABEL',
+    label: 'Label roll (size from the label sheet)',
+    widthMm: 50,
+    heightMm: 25,
+    layoutMode: 'GRAPHIC',
+  },
+  {
     code: 'T58',
     label: 'Thermal 58 mm roll',
     widthMm: 58,

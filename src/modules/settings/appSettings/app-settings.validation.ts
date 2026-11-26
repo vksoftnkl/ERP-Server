@@ -160,3 +160,49 @@ export function toAllowedValues(raw: unknown): string[] | null {
 export function isScopeWithinMax(scope: AppSettingScope, maxScope: AppSettingScope): boolean {
   return APP_SETTING_SCOPE_RANK[scope] <= APP_SETTING_SCOPE_RANK[maxScope];
 }
+
+// ─── Per-key rules (sticker printing S-P1) ──────────────────────────────────
+
+/** The cost-code cipher letters of label designs (company setting). */
+export const LABEL_COST_CODE_KEY = 'inventory.label_cost_code';
+
+/**
+ * A key's own spelling of its value, before it is checked and stored. Only
+ * the cost-code letters have one: upper-cased and trimmed ("blackhorse" is
+ * stored "BLACKHORSE"). Every other key passes through untouched.
+ */
+export function normalizeKeyedValue(key: string, value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+  return key === LABEL_COST_CODE_KEY ? value.trim().toUpperCase() : value;
+}
+
+/**
+ * Rules a key carries beyond type / allowed list / range (app_setting_def has
+ * no per-key rule hook, plan §3). `inventory.label_cost_code`: exactly ten
+ * letters A-Z, none twice — the first stands for 0, so a repeat would make two
+ * digits print the same letter. Null (the deliberate blank) is always legal.
+ */
+export function keyRuleErrors(
+  key: string,
+  value: string | null | undefined,
+  field: string,
+): AppSettingsErrorDetail[] {
+  if (value === null || value === undefined || key !== LABEL_COST_CODE_KEY) {
+    return [];
+  }
+  const letters = value.trim().toUpperCase();
+  if (!/^[A-Z]{10}$/.test(letters) || new Set(letters).size !== 10) {
+    return [
+      {
+        field,
+        code: AppSettingsErrorCode.COST_CODE_INVALID,
+        message:
+          `"${value}" is not 10 different letters A-Z for setting "${key}" (the first letter ` +
+          'stands for 0, the second for 1, …)',
+      },
+    ];
+  }
+  return [];
+}

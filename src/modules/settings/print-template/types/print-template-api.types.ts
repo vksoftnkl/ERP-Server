@@ -66,6 +66,15 @@ export interface PrintTemplateVersionPayload {
   ptvMarginLeftMm: number;
   ptvMarginRightMm: number;
   ptvColumns: number | null;
+  /** Sticker printing S-P1: the label sheet (NULL / 0 on a non-label design). */
+  ptvLabelWidthMm: number | null;
+  ptvLabelHeightMm: number | null;
+  ptvLabelAcross: number | null;
+  ptvLabelDown: number | null;
+  ptvLabelGapXMm: number;
+  ptvLabelGapYMm: number;
+  ptvLabelRotate: number;
+  ptvLabelDpi: number | null;
   ptvLang: string;
   ptvFontFamily: string | null;
   /// What the OPERATOR is asked, once, for the whole render. Context

@@ -225,7 +225,12 @@ export class PrintRenderController {
   })
   @ApiOkResponse({ type: PrintRenderProvidersSuccessDto })
   providerList(): PrintRenderSuccessResponse<
-    Array<{ code: string; label: string; cardinality: string }>
+    Array<{
+      code: string;
+      label: string;
+      cardinality: string;
+      fields?: Array<{ name: string; group: string; label: string }>;
+    }>
   > {
     return {
       success: true,

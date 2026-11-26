@@ -133,7 +133,7 @@ VALUES
     ,( 195,    2, 'Shortage Receipt'                     , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 196,    2, 'Purchase Note'                        , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 297,    2, 'Supplier Dues'                        , NULL                  , true ,   4.50, NULL, NULL, NULL, true , false)
-    -- ============ &3 Inventory (menu 3, 17 rows) ============
+    -- ============ &3 Inventory (menu 3, 18 rows) ============
     ,(   3, NULL, '&3 Inventory'                         , NULL                  , true ,  30.00, '0', NULL, NULL, true , false)
     ,(  29,    3, 'Items'                                , 'CTRL+I'              , true ,  10.00, NULL, NULL, NULL, true , false)
     ,(  30,    3, 'Change Selling Price'                 , 'CTRL+G'              , true ,  20.00, NULL, NULL, NULL, true , false)
@@ -156,6 +156,9 @@ VALUES
     ,(  40,   34, 'GST Rates'                            , NULL                  , true ,  90.00, NULL, NULL, NULL, true , false)
     ,( 240,   34, 'Categories'                           , 'item-category-master', true ,  30.00, NULL, NULL, NULL, true , false)
     ,( 244,    3, 'Qty-wise Prices'                      , NULL                  , true ,  30.00, NULL, NULL, NULL, true , true)
+    -- 32 Sticker Printing (20261126100000_sticker_printing_sp1, plan-sticker-printing-sp1 §6.7):
+    -- the Print list and Printed jobs, after Qty-wise Prices, before Item Masters. Verbs below.
+    ,(  32,    3, 'Sticker Printing'                     , NULL                  , true ,  35.00, NULL, NULL, NULL, true , false)
     -- ============ &4 Stock (menu 4, 7 rows) ============
     ,(   4, NULL, '&4 Stock'                             , NULL                  , true ,  40.00, '0', NULL, NULL, true , false)
     ,(  41,    4, 'Godown Transfer'                      , 'CTRL+T'              , true ,  40.00, NULL, NULL, NULL, true , false)
@@ -474,6 +477,15 @@ UPDATE fixed.menu_master m
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Sticker Printing (32, 20261126100000_sticker_printing_sp1, plan-sticker-printing-sp1 S7): VIEW
+-- opens the Print list and Printed jobs, PRINT prints, reprints and sends a failed job again.
+-- No OVERRIDE (no reprint limit yet, S6). No user_menus rows: the admin ticks it per user.
+-- The migration sets the same list; this catches a fresh database. Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,PRINT}'
+ WHERE menu_id = 32
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu
 -- created from the UI reuses id 1 and fails on the primary key.

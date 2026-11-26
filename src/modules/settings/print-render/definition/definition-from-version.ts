@@ -7,6 +7,7 @@ import {
   RenderableEngine,
 } from '../print-render.constants';
 import { DEFAULT_PAPER, findPaperPreset } from './paper-presets';
+import { LABEL_ROTATES, LabelRotate, LabelSheetSpec } from '../engine/label/label-sheet';
 import {
   TemplateDefinition,
   TemplateDefinitionInput,
@@ -287,4 +288,61 @@ export function buildDefinitionFromBody(
   body: Record<string, unknown>,
 ): DefinitionBuildResult {
   return buildDefinition({ ...version, ptvBody: JSON.stringify(body) }, datasets);
+}
+
+/**
+ * Sticker printing S-P1 (plan §4.1): the label sheet a version carries, or
+ * null when it is not a label design. The five "all or none" columns
+ * (ck_ptv_label_sheet) decide it; the side margin is ptv_margin_left_mm.
+ */
+export function labelSheetOf(
+  version: Pick<
+    PrintTemplateVersion,
+    | 'ptvLabelWidthMm'
+    | 'ptvLabelHeightMm'
+    | 'ptvLabelAcross'
+    | 'ptvLabelDown'
+    | 'ptvLabelGapXMm'
+    | 'ptvLabelGapYMm'
+    | 'ptvLabelRotate'
+    | 'ptvLabelDpi'
+    | 'ptvPaperCode'
+    | 'ptvMarginLeftMm'
+    | 'ptvMarginTopMm'
+    | 'ptvMarginRightMm'
+    | 'ptvMarginBottomMm'
+  >,
+): LabelSheetSpec | null {
+  const width = toMm(version.ptvLabelWidthMm);
+  const height = toMm(version.ptvLabelHeightMm);
+  if (
+    width === null ||
+    height === null ||
+    version.ptvLabelAcross === null ||
+    version.ptvLabelDown === null ||
+    version.ptvLabelDpi === null
+  ) {
+    return null;
+  }
+  const rotate = (LABEL_ROTATES as readonly number[]).includes(version.ptvLabelRotate)
+    ? (version.ptvLabelRotate as LabelRotate)
+    : 0;
+  const paperCode = (version.ptvPaperCode || 'LABEL').trim().toUpperCase();
+  const side = toMmOrZero(version.ptvMarginLeftMm);
+  return {
+    labelWidthMm: width,
+    labelHeightMm: height,
+    across: version.ptvLabelAcross,
+    down: version.ptvLabelDown,
+    gapXMm: toMmOrZero(version.ptvLabelGapXMm),
+    gapYMm: toMmOrZero(version.ptvLabelGapYMm),
+    rotate,
+    paperCode,
+    marginLeftMm: side,
+    marginTopMm: toMmOrZero(version.ptvMarginTopMm),
+    // A roll's "Side" is one figure (plan §4.1); a sheet keeps its own right margin.
+    marginRightMm: paperCode === 'LABEL' ? side : toMmOrZero(version.ptvMarginRightMm),
+    marginBottomMm: toMmOrZero(version.ptvMarginBottomMm),
+    dpi: version.ptvLabelDpi,
+  };
 }

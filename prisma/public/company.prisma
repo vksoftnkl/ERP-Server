@@ -153,6 +153,7 @@ model Company {
 
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileCompany")
   printLogs             PrintLog[]                @relation("PrintLogCompany")
+  labelJobs             LabelJob[]                @relation("LabelJobCompany")
 
   // ── GST provider integration ───────────────────────────────────────────
   // comp_gstin_no is UNIQUE, so a company row IS a GSTIN registration: the

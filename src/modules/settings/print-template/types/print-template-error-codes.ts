@@ -153,6 +153,16 @@ export enum PrintTemplateErrorCode {
   /** ptdSql writes a :name parameter inside a string literal or a comment. */
   SQL_QUOTED_PARAM = 'PRINT_TEMPLATE_SQL_QUOTED_PARAM',
 
+  // ─── Sticker printing S-P1: the label sheet (plan §4.1 / §7.3) ──────────
+  /** A label purpose's design is missing its label size, across, down or dpi. */
+  LABEL_SHEET_REQUIRED = 'PRINT_TEMPLATE_LABEL_SHEET_REQUIRED',
+  /** A label-sheet value is out of range, or the paper / engine is not a label's (variant field=…). */
+  LABEL_SHEET_INVALID = 'PRINT_TEMPLATE_LABEL_SHEET_INVALID',
+  /** A label sheet on a design whose purpose is not a label purpose. */
+  LABEL_SHEET_NOT_LABEL = 'PRINT_TEMPLATE_LABEL_SHEET_NOT_LABEL',
+  /** Publishing a label design whose body is not one REPORT_HEADER band reading stickers.label. */
+  LABEL_BODY_INVALID = 'PRINT_TEMPLATE_LABEL_BODY_INVALID',
+
   // ─── The database's last word ────────────────────────────────────────────
   /** A unique index the service could not name refused the row (a concurrent save). */
   DUPLICATE = 'PRINT_TEMPLATE_DUPLICATE',

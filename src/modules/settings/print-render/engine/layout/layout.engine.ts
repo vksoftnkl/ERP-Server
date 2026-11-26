@@ -2113,6 +2113,7 @@ class LayoutRun {
           symbology: element.symbology,
           value,
           showText: element.showText,
+          ...(element.moduleDots !== undefined ? { moduleDots: element.moduleDots } : {}),
         };
       }
 

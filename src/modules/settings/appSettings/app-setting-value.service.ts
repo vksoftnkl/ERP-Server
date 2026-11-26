@@ -13,9 +13,16 @@ import {
   throwSettingsConflict,
   throwSettingsNotFound,
   toNullableNumber,
+  throwUnprocessable,
 } from 'src/common/utils/module-service.utils';
 import { SaveAppSettingValueDto } from './dto/save-app-setting-value.dto';
-import { isScopeWithinMax, toAllowedValues, validateSettingValue } from './app-settings.validation';
+import {
+  isScopeWithinMax,
+  keyRuleErrors,
+  normalizeKeyedValue,
+  toAllowedValues,
+  validateSettingValue,
+} from './app-settings.validation';
 import {
   APP_SETTING_SCOPE_ID_FIELD,
   APP_SETTING_SCOPE_ID_FIELDS,
@@ -289,7 +296,7 @@ export class AppSettingValueService {
     const def = await this.loadWritableDef(tx, asvSettingKey, index);
     this.ensureScopeIsPermitted(asvScope, def, index);
     await this.ensureTargetExists(tx, target, index);
-    const value = normalizeNullableString(saveDto.asvValue) ?? null;
+    const value = normalizeKeyedValue(def.asdKey, normalizeNullableString(saveDto.asvValue) ?? null);
     this.ensureValueIsAllowed(value, def, index);
 
     const existing = await tx.appSettingValue.findFirst({
@@ -347,7 +354,7 @@ export class AppSettingValueService {
     this.ensureScopeIsPermitted(existing.asvScope as AppSettingScope, def, index);
     const value =
       saveDto.asvValue !== undefined
-        ? (normalizeNullableString(saveDto.asvValue) ?? null)
+        ? normalizeKeyedValue(def.asdKey, normalizeNullableString(saveDto.asvValue) ?? null)
         : existing.asvValue;
     this.ensureValueIsAllowed(value, def, index);
     return this.applyUpdate(tx, existing, saveDto, value, actor, 'Override updated');
@@ -547,6 +554,11 @@ export class AppSettingValueService {
     );
     if (details.length > 0) {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Invalid setting value', details);
+    }
+    // Sticker printing S-P1: a key's own rule (the cost-code letters) is a 422.
+    const keyed = keyRuleErrors(def.asdKey, value, this.fieldPath(index, 'asvValue'));
+    if (keyed.length > 0) {
+      throwUnprocessable<AppSettingsErrorDetail>('Invalid setting value', keyed);
     }
   }
 

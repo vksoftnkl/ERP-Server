@@ -2710,6 +2710,7 @@ rebuild for column order.']
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
+  labelJobs label_job [not null, note: 'Sticker jobs; the counter owns their number series (20261126100000).']
   loyaltyLedgerRows loyalty_ledger [not null]
   loyaltyGiftRedeems loyalty_gift_redeem [not null]
   couponTxns loyalty_coupon_txn [not null]
@@ -3288,7 +3289,9 @@ Table item_master {
   itemAllowFreight Boolean [not null, default: false]
   itemRandomStock Boolean [not null, default: false]
   itemBarcodeSticker Boolean [not null, default: false]
-  itemBarcodeStickerId String
+  itemBarcodeStickerId String [note: 'The item\'s own sticker design (item card "Sticker design"): a live,
+published label design; FK fk_item_barcode_sticker (20261126100000), SET
+NULL when the design row goes. Partial ix_item_barcode_sticker is DB-only.']
   itemDefaultTaxId String
   itemHsnCode String
   itemBatchConfig Int [not null, default: 0]
@@ -3316,6 +3319,7 @@ changes nothing until this item is explicitly re-saved.']
   itemModifiedBy String
   group item_group_master [not null]
   trackPreset stock_track_preset
+  stickerDesign print_template
   category item_category_master
   baseUnit item_unit_master
   defaultTax tax_rate_master
@@ -3353,6 +3357,7 @@ changes nothing until this item is explicitly re-saved.']
   deliveryNoteItems sale_delivery_note_item [not null]
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
+  labelJobLines label_job_line [not null]
   itemSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
@@ -3801,6 +3806,7 @@ Table item_unit_conversion {
   deliveryNoteItems sale_delivery_note_item [not null]
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
+  labelJobLines label_job_line [not null]
 }
 
 Table item_unit_master {
@@ -3838,6 +3844,141 @@ until the live "Box" / "BOX" pair is merged.']
   itemMasters item_master [not null]
   unitUqc String [note: 'The three-letter GST Unit Quantity Code, for the e-invoice, the e-way
 bill and the GSTR-1 HSN summary. The table had a Tally name and no UQC.']
+}
+
+Table label_job {
+  lbjId String [not null]
+  lbjAccYear String [not null, note: 'THE PARTITION KEY: the company\'s financial year at print.']
+  lbjCompanyId String [not null]
+  lbjBranchId String [not null]
+  lbjDeviceId String [not null, note: 'The counter that printed (fixed.device_master); it owns the number series.']
+  lbjSlno Int [not null, note: 'Per company + branch + device + year (ux_lbj_device_no).']
+  lbjRefno String [not null, note: 'D8-000127']
+  lbjPurposeId String [not null]
+  lbjTemplateId String [not null]
+  lbjVersionId String [not null, note: 'The frozen design revision; a reprint uses the original job\'s.']
+  lbjPrinterName String [not null]
+  lbjPrinterDpi Int [note: 'What Qt reported for the queue; NULL = the design\'s snap dpi.']
+  lbjPriceLevel Int [not null, note: '1-4 (ck_lbj_price_level): the level "Our price" was read at.']
+  lbjStartAt Int [not null, default: 1, note: 'The first cell on a sheet (labels down > 1); 1 on a roll.']
+  lbjKind String [not null, default: 'PRINT', note: 'PRINT | REPRINT (ck_lbj_kind).']
+  lbjReprintOfId String [note: 'REPRINT: the original job (never a reprint). No FK (§5).']
+  lbjReprintOfAccYear String
+  lbjResendOfId String [note: 'A FAILED job sent again (kind PRINT, no reason). No FK (§5).']
+  lbjResendOfAccYear String
+  lbjReasonCode String [note: 'REPRINT only: JAMMED | ROLL_OUT | TORN | OTHER (ck_lbj_reason_code).']
+  lbjReasonNote String [note: 'Required for OTHER (ck_lbj_reprint).']
+  lbjSrcKind String [not null, default: 'MANUAL', note: 'MANUAL in S-P1 (ck_lbj_src); S-P2 widens it for GRN / purchase bill jobs.']
+  lbjSrcDocType String
+  lbjSrcDocId String
+  lbjSrcAccYear String
+  lbjLineCount Int [not null]
+  lbjLabelCount Int [not null]
+  lbjPageCount Int
+  lbjStatus String [not null, default: 'SENT', note: 'SENT | PRINTED | FAILED (ck_lbj_status).']
+  lbjStatusOn DateTime
+  lbjPrinterMessage String [note: 'The printer\'s message on FAILED.']
+  lbjPrintedOn DateTime [default: `now()`, not null]
+  lbjPrintedBy String [not null]
+  lbjModifiedOn DateTime [note: 'The status step (no FK).']
+  lbjModifiedBy String
+  lbjSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  company companys [not null]
+  branch branch_master [not null]
+  device device_master [not null]
+  purpose print_purpose [not null]
+  template print_template [not null]
+  version print_template_version [not null]
+  printedByUser user_master [not null]
+  lines label_job_line [not null]
+
+  indexes {
+    (lbjId, lbjAccYear) [pk]
+    (lbjCompanyId, lbjBranchId, lbjDeviceId, lbjAccYear, lbjSlno) [unique]
+  }
+
+  Note: 'inventory.label_job — Sticker Printing (menu 32): one row per printed design
+group, a sticker job (plan printing/sticker-printing S-P1 §6.3, migration
+20261126100000_sticker_printing_sp1).
+
+LIST-partitioned by lbjAccYear (the company\'s financial year at print), PK
+(lbjId, lbjAccYear). Partitions come from public.ensure_acc_year_partitions,
+which 20261126100000 taught about this table.
+
+Numbered per COUNTER: lbjRefno = dev_code || \'-\' || the 6-digit lbjSlno
+(D8-000127), the serial restarting each financial year (PQ3). Only one
+counter writes its series, so ux_lbj_device_no cannot clash at sync.
+
+Everything is frozen at print: the design revision (lbjVersionId), the
+printer, the price level and every line\'s figures (LabelJobLine). Nothing is
+edited afterwards except the one status step SENT -> PRINTED / FAILED
+(lbjStatus, lbjStatusOn, lbjPrinterMessage, lbjModifiedOn / By), which
+txn_status_log records (doc type LABEL_JOB). A reprint (kind REPRINT, with a
+reason) or a resend of a failed job (kind PRINT, lbjResendOfId) is a NEW job.
+Sticker jobs do not write print_log.
+
+lbjReprintOfId / lbjResendOfId carry NO foreign key: a reprint and its
+source may reach the cloud in either order (§5).
+
+CHECK constraints (DB-only):
+ck_lbj_kind         PRINT | REPRINT
+ck_lbj_status       SENT | PRINTED | FAILED
+ck_lbj_reason_code  NULL | JAMMED | ROLL_OUT | TORN | OTHER
+ck_lbj_reprint      REPRINT <=> reprint_of_id set <=> reason set; OTHER needs a note
+ck_lbj_resend       a resend is kind PRINT
+ck_lbj_src          MANUAL with no source document (S-P2 widens it)
+ck_lbj_counts       line_count, label_count, start_at, slno >= 1
+ck_lbj_price_level  1-4
+Partial indexes (DB-only): ix_lbj_reprint_of, ix_lbj_resend_of (WHERE ...
+IS NOT NULL), ix_sync_pending_label_job.'
+}
+
+Table label_job_line {
+  lbjlId String [not null]
+  lbjlAccYear String [not null, note: 'THE PARTITION KEY: the job\'s year.']
+  lbjlJobId String [not null]
+  lbjlLineNo Int [not null]
+  lbjlItemId String [not null]
+  lbjlUnitId String [not null, note: 'The label unit (inventory.item_unit_conversion.iuc_id).']
+  lbjlLotId String
+  lbjlBarcode String
+  lbjlMrp Decimal
+  lbjlPrice Decimal
+  lbjlBatchNo String
+  lbjlMfgDate DateTime
+  lbjlExpiryDate DateTime
+  lbjlCostCode String
+  lbjlPriceCode String
+  lbjlLabels Int [not null, note: '1-9,999 (ck_lbjl_labels).']
+  lbjlReprintOfLineId String [note: 'REPRINT job: the original job\'s line. No FK (§5).']
+  lbjlSrcLineId String [note: 'S-P2 hook: the GRN / purchase bill line.']
+  lbjlSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  job label_job [not null]
+  item item_master [not null]
+  unit item_unit_conversion [not null]
+  lot stock_lot
+
+  indexes {
+    (lbjlId, lbjlAccYear) [pk]
+  }
+
+  Note: 'inventory.label_job_line — the frozen lines of a sticker job (plan
+printing/sticker-printing S-P1 §6.4, migration
+20261126100000_sticker_printing_sp1).
+
+LIST-partitioned by lbjlAccYear (= its job\'s year), PK (lbjlId, lbjlAccYear).
+The server re-resolves every line at print and stores what it printed: the
+label unit, the lot, barcode, MRP, Our price, batch, packed on / use by and
+the cost / price code. It never stores a figure the client sent, and a line
+is never updated.
+
+A REPRINT job\'s line points at the line it reprints (lbjlReprintOfLineId,
+no FK, §5); "Reprinted" on a line = SUM(labels) of the lines pointing at it.
+"Last printed" (item + unit at a branch) reads ix_lbjl_item.
+
+CHECK constraints (DB-only): ck_lbjl_line_no (>= 1), ck_lbjl_labels (1-9,999).
+Partial indexes (DB-only): ix_lbjl_reprint_of (WHERE NOT NULL),
+ix_sync_pending_label_job_line.'
 }
 
 Table tax_rate_master {
@@ -4234,6 +4375,7 @@ Table branch_master {
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
+  labelJobs label_job [not null]
   gstCredentials gst_company_credential [not null]
   loyaltyMembersEnrolled loyalty_member [not null]
   loyaltyLedgerRows loyalty_ledger [not null]
@@ -4446,6 +4588,7 @@ the e-invoice applicability rows in StatutoryLimit.']
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
+  labelJobs label_job [not null]
   gstCredentials gst_company_credential [not null]
   loyaltyMembers loyalty_member [not null]
   loyaltyLedgerRows loyalty_ledger [not null]
@@ -5332,6 +5475,7 @@ Table print_purpose {
   templates print_template [not null]
   assignments print_template_assignment [not null]
   printLogs print_log [not null]
+  labelJobs label_job [not null, note: 'Sticker jobs (ITEM_LABEL / PACK_LABEL / SHELF_LABEL, 20261126100000).']
   voucherTypes acc_voucher_types [not null]
 
   Note: 'public.print_purpose — §1, WHAT can be printed.
@@ -5432,6 +5576,9 @@ foreign key to the other.']
   versions print_template_version [not null]
   assignments print_template_assignment [not null]
   printLogs print_log [not null]
+  labelJobs label_job [not null, note: 'Sticker jobs printed with this design (20261126100000).']
+  stickerItems item_master [not null, note: 'Items whose card names this as their own Sticker design
+(item_master.item_barcode_sticker_id, fk_item_barcode_sticker, SET NULL).']
 
   indexes {
     (ptlId, ptlCompanyKey) [unique]
@@ -5731,6 +5878,14 @@ Table print_template_version {
   ptvMarginLeftMm Decimal [not null, default: 0]
   ptvMarginRightMm Decimal [not null, default: 0]
   ptvColumns Int [note: 'Characters per line for the text engines. Meaningless for a page one.']
+  ptvLabelWidthMm Decimal
+  ptvLabelHeightMm Decimal
+  ptvLabelAcross Int
+  ptvLabelDown Int [note: '1 = a roll, more = a sheet (A4).']
+  ptvLabelGapXMm Decimal [not null, default: 0]
+  ptvLabelGapYMm Decimal [not null, default: 0, note: 'Put on the page only for a sheet; a roll\'s gap is the printer\'s sensor.']
+  ptvLabelRotate Int [not null, default: 0]
+  ptvLabelDpi Int [note: 'Snap-to dpi; the printer\'s own dpi wins when Qt reports it.']
   ptvLang String [not null, default: 'en-IN']
   ptvFontFamily String
   ptvParams Json [note: '── What the OPERATOR is asked, once, for the whole render ─────────────
@@ -5770,6 +5925,7 @@ is, in every meaningful sense, code.']
 version. At most one in practice; the schema does not say so.']
   datasets print_template_dataset [not null]
   printLogs print_log [not null]
+  labelJobs label_job [not null, note: 'Sticker jobs printed with this exact revision (frozen on the job).']
 
   indexes {
     (ptvTemplateId, ptvRevNo) [unique]
@@ -6278,6 +6434,7 @@ Table user_master {
   usrCreatedBy String
   usrModifiedOn DateTime
   usrModifiedBy String
+  usrMaxDiscPerc Decimal
   userMenus user_menus [not null]
   deviceMasters device_master [not null]
   voucherHeaders acc_voucher_header [not null]
@@ -6299,6 +6456,7 @@ Table user_master {
   printerProfilesCreated printer_profile [not null]
   printerProfilesModified printer_profile [not null]
   printLogs print_log [not null]
+  labelJobsPrinted label_job [not null]
   loyaltyLedgerRows loyalty_ledger [not null]
   loyaltyLedgerApproved loyalty_ledger [not null]
   loyaltyGiftRedeems loyalty_gift_redeem [not null]
@@ -7710,7 +7868,7 @@ Table employee_master {
   empDepartmentId String
   empDesignationId String
   empEmploymentType String
-  empStatus String
+  empStatus String [default: 'Working', note: 'Working or Resigned; blank = Working (20261120100000). No CHECK: the server normalises.']
   empJoinedOn DateTime
   empProbationEndOn DateTime
   empConfirmationOn DateTime
@@ -7741,6 +7899,12 @@ Table employee_master {
   empCreatedBy String
   empModifiedOn DateTime [default: `now()`, not null]
   empModifiedBy String
+  empBankName String
+  empBankAccountNo String
+  empBankIfsc String [note: 'IFSC, 11 characters (AAAA0XXXXXX), upper case.']
+  empUanNo String [note: 'UAN, the PF universal account no (12 digits).']
+  empEmergencyContactName String
+  empEmergencyContactPhone String
   company companys
   designation employee_designations
   department employee_departments
@@ -10831,6 +10995,14 @@ cut-off: no GST cut, no IRN (D8). Set by the server only.']
   srPointsBackAmt Decimal [not null, default: 0, note: 'Their money value: part of the note, never refunded in money.']
   srVoucherShareAmt Decimal [not null, default: 0, note: 'The gift-voucher share: stays inside srCreditAmt / srAdjustedAmt, out of
 the refund cap (D48).']
+  srClientUuid String [note: 'The phone\'s own id for a return uploaded from the mobile app
+(/mobile/returns/create). A resend with the same (company, client uuid)
+answers the return already saved, or re-saves its DRAFT; NULL on desktop
+returns. The year is in ux_sr_client_uuid only because a unique index on
+a partitioned table must hold the partition key: the server checks across
+years under a lock. Written with raw SQL by the mobile module, on the
+uploaded return\'s own row only.']
+  srMobileRefno String [note: 'The phone\'s own number (D12). srUsrRefno keeps its desktop meaning.']
   bill sale_bill
   customer customers [not null]
   posState state_codes
@@ -10844,6 +11016,7 @@ the refund cap (D48).']
     (srId, srAccYear) [pk]
     (srCompanyId, srBranchId, srAccYear, srReturnRefno) [unique]
     (srCompanyId, srBranchId, srAccYear, srDeviceId, srReturnSlno) [unique]
+    (srCompanyId, srClientUuid, srAccYear) [unique]
   }
 
   Note: 'The credit note.
@@ -11889,6 +12062,7 @@ StockLedger by fn_sml_apply(). NEVER written from application code.']
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
   saleBillItems sale_bill_item [not null]
+  labelJobLines label_job_line [not null]
 
   Note: 'stock.stock_lot — the IDENTITY of a holding. Never its quantity.
 
@@ -13494,6 +13668,8 @@ Ref: item_master.itemGroupId > item_group_master.itgId [delete: Restrict]
 
 Ref: item_master.itemTrackPresetId > stock_track_preset.sptId [delete: Restrict]
 
+Ref: item_master.itemBarcodeStickerId > print_template.ptlId [delete: Set Null]
+
 Ref: item_master.itemCategoryId > item_category_master.categoryId [delete: Set Null]
 
 Ref: item_master.itemBaseUnitId > item_unit_master.unit_id [delete: Restrict]
@@ -13545,6 +13721,28 @@ Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Rest
 Ref: item_unit_master.unit_code > item_gst_units.itemGstUnitCode [delete: Set Null]
 
 Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
+
+Ref: label_job.lbjCompanyId > companys.compId [delete: Restrict]
+
+Ref: label_job.lbjBranchId > branch_master.brId [delete: Restrict]
+
+Ref: label_job.lbjDeviceId > device_master.devId [delete: Restrict]
+
+Ref: label_job.lbjPurposeId > print_purpose.ppoId [delete: Restrict]
+
+Ref: label_job.lbjTemplateId > print_template.ptlId [delete: Restrict]
+
+Ref: label_job.lbjVersionId > print_template_version.ptvId [delete: Restrict]
+
+Ref: label_job.lbjPrintedBy > user_master.usrId [delete: Restrict]
+
+Ref: label_job_line.(lbjlJobId, lbjlAccYear) > label_job.(lbjId, lbjAccYear) [delete: Cascade]
+
+Ref: label_job_line.lbjlItemId > item_master.itemId [delete: Restrict]
+
+Ref: label_job_line.lbjlUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: label_job_line.lbjlLotId > stock_lot.sltId [delete: Restrict]
 
 Ref: tax_rate_master.taxSupersedesId - tax_rate_master.taxId [delete: Set Null]
 

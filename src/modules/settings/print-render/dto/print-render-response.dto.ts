@@ -150,6 +150,17 @@ export class PrintRenderInspectSuccessDto {
   data!: RenderInspectionDto;
 }
 
+export class PrintDataProviderFieldDto {
+  @ApiProperty({ example: 'item_name' })
+  name!: string;
+
+  @ApiProperty({ example: 'Item' })
+  group!: string;
+
+  @ApiProperty({ example: 'Item name' })
+  label!: string;
+}
+
 export class PrintDataProviderDto {
   @ApiProperty({ example: 'sales.bill.header' })
   code!: string;
@@ -159,6 +170,14 @@ export class PrintDataProviderDto {
 
   @ApiProperty({ enum: ['one', 'many'] })
   cardinality!: string;
+
+  @ApiPropertyOptional({
+    type: [PrintDataProviderFieldDto],
+    description:
+      'Only for a provider that publishes its fields (stickers.label, sticker printing S-P1): ' +
+      'what the designer’s Data panel lists. Absent for every other provider.',
+  })
+  fields?: PrintDataProviderFieldDto[];
 }
 
 export class PrintRenderProvidersSuccessDto {

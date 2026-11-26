@@ -17,10 +17,10 @@ module existed, none of it could produce a page.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/preview` | Render one revision you name. Nothing is logged. |
+| `POST` | `/preview` | Render one revision you name. Nothing is logged. A label design renders through the label path (see "Labels"). |
 | `POST` | `/print` | Render what the assignment ladder resolves to, and log every copy. |
 | `POST` | `/log` | Record a print made from a `/preview` — the print dialog's Print and Download. Renders nothing. |
-| `GET` | `/providers` | The dataset provider codes this build carries. |
+| `GET` | `/providers` | The dataset provider codes this build carries; `fields` for a provider that publishes them (`stickers.label`). |
 
 Both render routes answer with **bytes** — `application/pdf`, or
 `application/octet-stream` for a text engine — plus `X-Print-*` headers naming the
@@ -201,6 +201,33 @@ version row with no `ptvId` becomes the next revision.
 
 The paper and the datasets still come from the revision even then, so what Preview shows
 differs from what Print produces by exactly the bands being edited, and by nothing else.
+
+## Labels (sticker printing S-P1)
+
+A label design (purpose ITEM_LABEL / PACK_LABEL / SHELF_LABEL) is ONE label as a person reads it:
+its version carries a **label sheet** (`ptv_label_width_mm`, `_height_mm`, `_across`, `_down`,
+`_gap_x_mm`, `_gap_y_mm`, `_rotate`, `_dpi`) and its body is one `REPORT_HEADER` band reading the
+MASTER dataset `label` (PROVIDER `stickers.label`). The print-template save works the page out
+(LABEL paper: 2 × side + across × cell + gaps; A4: the A4 page) and stores it in `ptv_width_mm` /
+`ptv_height_mm`, so every older reader of the page still works.
+
+**One path.** `PrintRenderService.renderLabels` is the only way a label design is drawn: the
+designer's `/preview` of a label design (3 SAMPLE rows × 2 labels, from `stickerSampleRows()`),
+the sticker jobs, the sticker preview pane (`singleLabel`) and Test print (bands built in code).
+It
+
+1. builds the definition from the revision with the paper = one label, margins 0;
+2. lays each row out once with `label` = that row (per copy only when the body reads `copy_no`);
+3. imposes the labels across, then down, continuing in the free cells, from `startAt` on a
+   sheet (`engine/label/label-sheet.ts`);
+4. draws through `PdfKitRenderer.renderLabelSheet`: the page and every cell origin are whole
+   dots of the print dpi (the printer's own when Qt sends it, else `ptv_label_dpi`), each cell is
+   translated and turned (0 / 90 / 180 / 270), and a linear BARCODE element with `moduleDots` is
+   drawn as **vector bars** from `bwipjs.raw()` on whole dots (`engine/label/bar-snap.ts`).
+
+Everything outside this path keeps today's PNG barcodes; `moduleDots` is ignored there. The
+symbology `auto` (EAN-13 when the value is a valid EAN-13, else Code 128) works on both paths.
+Nothing on the label path writes `print_log`: a sticker job (`inventory.label_job`) is its own log.
 
 ## Notes for the next person
 

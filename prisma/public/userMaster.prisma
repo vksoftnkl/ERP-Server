@@ -93,6 +93,7 @@ model UserMaster {
   printerProfilesCreated     PrinterProfile[]          @relation("PrinterProfileCreatedBy")
   printerProfilesModified    PrinterProfile[]          @relation("PrinterProfileModifiedBy")
   printLogs                  PrintLog[]                @relation("PrintLogPrintedBy")
+  labelJobsPrinted           LabelJob[]                @relation("LabelJobPrintedBy")
 
   // ── Indexes ────────────────────────────────────────────────────────────────
   //   CREATE UNIQUE INDEX uix_user_login_name

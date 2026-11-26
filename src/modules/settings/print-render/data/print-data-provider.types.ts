@@ -40,9 +40,22 @@ export interface ProviderRequest {
   readonly rowLimit: number;
 }
 
+/** One field a provider publishes for the designer's Data panel. */
+export interface PrintDataProviderField {
+  readonly name: string;
+  readonly group: string;
+  readonly label: string;
+}
+
 export interface PrintDataProvider {
   /** ptd_provider_code — dotted lower snake, matching ck_ptd_provider_shape. */
   readonly code: string;
+  /**
+   * Optional: the fields a row carries, for a provider whose rows the designer
+   * cannot discover by running it (stickers.label — its real rows come from a
+   * sticker job, not from a query). `/print-render/providers` passes it on.
+   */
+  readonly fields?: readonly PrintDataProviderField[];
   /** What the designer's dataset picker shows. */
   readonly label: string;
   /** MASTER datasets take the first row; this says which shape is meant. */

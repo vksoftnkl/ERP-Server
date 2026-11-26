@@ -152,6 +152,10 @@ const buildService = (
     printTemplateAssignment: {
       findFirst: jest.fn((): Promise<{ ptaId: string } | null> => Promise.resolve(null)),
     },
+    // Sticker printing S-P1: a new template's purpose is read to know whether it is a label purpose.
+    printPurpose: {
+      findUnique: jest.fn(() => Promise.resolve({ ppoCode: 'SALE_INVOICE' })),
+    },
     // GET /get names the users (review list 11-19, 62.4): USER has no display name.
     userMaster: {
       findMany: jest.fn(() =>

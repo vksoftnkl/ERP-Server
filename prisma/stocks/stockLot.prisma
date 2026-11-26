@@ -175,6 +175,9 @@ model StockLot {
 
   saleBillItems         SaleBillItem[]            @relation("SaleBillItemLot")
 
+  // ── Sticker printing (20261126100000): the lot a label was printed from ─
+  labelJobLines         LabelJobLine[]            @relation("LabelJobLineLot")
+
   @@map("stock_lot")
   @@schema("stock")
 }

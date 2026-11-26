@@ -25,6 +25,16 @@ import {
   PTV_PARAM_NAME_PATTERN,
   PTV_PARAM_TYPES,
   PTV_STATUSES,
+  PTD_LABEL_PROVIDER_CODE,
+  PTV_LABEL_ACROSS_MAX,
+  PTV_LABEL_ACROSS_MIN,
+  PTV_LABEL_DOWN_MAX,
+  PTV_LABEL_DOWN_MIN,
+  PTV_LABEL_DPIS,
+  PTV_LABEL_GAP_MAX_MM,
+  PTV_LABEL_PAPER_CODES,
+  PTV_LABEL_ROTATES,
+  PTV_LABEL_SIZE_MAX_MM,
 } from '../print-template.constants';
 import { collectDatasetSqlErrors } from './print-template-sql-guards';
 
@@ -439,6 +449,171 @@ export function collectVersionInvariantErrors(
   checkVersionLang(version, path, errors);
   checkVersionParams(version, path, errors);
   return errors;
+}
+
+// ═══ Sticker printing S-P1: the label sheet (plan §4.1 / §7.3) ═══════════════
+
+/** The eight label-sheet columns of a version, as the save will leave them. */
+export interface EffectiveLabelSheet {
+  ptvLabelWidthMm: number | null;
+  ptvLabelHeightMm: number | null;
+  ptvLabelAcross: number | null;
+  ptvLabelDown: number | null;
+  ptvLabelGapXMm: number;
+  ptvLabelGapYMm: number;
+  ptvLabelRotate: number;
+  ptvLabelDpi: number | null;
+}
+
+/** The five that are all NULL or all set (ck_ptv_label_sheet). */
+const SHEET_CORE_KEYS = [
+  'ptvLabelWidthMm',
+  'ptvLabelHeightMm',
+  'ptvLabelAcross',
+  'ptvLabelDown',
+  'ptvLabelDpi',
+] as const;
+
+/** Does this version carry a label sheet at all (any of the five set)? */
+export function hasLabelSheet(sheet: EffectiveLabelSheet): boolean {
+  return SHEET_CORE_KEYS.some((key) => sheet[key] !== null);
+}
+
+/**
+ * The label-sheet rules (plan §7.3), collected like every other version rule.
+ *
+ * A LABEL purpose (ITEM_LABEL / PACK_LABEL / SHELF_LABEL) needs the sheet —
+ * size, across, down and dpi — in range, on the paper LABEL (a roll) or A4 (a
+ * sheet), drawn with JSON_BANDS. Any other purpose may not carry one.
+ *
+ * `field` is the bare column name (`ptvLabelAcross`), not the payload path,
+ * because the catalogue words PRINT_TEMPLATE_LABEL_SHEET_INVALID by the
+ * variant field=<key>; the revision's path goes into the message.
+ */
+export function collectLabelSheetErrors(
+  version: Pick<EffectiveVersion, 'ptvPaperCode' | 'ptvEngine'> & EffectiveLabelSheet,
+  isLabelPurpose: boolean,
+  path = '',
+): PrintTemplateErrorDetail[] {
+  const errors: PrintTemplateErrorDetail[] = [];
+  const where = path ? `${path}: ` : '';
+
+  if (!isLabelPurpose) {
+    const carried =
+      SHEET_CORE_KEYS.find((key) => version[key] !== null) ??
+      (version.ptvLabelGapXMm !== 0
+        ? 'ptvLabelGapXMm'
+        : version.ptvLabelGapYMm !== 0
+          ? 'ptvLabelGapYMm'
+          : version.ptvLabelRotate !== 0
+            ? 'ptvLabelRotate'
+            : null);
+    if (carried) {
+      errors.push({
+        field: carried,
+        code: PrintTemplateErrorCode.LABEL_SHEET_NOT_LABEL,
+        message:
+          `${where}only Item, Pack and Shelf label designs take a label sheet — clear ${carried}, ` +
+          'or give the template a label purpose',
+      });
+    }
+    return errors;
+  }
+
+  const missing = SHEET_CORE_KEYS.filter((key) => version[key] === null);
+  if (missing.length > 0) {
+    errors.push({
+      field: missing[0],
+      code: PrintTemplateErrorCode.LABEL_SHEET_REQUIRED,
+      message: `${where}a label design needs its label size, labels across and down, and dpi (missing: ${missing.join(', ')})`,
+    });
+  }
+
+  const invalid = (field: string, message: string): void => {
+    errors.push({ field, code: PrintTemplateErrorCode.LABEL_SHEET_INVALID, message: `${where}${message}` });
+  };
+  for (const key of ['ptvLabelWidthMm', 'ptvLabelHeightMm'] as const) {
+    const value = version[key];
+    if (value !== null && !(value > 0 && value <= PTV_LABEL_SIZE_MAX_MM)) {
+      invalid(key, `${key} must be more than 0 and at most ${PTV_LABEL_SIZE_MAX_MM} mm`);
+    }
+  }
+  const across = version.ptvLabelAcross;
+  if (across !== null && !(Number.isInteger(across) && across >= PTV_LABEL_ACROSS_MIN && across <= PTV_LABEL_ACROSS_MAX)) {
+    invalid('ptvLabelAcross', `ptvLabelAcross must be ${PTV_LABEL_ACROSS_MIN} to ${PTV_LABEL_ACROSS_MAX}`);
+  }
+  const down = version.ptvLabelDown;
+  if (down !== null && !(Number.isInteger(down) && down >= PTV_LABEL_DOWN_MIN && down <= PTV_LABEL_DOWN_MAX)) {
+    invalid('ptvLabelDown', `ptvLabelDown must be ${PTV_LABEL_DOWN_MIN} to ${PTV_LABEL_DOWN_MAX} (1 = a roll)`);
+  }
+  for (const key of ['ptvLabelGapXMm', 'ptvLabelGapYMm'] as const) {
+    const value = version[key];
+    if (!(value >= 0 && value <= PTV_LABEL_GAP_MAX_MM)) {
+      invalid(key, `${key} must be 0 or more (at most ${PTV_LABEL_GAP_MAX_MM} mm)`);
+    }
+  }
+  if (!(PTV_LABEL_ROTATES as readonly number[]).includes(version.ptvLabelRotate)) {
+    invalid('ptvLabelRotate', `ptvLabelRotate must be one of ${PTV_LABEL_ROTATES.join(', ')}`);
+  }
+  const dpi = version.ptvLabelDpi;
+  if (dpi !== null && !(PTV_LABEL_DPIS as readonly number[]).includes(dpi)) {
+    invalid('ptvLabelDpi', `ptvLabelDpi must be one of ${PTV_LABEL_DPIS.join(', ')}`);
+  }
+  if (!(PTV_LABEL_PAPER_CODES as readonly string[]).includes(version.ptvPaperCode.trim().toUpperCase())) {
+    invalid('ptvPaperCode', `a label design prints on ${PTV_LABEL_PAPER_CODES.join(' (a roll) or ')} (a sheet), not ${version.ptvPaperCode}`);
+  }
+  if (version.ptvEngine !== PTV_JSON_ENGINE) {
+    invalid('ptvEngine', `a label design uses the ${PTV_JSON_ENGINE} engine, not ${version.ptvEngine}`);
+  }
+  return errors;
+}
+
+/**
+ * Publishing a label revision (plan §4.1, decision 23): the body is ONE band,
+ * REPORT_HEADER, and the revision reads the MASTER dataset from the
+ * stickers.label provider. The label path lays that band out once per line;
+ * a page header, a detail band or a second band has nowhere to go on a label.
+ */
+export function collectLabelBodyErrors(
+  body: string,
+  datasets: readonly Pick<EffectiveDataset, 'ptdRole' | 'ptdSourceKind' | 'ptdProviderCode'>[],
+  path = '',
+): PrintTemplateErrorDetail[] {
+  const where = path ? `${path}: ` : '';
+  const refuse = (why: string): PrintTemplateErrorDetail[] => [
+    {
+      field: 'ptvBody',
+      code: PrintTemplateErrorCode.LABEL_BODY_INVALID,
+      message: `${where}a label design must have one Report header band reading the label fields — ${why}`,
+    },
+  ];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return refuse('the body is not JSON');
+  }
+  const bands = (parsed as { bands?: unknown } | null)?.bands;
+  if (!Array.isArray(bands) || bands.length !== 1) {
+    return refuse(`it has ${Array.isArray(bands) ? bands.length : 0} bands`);
+  }
+  const band = bands[0] as { type?: unknown; dataset?: unknown } | null;
+  if (!band || band.type !== 'REPORT_HEADER') {
+    return refuse(`its band is ${String(band?.type ?? 'of no type')}`);
+  }
+  if (band.dataset !== undefined && band.dataset !== null && band.dataset !== '') {
+    return refuse('the band must not repeat over a dataset');
+  }
+  const readsLabel = datasets.some(
+    (dataset) =>
+      dataset.ptdRole === 'MASTER' &&
+      dataset.ptdSourceKind === 'PROVIDER' &&
+      (dataset.ptdProviderCode ?? '').toLowerCase() === PTD_LABEL_PROVIDER_CODE,
+  );
+  if (!readsLabel) {
+    return refuse(`no MASTER dataset reads the ${PTD_LABEL_PROVIDER_CODE} provider`);
+  }
+  return [];
 }
 
 // ═══ §4 print_template_dataset ═════════════════════════════════════════════

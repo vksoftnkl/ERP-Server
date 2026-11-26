@@ -212,6 +212,14 @@ export class ItemPayloadDto {
   })
   item_default_tax_name?: string | null;
   @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Sticker printing S-P1: the Sticker design (print_template ptl_name of item_barcode_sticker_id), ' +
+      'resolved on the composite get endpoint',
+  })
+  item_barcode_sticker_name?: string | null;
+  @ApiPropertyOptional({
     type: Boolean,
     description:
       'Composite get only (item master review 11-20 Q2): true once any unit row of the item, ' +

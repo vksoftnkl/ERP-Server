@@ -150,3 +150,40 @@ export const PTD_REMARKS_MAX_LENGTH = 250;
 
 /// A screen name the audit log groups every write in this module under.
 export const PRINT_TEMPLATE_SCREEN_NAME = 'Print Template';
+
+// ─── Sticker printing S-P1: the label sheet (plan §4.1) ─────────────────────
+
+/** The print purposes whose designs are LABELS and carry a label sheet. */
+export const LABEL_PURPOSE_CODES = ['ITEM_LABEL', 'PACK_LABEL', 'SHELF_LABEL'] as const;
+export type LabelPurposeCode = (typeof LABEL_PURPOSE_CODES)[number];
+
+export function isLabelPurposeCode(code: string | null | undefined): code is LabelPurposeCode {
+  return (LABEL_PURPOSE_CODES as readonly string[]).includes((code ?? '').trim().toUpperCase());
+}
+
+/** A label is at most this big each way (code rule; the CHECK only says > 0). */
+export const PTV_LABEL_SIZE_MAX_MM = 500;
+export const PTV_LABEL_ACROSS_MIN = 1;
+export const PTV_LABEL_ACROSS_MAX = 20;
+export const PTV_LABEL_DOWN_MIN = 1;
+export const PTV_LABEL_DOWN_MAX = 50;
+/** numeric(6,2). */
+export const PTV_LABEL_GAP_MAX_MM = 9999.99;
+export const PTV_LABEL_DPIS = [203, 300, 600] as const;
+export const PTV_LABEL_ROTATES = [0, 90, 180, 270] as const;
+/** A roll (LABEL) or a sheet of labels (A4). */
+export const PTV_LABEL_PAPER_CODES = ['LABEL', 'A4'] as const;
+/** The provider a label design's MASTER dataset reads (print-render stickers.label). */
+export const PTD_LABEL_PROVIDER_CODE = 'stickers.label';
+
+/** The eight label-sheet keys of a version row, in the screen's order. */
+export const PTV_LABEL_SHEET_KEYS = [
+  'ptvLabelWidthMm',
+  'ptvLabelHeightMm',
+  'ptvLabelAcross',
+  'ptvLabelDown',
+  'ptvLabelGapXMm',
+  'ptvLabelGapYMm',
+  'ptvLabelRotate',
+  'ptvLabelDpi',
+] as const;

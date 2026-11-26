@@ -37,6 +37,7 @@ import {
   throwInventoryBadRequest,
   throwInventoryConflict,
   throwInventoryNotFound,
+  throwUnprocessable,
   violatedConstraintOf,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -405,6 +406,8 @@ export class ItemsMasterService {
     const supplierIds = collect(item.item_supplier_id);
     const custGroupIds = collect(item.item_cust_group);
     const taxIds = collect(item.item_default_tax_id);
+    // Sticker printing S-P1: the item card's Sticker design (a print_template).
+    const stickerIds = collect(item.item_barcode_sticker_id);
     const [
       companies,
       branches,
@@ -417,6 +420,7 @@ export class ItemsMasterService {
       suppliers,
       custGroups,
       taxes,
+      stickerDesigns,
     ] = await Promise.all([
       companyIds.length
         ? this.prisma.company.findMany({
@@ -487,6 +491,12 @@ export class ItemsMasterService {
             select: { taxId: true, taxName: true },
           })
         : [],
+      stickerIds.length
+        ? this.prisma.printTemplate.findMany({
+            where: { ptlId: { in: stickerIds } },
+            select: { ptlId: true, ptlName: true },
+          })
+        : [],
     ]);
     const companyName = new Map(companies.map((r) => [r.compId, r.compName]));
     const branchName = new Map(branches.map((r) => [r.brId, r.brName]));
@@ -499,6 +509,7 @@ export class ItemsMasterService {
     const supplierName = new Map(suppliers.map((r) => [r.supId, r.supName]));
     const custGroupName = new Map(custGroups.map((r) => [r.cgrId, r.cgrName]));
     const taxName = new Map(taxes.map((r) => [r.taxId, r.taxName]));
+    const stickerDesignName = new Map(stickerDesigns.map((r) => [r.ptlId, r.ptlName]));
     const nameOf = <T>(map: Map<string, T>, id: string | null | undefined): T | null =>
       id ? (map.get(id) ?? null) : null;
     const namePrice = <T extends ItemPricePayload>(r: T): T => {
@@ -525,6 +536,7 @@ export class ItemsMasterService {
         item_cust_group_name: nameOf(custGroupName, item.item_cust_group),
         item_base_unit_name: nameOf(unitName, item.item_base_unit_id),
         item_default_tax_name: nameOf(taxName, item.item_default_tax_id),
+        item_barcode_sticker_name: nameOf(stickerDesignName, item.item_barcode_sticker_id),
       },
       unit_conversions: unit_conversions.map((r) => ({
         ...r,
@@ -1004,6 +1016,7 @@ export class ItemsMasterService {
       await this.assertBranchOfCompany(client, companyId, saveItemDto.item_branch_id ?? null);
       await this.inheritClassDefaults(client, data, saveItemDto);
       await this.assertReferencesLive(client, saveItemDto, null);
+      await this.assertStickerDesign(client, saveItemDto, null, companyId);
       await this.assertUniqueKeys(
         client,
         null,
@@ -1261,6 +1274,14 @@ export class ItemsMasterService {
       }
       this.applyOptionalFields(data, saveItemDto);
       await this.assertReferencesLive(client, saveItemDto, existing);
+      await this.assertStickerDesign(
+        client,
+        saveItemDto,
+        existing,
+        saveItemDto.item_company_id !== undefined
+          ? (saveItemDto.item_company_id ?? null)
+          : existing.itemCompanyId,
+      );
       const after = <T>(sent: T | undefined, stored: T): T => (sent !== undefined ? sent : stored);
       await this.assertUniqueKeys(
         client,
@@ -1602,6 +1623,52 @@ export class ItemsMasterService {
           },
         ]);
       }
+    }
+  }
+  /**
+   * Sticker printing S-P1 (plan §7.3): the item card's "Sticker design".
+   * When set and CHANGED it must be a live, active, published label design
+   * (Item / Pack / Shelf label purpose, with a label sheet) that is shipped or
+   * of the item's company — any company's when the item is shared (company
+   * NULL). The same rows dropdown 81 offers. An unchanged value is not
+   * re-checked, so a design retired since never blocks an edit; null clears.
+   */
+  private async assertStickerDesign(
+    client: Prisma.TransactionClient,
+    dto: SaveItemDto,
+    existing: ItemMaster | null,
+    companyId: string | null,
+  ): Promise<void> {
+    const id = dto.item_barcode_sticker_id;
+    if (!id || id === existing?.itemBarcodeStickerId) {
+      return;
+    }
+    const rows = await client.$queryRaw<{ ok: number }[]>`
+      SELECT 1 AS ok
+        FROM public.print_template t
+        JOIN public.print_purpose p ON p.ppo_id = t.ptl_purpose_id
+        JOIN public.print_template_version v ON v.ptv_id = t.ptl_published_rev_id
+       WHERE t.ptl_id = ${id}::uuid
+         AND t.ptl_is_deleted = false
+         AND t.ptl_is_active = true
+         AND p.ppo_is_deleted = false
+         AND p.ppo_code IN ('ITEM_LABEL', 'PACK_LABEL', 'SHELF_LABEL')
+         AND v.ptv_status = 'PUBLISHED'
+         AND v.ptv_is_deleted = false
+         AND v.ptv_label_width_mm IS NOT NULL
+         AND (t.ptl_company_id IS NULL
+              OR ${companyId}::uuid IS NULL
+              OR t.ptl_company_id = ${companyId}::uuid)`;
+    if (rows.length === 0) {
+      throwUnprocessable<ItemErrorDetail>('Invalid sticker design', [
+        {
+          field: 'item_barcode_sticker_id',
+          code: ItemErrorCode.STICKER_DESIGN_INVALID,
+          message:
+            `item_barcode_sticker_id ${id} is not a live, published label design (Item / Pack / ` +
+            "Shelf label) that is shipped or of this item's company",
+        },
+      ]);
     }
   }
   /**

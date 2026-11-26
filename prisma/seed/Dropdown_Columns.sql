@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (219 rows).
+-- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (232 rows).
 --
 -- 72 EMPLOYEES BY DESIGNATION: its four columns (the live uuids 01a1789c-...) copied from the live
 -- rows (review step 5, decision 5, 2026-11-20); the dropdown was registered from the share file
@@ -15,6 +15,9 @@
 -- 20261118100000_dc_dc_return inserts them.
 -- 80 BRANCHES - THIS COMPANY: its three columns (pinned uuids 01a1f5c0-8000-...0800 - ...0802) as migration
 -- 20261124090000_change_selling_price_rework_p1 inserts them.
+-- 81 STICKER DESIGNS (seven columns, pinned uuids 01a2129c-8100-...0810 - ...0816), 82 DEVICES - THIS BRANCH
+-- (...8200-...0820 - ...0822) and 83 USERS - THIS COMPANY (...8300-...0830 - ...0832) as migration
+-- 20261126100000_sticker_printing_sp1 inserts them.
 -- 48 PRINT PURPOSES - DESKTOP: column 2 Company (ppo_company_id, hidden; pinned uuid ...0482) as
 -- migration 20261116130000_print_purpose_dropdown_company inserts it.
 --
@@ -323,6 +326,22 @@ SELECT v.* FROM (VALUES
     ,('01a1f5c0-8000-7000-8000-000000000800', 80, 0, '#'                   , 'br_id'             , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
     ,('01a1f5c0-8000-7000-8000-000000000801', 80, 1, 'Branch'              , 'br_name'           , NULL                  , 'Text'   , 75.00 , 'Left'  , true , true , 'system')
     ,('01a1f5c0-8000-7000-8000-000000000802', 80, 2, 'Short'               , 'br_short'          , NULL                  , 'Text'   , 25.00 , 'Left'  , true , true , 'system')
+    -- ============ STICKER DESIGNS (id 81) ============
+    ,('01a2129c-8100-7000-8000-000000000810', 81, 0, '#'                   , 'ptl_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
+    ,('01a2129c-8100-7000-8000-000000000811', 81, 1, 'Design'              , 'ptl_name'          , NULL                  , 'Text'   , 55.00 , 'Left'  , true , true , 'system')
+    ,('01a2129c-8100-7000-8000-000000000812', 81, 2, 'Size'                , 'label_size'        , NULL                  , 'Text'   , 30.00 , 'Left'  , true , false, 'system')
+    ,('01a2129c-8100-7000-8000-000000000813', 81, 3, 'Purpose'             , 'ppo_code'          , NULL                  , 'Text'   , 15.00 , 'Left'  , true , true , 'system')
+    ,('01a2129c-8100-7000-8000-000000000814', 81, 4, 'Width'               , 'ptv_label_width_mm', NULL                  , 'Text'   , 0.00  , 'Left'  , false, false, 'system')
+    ,('01a2129c-8100-7000-8000-000000000815', 81, 5, 'Height'              , 'ptv_label_height_mm', NULL                  , 'Text'   , 0.00  , 'Left'  , false, false, 'system')
+    ,('01a2129c-8100-7000-8000-000000000816', 81, 6, 'Across'              , 'ptv_label_across'  , NULL                  , 'Text'   , 0.00  , 'Left'  , false, false, 'system')
+    -- ============ DEVICES - THIS BRANCH (id 82) ============
+    ,('01a2129c-8200-7000-8000-000000000820', 82, 0, '#'                   , 'dev_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
+    ,('01a2129c-8200-7000-8000-000000000821', 82, 1, 'Code'                , 'dev_code'          , NULL                  , 'Text'   , 25.00 , 'Left'  , true , true , 'system')
+    ,('01a2129c-8200-7000-8000-000000000822', 82, 2, 'Counter'             , 'dev_device_name'   , NULL                  , 'Text'   , 75.00 , 'Left'  , true , true , 'system')
+    -- ============ USERS - THIS COMPANY (id 83) ============
+    ,('01a2129c-8300-7000-8000-000000000830', 83, 0, '#'                   , 'usr_id'            , NULL                  , 'Text'   , 10.00 , 'Left'  , false, false, 'system')
+    ,('01a2129c-8300-7000-8000-000000000831', 83, 1, 'Login'               , 'usr_login_name'    , NULL                  , 'Text'   , 40.00 , 'Left'  , true , true , 'system')
+    ,('01a2129c-8300-7000-8000-000000000832', 83, 2, 'Name'                , 'usr_full_name'     , NULL                  , 'Text'   , 60.00 , 'Left'  , true , true , 'system')
 ) AS v(dropdown_columns_id, dropdown_columns_dropdown_id, dropdown_columns_no, dropdown_columns_name, dropdown_columns_sql_name, dropdown_columns_alias, dropdown_columns_data_type, dropdown_columns_width, dropdown_columns_allignment, dropdown_columns_visiblity, dropdown_columns_filter, dropdown_columns_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.dropdown_columns existing

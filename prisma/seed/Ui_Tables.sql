@@ -1,4 +1,4 @@
--- Seed: fixed.ui_tables -- the registry of entry-screen item grids (72 rows).
+-- Seed: fixed.ui_tables -- the registry of entry-screen item grids (80 rows).
 --
 -- 56-59 / 62 / 65 / 66: the purchase screens and Supplier Dues (migration 20261029140000).
 -- 67: Cost Price – Bulk Change, menu 298 (migration 20261105120000_cost_price_bulk_change).
@@ -15,6 +15,8 @@
 --        (menu 304) bills / items / open lines, Delivery Note (menu 305) lines, Godown Stock
 --        Position (menu 306) rows / bills behind, and the Delivery Note goods-back popup.
 -- 87: Challan Return (menu 251) lines (migration 20261118100000_dc_dc_return).
+-- 88-90: Sticker Printing (menu 32) Print list / Printed jobs' job lines / Reprint dialog lines
+--        (migration 20261126100000_sticker_printing_sp1).
 -- 51-55, 60, 61, 63, 64 were registered through the API and are not carried here yet.
 --
 -- Every "Quotation-item"/"Sale bill item" style grid the entry screens render is a
@@ -112,6 +114,9 @@ VALUES
     ,(85, 'GODOWN POSITION - BEHIND'        , false, 'Desktop', true , false, 'system')
     ,(86, 'DELIVERY NOTE - GOODS BACK'      , true , 'Desktop', true , false, 'system')
     ,(87, 'DC RETURN - LINES'               , true , 'Desktop', true , false, 'system')
+    ,(88, 'STICKER PRINTING - PRINT LIST'    , true , 'Desktop', true , false, 'system')
+    ,(89, 'STICKER PRINTING - JOB LINES'     , false, 'Desktop', true , false, 'system')
+    ,(90, 'STICKER PRINTING - REPRINT LINES' , true , 'Desktop', true , false, 'system')
 ON CONFLICT (ui_tbl_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

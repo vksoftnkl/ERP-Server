@@ -43,6 +43,8 @@ model DeviceMaster {
 
   printerProfiles  PrinterProfile[]          @relation("PrinterProfileDevice")
   printLogs        PrintLog[]                @relation("PrintLogDevice")
+  /// Sticker jobs; the counter owns their number series (20261126100000).
+  labelJobs        LabelJob[]                @relation("LabelJobDevice")
 
   @@index([devDeviceUid], name: "idx_device_uid")
   // ── Loyalty points engine (20260921140000) ─────────────────────────────

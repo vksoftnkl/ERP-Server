@@ -56,6 +56,9 @@ model ItemMaster {
   itemAllowFreight     Boolean  @default(false) @map("item_allow_freight")
   itemRandomStock      Boolean  @default(false) @map("item_random_stock")
   itemBarcodeSticker   Boolean  @default(false) @map("item_barcode_sticker")
+  /// The item's own sticker design (item card "Sticker design"): a live,
+  /// published label design; FK fk_item_barcode_sticker (20261126100000), SET
+  /// NULL when the design row goes. Partial ix_item_barcode_sticker is DB-only.
   itemBarcodeStickerId String?  @db.Uuid @map("item_barcode_sticker_id")
   // Tax / HSN
   itemDefaultTaxId     String?  @db.Uuid @map("item_default_tax_id")
@@ -92,6 +95,7 @@ model ItemMaster {
   // Relations
   group                ItemGroupMaster @relation(fields: [itemGroupId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
   trackPreset          StockTrackPreset? @relation("ItemTrackPreset", fields: [itemTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_item_track_preset")
+  stickerDesign        PrintTemplate?  @relation("ItemStickerDesign", fields: [itemBarcodeStickerId], references: [ptlId], onUpdate: Cascade, onDelete: SetNull, map: "fk_item_barcode_sticker")
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   // Repointed at inventory.tax_rate_master by migration
@@ -135,6 +139,9 @@ model ItemMaster {
   deliveryNoteItems     SaleDeliveryNoteItem[]    @relation("SaleDeliveryNoteItemItem")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
+
+  // ── Sticker printing (20261126100000) ───────────────────────────────────
+  labelJobLines         LabelJobLine[]            @relation("LabelJobLineItem")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   itemSyncDate DateTime? @db.Timestamptz(6) @map("item_sync_date")
 

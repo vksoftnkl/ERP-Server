@@ -65,6 +65,16 @@ export class PrintTemplateVersionPayloadDto {
   @ApiProperty({ example: 0 }) ptvMarginLeftMm!: number;
   @ApiProperty({ example: 0 }) ptvMarginRightMm!: number;
   @ApiPropertyOptional({ type: Number, nullable: true, example: 48 }) ptvColumns!: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 50, description: 'Label sheet: one label’s width (mm); null on a non-label design' })
+  ptvLabelWidthMm!: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 25 }) ptvLabelHeightMm!: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 2 }) ptvLabelAcross!: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1, description: '1 = a roll, more = a sheet' })
+  ptvLabelDown!: number | null;
+  @ApiProperty({ example: 2 }) ptvLabelGapXMm!: number;
+  @ApiProperty({ example: 0 }) ptvLabelGapYMm!: number;
+  @ApiProperty({ example: 0, enum: [0, 90, 180, 270] }) ptvLabelRotate!: number;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 203, enum: [203, 300, 600] }) ptvLabelDpi!: number | null;
   @ApiProperty({ example: 'en-IN' }) ptvLang!: string;
   @ApiPropertyOptional({ type: String, nullable: true }) ptvFontFamily!: string | null;
   @ApiPropertyOptional({

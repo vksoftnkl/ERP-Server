@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "layoutMode": "GRAPHIC",
+  "meta": {
+    "name": "SAMPLE item 50 x 25",
+    "note": "SAMPLE FOR TESTING (S10): every client gets their own design. One label 50 x 25 mm as read; 2 across, gap 2, side 1, snap 203 dpi (the version's label sheet). Name 6.4 pt bold (2 lines), Tamil name, MRP, Our price, EAN-13 Auto at 3 dots, cost code / batch / branch.",
+    "gridSnapMm": 0.2
+  },
+  "bands": [
+    {
+      "type": "REPORT_HEADER",
+      "heightMm": 25,
+      "elements": [
+        {
+          "kind": "FIELD",
+          "id": "name",
+          "x": 1,
+          "y": 0.6,
+          "w": 48,
+          "h": 4.8,
+          "value": "{{ label.item_name }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 6.4,
+            "bold": true
+          },
+          "align": "left",
+          "wrap": true,
+          "ellipsis": false
+        },
+        {
+          "kind": "FIELD",
+          "id": "name_ta",
+          "x": 1,
+          "y": 5.3,
+          "w": 48,
+          "h": 2.9,
+          "value": "{{ label.item_name_ta }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 7,
+            "bold": false
+          },
+          "align": "left",
+          "ellipsis": true
+        },
+        {
+          "kind": "FIELD",
+          "id": "mrp",
+          "x": 1,
+          "y": 8.5,
+          "w": 19,
+          "h": 3.2,
+          "value": "MRP ₹{{ label.mrp|fmt('0.00') }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 6.5,
+            "bold": false
+          },
+          "align": "left",
+          "visible": "{{ label.mrp }}"
+        },
+        {
+          "kind": "FIELD",
+          "id": "price",
+          "x": 20,
+          "y": 8.0,
+          "w": 29,
+          "h": 3.7,
+          "value": "Our price ₹{{ label.price|fmt('0.00') }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 8.5,
+            "bold": true
+          },
+          "align": "right",
+          "visible": "{{ label.price }}"
+        },
+        {
+          "kind": "BARCODE",
+          "id": "barcode",
+          "x": 7,
+          "y": 11.8,
+          "w": 36,
+          "h": 9.6,
+          "symbology": "auto",
+          "value": "{{ label.barcode }}",
+          "showText": true,
+          "moduleDots": 3
+        },
+        {
+          "kind": "FIELD",
+          "id": "cost_code",
+          "x": 1,
+          "y": 21.9,
+          "w": 12,
+          "h": 2.6,
+          "value": "{{ label.cost_code }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 5.5,
+            "bold": false
+          },
+          "align": "left"
+        },
+        {
+          "kind": "FIELD",
+          "id": "batch",
+          "x": 13.5,
+          "y": 21.9,
+          "w": 22,
+          "h": 2.6,
+          "value": "{{ label.batch }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 5.5,
+            "bold": false
+          },
+          "align": "center"
+        },
+        {
+          "kind": "FIELD",
+          "id": "branch",
+          "x": 36,
+          "y": 21.9,
+          "w": 13,
+          "h": 2.6,
+          "value": "{{ label.branch }}",
+          "font": {
+            "family": "NotoSans",
+            "size": 5.5,
+            "bold": false
+          },
+          "align": "right",
+          "ellipsis": true
+        }
+      ]
+    }
+  ]
+}

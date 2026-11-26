@@ -125,6 +125,8 @@ export interface ItemPayload {
   item_cust_group_name?: string | null;
   item_base_unit_name?: string | null;
   item_default_tax_name?: string | null;
+  /** Sticker printing S-P1: the Sticker design's ptl_name (composite get). */
+  item_barcode_sticker_name?: string | null;
   /** Composite get only (item master review 11-20 Q2): any unit row of the item, live or
    *  removed, is on a document line or a stock row — the base unit can no longer be re-picked. */
   item_units_in_use?: boolean;

@@ -65,6 +65,8 @@ model PrintPurpose {
   assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentPurpose")
 
   printLogs           PrintLog[]                @relation("PrintLogPurpose")
+  /// Sticker jobs (ITEM_LABEL / PACK_LABEL / SHELF_LABEL, 20261126100000).
+  labelJobs           LabelJob[]                @relation("LabelJobPurpose")
   voucherTypes        AccVoucherType[]          @relation("VoucherTypePrintPurpose")
 
   @@map("print_purpose")

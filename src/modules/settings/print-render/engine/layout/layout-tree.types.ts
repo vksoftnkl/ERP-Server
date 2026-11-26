@@ -155,6 +155,8 @@ export interface BarcodePrimitive {
   readonly symbology: BarcodeSymbology;
   readonly value: string;
   readonly showText: boolean;
+  /** The element's narrow bar in printer dots; the label path's vector bars only. */
+  readonly moduleDots?: number;
 }
 
 export interface QrCodePrimitive {

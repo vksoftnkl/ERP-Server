@@ -1,6 +1,9 @@
--- Seed: fixed.grid_columns -- the column layout of every configured grid (1588 rows).
+-- Seed: fixed.grid_columns -- the column layout of every configured grid (1606 rows).
 --
 -- Runs after Grid_Details.sql -- grid_id is a foreign key into it, ON DELETE CASCADE.
+--
+-- 223 MAIN LIST - STICKER JOBS (Sticker Printing, menu 32): its 16 columns (pinned uuids
+-- 01a2129c-2230-...-000000223001 - ...016) as migration 20261126100000_sticker_printing_sp1 inserts them.
 --
 -- grid_column_id is the primary key (uuidv7 by default) and is exported as-is, so a
 -- re-run conflicts on it and does nothing. On top of that, a grid that ALREADY HAS
@@ -1740,6 +1743,23 @@ SELECT v.* FROM (VALUES
     ,('01a10a58-7946-763d-a746-0e2a83f2f801', 132, 7 , 'By'                 , 'th_user'                   , 'Text'          , 10.00 , 7.00 , 'left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('01a10a58-7947-70b4-a1ab-1f5319f75e77', 132, 8 , 'Ref No'             , 'th_ref'                    , 'Text'          , 13.00 , 8.00 , 'left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('01a10a5d-69fa-7174-95bb-69c7b5ec6f5a', 132, 9 , 'Kind'               , 'th_kind'                   , 'Text'          , 5.00  , 9.00 , 'left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ MAIN LIST - STICKER JOBS (id 223) ============
+    ,('01a2129c-2230-7000-8000-000000223001', 223, 1 , 'Job no'             , 'lbj_refno'                 , 'Text'          , 7.18  , 1.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, 'lbj_refno'            , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223002', 223, 2 , 'Printed at'         , 'printed_at'                , 'Text'          , 11.70 , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, 'printed_at'           , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223003', 223, 3 , 'By'                 , 'by_name'                   , 'Text'          , 5.15  , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, 'by_name'              , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223004', 223, 4 , 'Counter'            , 'counter_name'              , 'Text'          , 8.11  , 4.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, 'counter_name'         , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223005', 223, 5 , 'Design'             , 'design_name'               , 'Text'          , 12.48 , 5.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, 'design_name'          , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223006', 223, 6 , 'Printer'            , 'lbj_printer_name'          , 'Text'          , 8.11  , 6.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, 'lbj_printer_name'     , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223007', 223, 7 , 'Lines'              , 'lbj_line_count'            , 'Number'        , 3.90  , 7.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, 'lbj_line_count'       , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223008', 223, 8 , 'Labels'             , 'lbj_label_count'           , 'Number'        , 4.52  , 8.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, 'lbj_label_count'      , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223009', 223, 9 , 'Kind'               , 'kind_text'                 , 'Text'          , 11.70 , 9.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, 'kind_text'            , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223010', 223, 10, 'Reason'             , 'reason_text'               , 'Text'          , 20.60 , 10.00, 'Left'  , true , true , false, false, NULL, NULL, NULL, 'reason_text'          , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223011', 223, 11, 'Status'             , 'status_text'               , 'Text'          , 6.55  , 11.00, 'Center', true , false, false, false, NULL, NULL, NULL, 'status_text'          , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223012', 223, 12, 'Job id'             , 'lbj_id'                    , 'Text'          , 0.00  , 12.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, 'lbj_id'               , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223013', 223, 13, 'Year'               , 'lbj_acc_year'              , 'Text'          , 0.00  , 13.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, 'lbj_acc_year'         , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223014', 223, 14, 'Status code'        , 'status_code'               , 'Text'          , 0.00  , 14.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, 'status_code'          , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223015', 223, 15, 'Kind code'          , 'kind_code'                 , 'Text'          , 0.00  , 15.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, 'kind_code'            , false, 'system')
+    ,('01a2129c-2230-7000-8000-000000223016', 223, 16, 'Device id'          , 'lbj_device_id'             , 'Text'          , 0.00  , 16.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, 'lbj_device_id'        , false, 'system')
 ) AS v(grid_column_id, grid_id, grid_column_number, grid_column_name, grid_column_sql_field_name, grid_column_data_type, grid_column_width, grid_column_position, grid_column_alignment, grid_column_visibility, grid_column_filter, grid_column_group, grid_column_total, grid_column_color, grid_column_condition, grid_column_condition_color, grid_column_notes, grid_column_is_deleted, grid_column_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.grid_columns existing
