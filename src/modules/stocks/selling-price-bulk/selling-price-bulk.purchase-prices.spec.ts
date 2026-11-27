@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../../../database/prisma/prisma.service';
 import type { AuditLogService } from '../../audit-log/audit-log.service';
 import type { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -5,148 +6,144 @@ import type { AppSettingValueService } from '../../settings/appSettings/app-sett
 import type { PriceMasterWriter } from '../../Inventory/item-price-log/price-master-writer.service';
 import { SellingPriceBulkService } from './selling-price-bulk.service';
 import { PriceBucketGateway, type BucketPriceCandidate, type RowCost } from './price-bucket.gateway';
+import type { ScopeResolution } from './selling-price-scope.helper';
+import { PurchasePriceStepService } from './purchase-price-step.service';
+import type { PurchasePriceStepGateway, StepBill, StepBillLine } from './purchase-price-step.gateway';
+import type { SellingPriceLineRow } from './types/selling-price-bulk.types';
 
 /**
- * Purchase entry P9 (2026-11-02) — a bill line's MSP rides in applyPurchasePrices, MSP FIRST:
- * the bill's prices are judged against the bill's MSP and both are written in the one row write,
- * or neither is. A line that changes only the MSP re-states the prices in force.
+ * Purchase entry P9 (2026-11-02), carried into Change Selling Price P2 (plan 2026-11-24 §4.4,
+ * PurchasePriceStepService.afterPurchase replaced applyPurchasePrices): in "Update cost and
+ * prices" a bill line's MSP rides with the bought unit's prices, MSP FIRST — the prices are
+ * judged against the bill's MSP and both are written in the one row write, or neither is (the
+ * cost still moves: COST_ONLY). An MSP equal to the stored one is no change; a line with no
+ * saved MSP leaves the item's minimum alone and is judged against it.
  */
-const COMPANY_ID = '01000000-0000-7000-8000-0000000000c1';
-const BRANCH_ID = '01000000-0000-7000-8000-0000000000b1';
-const ITEM_ID = '01000000-0000-7000-8000-000000000002';
-const UOM_ID = '01000000-0000-7000-8000-000000000011';
-const TAX_ID = '01000000-0000-7000-8000-000000000031';
-const IPM_ID = '01000000-0000-7000-8000-000000000041';
-const COST = 95;
+const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
+const CO = '01000000-0000-7000-8000-0000000000c1';
+const BR = '01000000-0000-7000-8000-0000000000b1';
+const ITEM = '01000000-0000-7000-8000-000000000002';
+const UOM = '01000000-0000-7000-8000-000000000011';
+const IPM = '01000000-0000-7000-8000-000000000041';
 
-describe('SellingPriceBulkService.applyPurchasePrices — the line MSP (P9)', () => {
-  let service: SellingPriceBulkService;
-  let newerLog: unknown[];
-  let stored: Partial<RowCost>;
-  let s1Row: { ipmId: string } | null;
-  let tx: Record<string, unknown>;
-  let gateway: { loadRowCosts: jest.Mock; validateRows: jest.Mock; findBucketRowForUpdate: jest.Mock; snapshotRows: jest.Mock };
-  let writer: { updateBucketPrice: jest.Mock; insertBucketPrice: jest.Mock };
+describe('PurchasePriceStepService.afterPurchase — the line MSP (P9)', () => {
+  let stored: { min: number; prices: number[]; profitType: string };
+  let applied: BucketPriceCandidate[];
+  let line: Partial<StepBillLine>;
+  let service: PurchasePriceStepService;
+  const tx = {} as Prisma.TransactionClient;
 
   beforeEach(() => {
-    newerLog = [];
-    stored = { minPrice: 0, prices: [118, 112, 0, 0] };
-    s1Row = { ipmId: IPM_ID };
-    tx = {
-      $queryRaw: jest.fn(() => Promise.resolve(newerLog)),
-      itemMaster: { findMany: jest.fn().mockResolvedValue([{ itemId: ITEM_ID, itemDefaultTaxId: TAX_ID, itemInclTax: true }]) },
-      itemTaxHistory: { findMany: jest.fn().mockResolvedValue([]) },
-      taxRateMaster: { findMany: jest.fn().mockResolvedValue([{ taxId: TAX_ID, taxRatePerc: 18, taxCessBasis: 'NONE', taxAcessBasis: 'NONE' }]) },
+    stored = { min: 0, prices: [118, 112, 0, 0], profitType: 'By User' };
+    applied = [];
+    line = {};
+    const row = () =>
+      ({
+        lineNo: 1, itemId: ITEM, itemName: 'Rice 25 Kg', uomId: UOM, unitName: 'BAG', mrp: null, salePrice: null, maxPrice: 0,
+        priceScope: 'CHAIN', bucketId: IPM, minPrice: stored.min, roundOff: 0, taxPerc: 0, lineKind: 'HEADLINE', lineCost: 95,
+        profitType: stored.profitType, unitFactor: 1, unitSlNo: 1, trackMrp: false, trackSalePrice: false, branchId: null,
+        levels: stored.prices.map((price, i) => ({ level: i + 1, price, storedMarkupPerc: null })),
+      }) as unknown as SellingPriceLineRow;
+    const bill: StepBill = {
+      piId: 'pi', accYear: '2026-2027', refno: 'PUR/1', companyId: CO, branchId: BR, branchName: 'HO', status: 'POSTED',
+      docDate: '2026-11-02', docDatetime: new Date('2026-11-02T10:00:00+05:30'), supplierInvNo: null, supplierName: null, deviceId: null, policy: null,
     };
-    gateway = {
-      loadRowCosts: jest.fn((_tx: unknown, rows: unknown[]) =>
-        Promise.resolve(rows.map(() => ({
-          itemCode: 'RICE', itemName: 'Rice 25 Kg', uomBelongs: true, trackMrp: false, trackSalePrice: false,
-          costRate: COST, costWot: COST / 1.18, costBasis: 'ITEM', minPrice: 0, ...stored,
-        })))),
-      // the real verdicts: above MRP, below the minimum, below cost
-      validateRows: jest.fn((c: BucketPriceCandidate[], m: number[]) => PriceBucketGateway.prototype.validateRows.call({}, c, m)),
-      findBucketRowForUpdate: jest.fn(() => Promise.resolve(s1Row)),
-      snapshotRows: jest.fn((_tx: unknown, ids: string[]) => Promise.resolve(new Map(ids.map((id) => [id, { ipm_id: id }])))),
+    const gateway = {
+      readBill: jest.fn(async () => bill),
+      readLines: jest.fn(async (): Promise<StepBillLine[]> => [{
+        piiId: 'L1', lineNo: 1, itemId: ITEM, itemName: 'Rice 25 Kg', uomId: UOM, unitName: 'BAG', factor: D(1), billedQty: D(10), freeQty: D(0),
+        rate: D(100), landedCostWot: D(100), mrp: null, sells: [null, null, null, null], minPrice: null, result: null, oldPrices: null,
+        portions: [{ mrp: null, salePrice: null, baseQty: D(10) }], ...line,
+      }]),
+      stepSettings: jest.fn(async () => ({ belowCost: 'warning', skipMrp: false, defaultLevel: 1 })),
+      lockRows: jest.fn(async () => new Map([[IPM, CO]])), laterLines: jest.fn(async () => []), newerChanges: jest.fn(async () => []),
+      rowTokens: jest.fn(async () => new Map()), rowFigures: jest.fn(async () => new Map()),
     };
-    writer = { updateBucketPrice: jest.fn().mockResolvedValue(IPM_ID), insertBucketPrice: jest.fn().mockResolvedValue(IPM_ID) };
-    service = new SellingPriceBulkService(
+    const priceGateway = {
+      priceLevels: jest.fn(async () => [1, 2, 3, 4].map((level) => ({ level, name: `L${level}`, active: true }))),
+      loadRowCosts: jest.fn(async (): Promise<RowCost[]> => [{
+        itemCode: 'RICE', itemName: 'Rice 25 Kg', uomBelongs: true, trackMrp: false, trackSalePrice: false, costRate: 95, costWot: 95,
+        costBasis: 'ITEM', minPrice: stored.min, unitName: 'BAG', stockCost: null,
+      }]),
+      validateRows: jest.fn((c: BucketPriceCandidate[], m: number[], o: object) => PriceBucketGateway.prototype.validateRows.call({}, c, m, o)),
+      findBucketRowForUpdate: jest.fn(async () => ({ ipmId: IPM, effectiveFrom: '1900-01-01', effectiveTo: '9999-12-31' })),
+      // P2 review N4 / N1 — no scheduled rows; the key locks.
+      findPriceRows: jest.fn(async () => []),
+      lockPriceKeys: jest.fn(async () => undefined),
+    };
+    const bulk = new SellingPriceBulkService(
       {} as PrismaService, {} as AuditLogService, {} as RequestContextService, {} as AppSettingValueService,
-      gateway as unknown as PriceBucketGateway, writer as unknown as PriceMasterWriter,
+      priceGateway as unknown as PriceBucketGateway, {} as PriceMasterWriter,
+    );
+    jest.spyOn(bulk, 'linesOfItems').mockImplementation(async () => [row()]);
+    jest.spyOn(bulk, 'resolveItemTaxRates').mockImplementation(async () => new Map([[ITEM, { itemId: ITEM, taxId: null, taxPerc: 0, inclTax: false, hasCess: false }]]));
+    jest.spyOn(bulk, 'auditWrites').mockImplementation(async () => new Map());
+    jest.spyOn(bulk, 'applyBucketPrice').mockImplementation(async (_tx, candidate: BucketPriceCandidate, _scope: ScopeResolution) => {
+      applied.push(candidate);
+      return { ipmId: IPM, before: { ipm_id: IPM }, lineNo: 1, itemName: 'Rice 25 Kg' };
+    });
+    service = new PurchasePriceStepService(
+      {} as PrismaService, {} as RequestContextService, {} as AuditLogService, bulk, priceGateway as unknown as PriceBucketGateway,
+      gateway as unknown as PurchasePriceStepGateway, {} as PriceMasterWriter,
     );
   });
 
-  const apply = (row: { levels?: { level: number; price: number }[]; minPrice?: number | null }) =>
-    service.applyPurchasePrices(tx as never, {
-      companyId: COMPANY_ID, branchId: BRANCH_ID, actor: 'u', billRef: 'PUR/1', businessTime: new Date('2026-11-02T10:00:00+05:30'),
-      rows: [{ key: 'L1', itemId: ITEM_ID, uomId: UOM_ID, mrp: null, levels: row.levels ?? [], ...('minPrice' in row ? { minPrice: row.minPrice } : {}) }],
+  const post = () =>
+    service.afterPurchase(tx, {
+      piId: 'pi', accYear: '2026-2027', mode: 'UPDATE_PRICES', actor: 'u', isHq: true,
+      businessTime: new Date('2026-11-02T10:00:00+05:30'), canReview: true,
     });
-  const written = (): BucketPriceCandidate => (writer.updateBucketPrice.mock.calls[0] ?? writer.insertBucketPrice.mock.calls[0])[writer.updateBucketPrice.mock.calls.length ? 2 : 1];
 
   it('prices + a new MSP: one write carrying both', async () => {
-    const r = await apply({ levels: [{ level: 1, price: 130 }], minPrice: 120 });
-    expect(r.get('L1')).toEqual({ result: 'UPDATED', note: null });
-    expect(written().minPrice).toBe(120);
-    expect(written().levels.map((l) => [l.level, l.price])).toEqual([[1, 130]]);
+    line = { sells: [D(130), null, null, null], minPrice: D(120) };
+    const out = await post();
+    expect(out.lines.get('L1')!.result).toBe('UPDATED');
+    expect(applied[0].minPrice).toBe(120);
+    expect(applied[0].levels.map((l) => [l.level, l.price])).toEqual([[1, 130], [2, 112]]);
   });
 
-  it('MSP first: the prices are judged against the bill\'s MSP, not the stored one', async () => {
-    stored = { ...stored, minPrice: 150 };
-    const r = await apply({ levels: [{ level: 1, price: 130 }], minPrice: 120 });
-    expect(r.get('L1')!.result).toBe('UPDATED');
-    expect(written().minPrice).toBe(120);
+  it("MSP first: the prices are judged against the bill's MSP, not the stored one", async () => {
+    stored.min = 150;
+    line = { sells: [D(130), null, null, null], minPrice: D(120) };
+    expect((await post()).lines.get('L1')!.result).toBe('UPDATED');
+    expect(applied[0].minPrice).toBe(120);
   });
 
-  it('a price below the bill\'s own MSP: neither is written, and the note says so', async () => {
-    const r = await apply({ levels: [{ level: 1, price: 110 }], minPrice: 120 });
-    expect(r.get('L1')).toEqual({ result: 'NONE', note: 'Price not updated — Rice 25 Kg: 110 is below the minimum price 120. The MSP 120 is not written either.' });
-    expect(writer.updateBucketPrice).not.toHaveBeenCalled();
-    expect(writer.insertBucketPrice).not.toHaveBeenCalled();
+  it("a price below the bill's own MSP: neither is written — the cost moves alone (COST_ONLY) and the note says so", async () => {
+    line = { sells: [D(110), null, null, null], minPrice: D(120) };
+    const out = await post();
+    expect(out.lines.get('L1')!.result).toBe('COST_ONLY');
+    expect(applied[0].minPrice).toBeNull();
+    expect(applied[0].levels.map((l) => l.price)).toEqual([118, 112]);
+    expect(out.notes[0]).toMatchObject({ code: 'PUR_PRICE_NOT_WRITTEN', lineNo: 1 });
+    // S4 — rule=BELOW_MIN names the level, the price and the minimum
+    expect(out.notes[0]).toMatchObject({ rule: 'BELOW_MIN', params: { n: 1, level: 'L1', price: '110.00', min: '120.00', item: 'Rice 25 Kg', unit: 'BAG' } });
+    expect(out.notes[0].message).toContain('L1 110.00 of Rice 25 Kg BAG would be below its minimum price 120.00, so its prices were kept; its cost moved.');
   });
 
   it('an MSP equal to the stored one is no change (the row keeps its own)', async () => {
-    stored = { ...stored, minPrice: 120 };
-    await apply({ levels: [{ level: 1, price: 130 }], minPrice: 120 });
-    expect(written().minPrice).toBeNull();
-    writer.updateBucketPrice.mockClear();
-    const only = await apply({ minPrice: 120 });
-    expect(only.get('L1')).toEqual({ result: 'NONE', note: null });
-    expect(writer.updateBucketPrice).not.toHaveBeenCalled();
-  });
-
-  it('MSP only: the prices in force are re-stated unchanged (S3 here — a new branch row keeps them)', async () => {
-    s1Row = null;
-    const r = await apply({ minPrice: 100 });
-    expect(r.get('L1')!.result).toBe('UPDATED');
-    const c = writer.insertBucketPrice.mock.calls[0][1] as BucketPriceCandidate;
-    expect(c.minPrice).toBe(100);
-    expect(c.levels.map((l) => [l.level, l.price])).toEqual([[1, 118], [2, 112]]);
-  });
-
-  it('MSP only, but the in-force prices are below the new MSP: nothing is written', async () => {
-    const r = await apply({ minPrice: 115 });
-    expect(r.get('L1')!.result).toBe('NONE');
-    expect(r.get('L1')!.note).toContain('112 is below the minimum price 115');
-    expect(writer.updateBucketPrice).not.toHaveBeenCalled();
-  });
-
-  it('MSP only with no price row for the unit: nothing to hang it on', async () => {
-    stored = { minPrice: 0 };
-    delete stored.prices;
-    const r = await apply({ minPrice: 100 });
-    expect(r.get('L1')).toEqual({ result: 'NONE', note: 'MSP 100 not written — the item has no selling price for this unit here; set its prices first.' });
+    stored.min = 120;
+    line = { sells: [D(130), null, null, null], minPrice: D(120) };
+    await post();
+    expect(applied[0].minPrice).toBeNull();
   });
 
   it('0 clears a stored MSP', async () => {
-    stored = { ...stored, minPrice: 50 };
-    await apply({ levels: [{ level: 1, price: 130 }], minPrice: 0 });
-    expect(written().minPrice).toBe(0);
+    stored.min = 50;
+    line = { sells: [D(130), null, null, null], minPrice: D(0) };
+    await post();
+    expect(applied[0].minPrice).toBe(0);
   });
 
-  it('no MSP sent (the GRN): as before — prices only, the stored minimum stands', async () => {
-    stored = { ...stored, minPrice: 100 };
-    const r = await apply({ levels: [{ level: 1, price: 130 }] });
-    expect(r.get('L1')!.result).toBe('UPDATED');
-    expect(written().minPrice).toBeNull();
-    expect((await apply({})).get('L1')).toEqual({ result: 'NONE', note: null });
-  });
-
-  it('a bill line with NO saved MSP (null): the item\'s minimum is left alone, and the prices are still checked against it', async () => {
-    stored = { ...stored, minPrice: 100 };
-    const ok = await apply({ levels: [{ level: 1, price: 130 }], minPrice: null });
-    expect(ok.get('L1')!.result).toBe('UPDATED');
-    expect(written().minPrice).toBeNull();
-    writer.updateBucketPrice.mockClear();
-    const low = await apply({ levels: [{ level: 1, price: 90 }], minPrice: null });
-    expect(low.get('L1')).toEqual({ result: 'NONE', note: 'Price not updated — Rice 25 Kg: 90 is below the minimum price 100.' });
-    expect(writer.updateBucketPrice).not.toHaveBeenCalled();
-    expect((await apply({ minPrice: null })).get('L1')).toEqual({ result: 'NONE', note: null });
-  });
-
-  it('D16: a change logged after the bill keeps the row — MSP included', async () => {
-    newerLog = [{ item_id: ITEM_ID, unit_id: UOM_ID, at: new Date('2026-11-02T11:00:00+05:30'), who: 'admin', source: 'ITEM_CARD' }];
-    const r = await apply({ minPrice: 100 });
-    expect(r.get('L1')!.result).toBe('KEPT_NEWER');
-    expect(gateway.loadRowCosts).not.toHaveBeenCalled();
+  it("a bill line with NO saved MSP (null): the item's minimum is left alone, and the prices are still checked against it", async () => {
+    stored.min = 100;
+    line = { sells: [D(130), null, null, null], minPrice: null };
+    expect((await post()).lines.get('L1')!.result).toBe('UPDATED');
+    expect(applied[0].minPrice).toBeNull();
+    applied = [];
+    line = { sells: [D(90), null, null, null], minPrice: null };
+    const low = await post();
+    expect(low.lines.get('L1')!.result).toBe('COST_ONLY');
+    expect(low.notes[0]).toMatchObject({ rule: 'BELOW_MIN', params: expect.objectContaining({ price: '90.00', min: '100.00' }) });
   });
 });

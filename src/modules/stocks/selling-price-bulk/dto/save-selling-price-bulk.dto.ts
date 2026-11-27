@@ -210,6 +210,17 @@ export class SaveSellingPriceRowDto {
   maxPrice?: number | null;
 }
 
+/** Change Selling Price P2 §7.3 — the purchase bill a save from the purchase view comes from. */
+export class SaveFromPurchaseDto {
+  @ApiProperty({ format: 'uuid', description: 'purchase.pur_invoice.pi_id of the POSTED bill the view was opened from.' })
+  @RequiredUuid()
+  piId!: string;
+
+  @ApiProperty({ example: '2026-2027', description: "The bill's acc year (pi_acc_year)." })
+  @Matches(/^\d{4}-\d{4}$/, { message: 'fromPurchase.accYear must look like 2026-2027' })
+  accYear!: string;
+}
+
 export class SaveSellingPriceBulkDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
@@ -289,4 +300,21 @@ export class SaveSellingPriceBulkDto {
   })
   @OptionalInteger(1)
   originMenuId?: number;
+
+  @ApiPropertyOptional({
+    type: SaveFromPurchaseDto,
+    description:
+      'Change Selling Price P2 (plan 2026-11-24 §7.3) — a save from menu 30 opened after a purchase ' +
+      '(GET /stock/price-bulk/purchase-lines). After P1\'s checks: the bill must be POSTED at this ' +
+      'company and branch (404 STOCK_PRICE_BILL_NOT_FOUND / 422 STOCK_PRICE_BILL_NOT_POSTED); in the ' +
+      "transaction, after S1 locks the rows, a row of the bill's item and key that a LATER posted bill " +
+      'bought refuses the save (409 STOCK_PRICE_LATER_PURCHASE, field rows.<n>, params bill / date / ' +
+      'item / unit / cost) — nothing is written. Every row is logged "From purchase PI-… (dd-MM-yyyy)", ' +
+      'and one PRICES_REVIEWED step goes on the bill when a row is written. The confirm round trip ' +
+      '(needsConfirm → confirmed: true) re-sends it. Absent: P1 exactly.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SaveFromPurchaseDto)
+  fromPurchase?: SaveFromPurchaseDto;
 }

@@ -146,6 +146,10 @@ export enum TxnStatusEvent {
   // remarks = the printer's message on a failure.
   PRINTED = 'PRINTED',
   PRINT_FAILED = 'PRINT_FAILED',
+  // Change Selling Price P2 (plan 2026-11-24 §5): a save on menu 30 from a posted purchase
+  // bill's view (POST /stock/price-bulk fromPurchase). from = to = POSTED; remarks = how many
+  // price lines were saved. The bill reads its review state from this trail.
+  PRICES_REVIEWED = 'PRICES_REVIEWED',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

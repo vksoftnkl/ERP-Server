@@ -15,6 +15,11 @@ import { VoucherPostingService } from 'src/common/posting/voucher-posting.servic
 import type { VoucherLeg } from 'src/common/posting/voucher-leg.types';
 import { StockPostingService } from 'src/modules/stocks/posting/stock-posting.service';
 import { SellingPriceBulkService } from 'src/modules/stocks/selling-price-bulk/selling-price-bulk.service';
+import { PurchasePriceStepService, type PurchasePriceNote } from 'src/modules/stocks/selling-price-bulk/purchase-price-step.service';
+import { purchasePriceModeOf } from 'src/modules/stocks/selling-price-bulk/purchase-price-step.rules';
+import { isHqUserType } from 'src/modules/stocks/selling-price-bulk/types/selling-price-bulk.types';
+import { PRICE_MENU_ID } from 'src/modules/Inventory/item-price-log/types/price-change-log.types';
+import { loadRights } from 'src/common/posting/rights';
 import { StockVoucherSource } from 'src/modules/stocks/posting/stock-voucher.source';
 import { nextStockVoucherSlno, resolveDeviceCode } from 'src/modules/stocks/stock-voucher/stock-voucher-numbering.helper';
 import type { StockVoucherTypeRules } from 'src/modules/stocks/stock-voucher/types/stock-voucher.types';
@@ -99,6 +104,8 @@ const SRC_MODULE = 'PURCHASE';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Tx = Prisma.TransactionClient;
+/** A note the post / cancel answers in warnings[]: the old {code, message, field}, plus (P2 price notes) the bill line and the wording's placeholders / variant. */
+type PostNote = { code: string; message: string; field: string; lineNo?: number | null; params?: Record<string, string | number>; rule?: string };
 
 interface SupplierRow {
   sup_id: string; sup_name: string; sup_state_code: string | null; sup_gst_type: string | null; sup_gst_no: string | null; sup_credit_days: number | null;
@@ -195,6 +202,8 @@ export class PurchaseInvoiceService {
     private readonly stockPosting: StockPostingService,
     private readonly prices: SellingPriceBulkService,
     private readonly transportBand: TransportBandService,
+    /** Change Selling Price P2 — "After a purchase": the post's price step, Cancel's put-back, afterPurchase. */
+    private readonly priceStep: PurchasePriceStepService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -287,7 +296,9 @@ export class PurchaseInvoiceService {
         if (h.post) {
           const notes = await this.postInTx(tx, id, h.accYear, actor, { override: !!h.overrideWarnings, reason: h.overrideReason ?? null });
           for (const note of notes) {
-            const hit = warnings.find((w) => w.code === note.code && w.field === note.field);
+            // P2's price notes (they carry lineNo / params) are one per level or unit: never merged into a strip entry
+            const own = note.lineNo !== undefined || note.params !== undefined;
+            const hit = own ? undefined : warnings.find((w) => w.code === note.code && w.field === note.field);
             if (hit) Object.assign(hit, { message: note.message }); else warnings.push(this.issueOf(note, 'WARN', dto));
           }
           // S5: what the override went past is not "on hold" — the PUR_WARN_OVERRIDDEN note says what happened instead
@@ -308,11 +319,17 @@ export class PurchaseInvoiceService {
     return { ...(await this.get(piId, accYear)), warnings: notes.map((n) => this.issueOf(n, 'WARN', null)), refusals: [] as PurIssue[] };
   }
 
-  /** A {code, message, field} note as a strip entry. */
-  private issueOf(w: { code: string; message: string; field: string }, level: 'WARN' | 'REFUSE', dto: SavePurchaseInvoiceDto | null): PurIssue {
+  /**
+   * A {code, message, field} note as a strip entry. A note that names its bill line (`lineNo`, the
+   * P2 price notes) keeps it; its wording placeholders (`params`) and variant (`rule`) ride along.
+   */
+  private issueOf(w: PostNote, level: 'WARN' | 'REFUSE', dto: SavePurchaseInvoiceDto | null): PurIssue {
     const m = /^lines\.(\d+)/.exec(w.field);
-    const lineNo = m ? (dto ? dto.lines[Number(m[1])]?.lineNo ?? Number(m[1]) + 1 : Number(m[1])) : null;
-    return { code: w.code, level, lineNo, field: w.field, message: w.message, needsRight: null };
+    const lineNo = typeof w.lineNo === 'number' ? w.lineNo
+      : w.lineNo === null ? null
+      : m ? (dto ? dto.lines[Number(m[1])]?.lineNo ?? Number(m[1]) + 1 : Number(m[1])) : null;
+    return { code: w.code, level, lineNo, field: w.field, message: w.message, needsRight: null,
+             ...(w.params ? { params: w.params } : {}), ...(w.rule ? { rule: w.rule } : {}) };
   }
 
   /**
@@ -460,6 +477,7 @@ export class PurchaseInvoiceService {
         .map((c) => ({ gstPct: D(c.taxPct as Prisma.Decimal), taxable: c.type === 'DEDUCT' ? D(c.amount as Prisma.Decimal).negated() : D(c.amount as Prisma.Decimal),
                        cgst: D(c.cgst as Prisma.Decimal), sgst: D(c.sgst as Prisma.Decimal), igst: D(c.igst as Prisma.Decimal), cess: ZERO })),
     ]);
+    const priceView = await this.priceStep.afterPurchaseView(piId, accYear);
     return jsonSafe({
       header: { ...header, supplierName: supplier[0]?.sup_name ?? null, godownName: extra?.godown ?? null,
                 agentName: extra?.agent ?? null,
@@ -470,10 +488,14 @@ export class PurchaseInvoiceService {
                 transport: band || header.piVehicleNo || header.piDriverName ? { vehicleNo: header.piVehicleNo ?? null, driverName: header.piDriverName ?? null, mode: band?.mode ?? null, transporterId: band?.transporterId ?? null, transporterName: band?.transporterName ?? null,
                                     transporterGstin: band?.transporterGstin ?? null, lrNo: band?.lrNo ?? null, lrDate: band?.lrDate ? String(band.lrDate).slice(0, 10) : null,
                                     distanceKm: band?.distanceKm ?? null, remarks: band?.remarks ?? null, from: band?.from ?? null, to: band?.to ?? null } : null },
-      lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [], check: judged.checks.get(l.piiLineNo) ?? null })),
+      // P2 review N5 — each line's OWN later bill (B5 live; null when none), so its LATER BILL chip names the right one
+      lines: lines.map((l) => ({ ...l, allocs: byLine.get(l.piiId) ?? [], check: judged.checks.get(l.piiLineNo) ?? null,
+                                 laterBill: priceView.lineLaterBills.get(l.piiId) ?? null })),
       charges,
       totals,
       gstBreakup: breakupJson(breakup),
+      // Change Selling Price P2 §7.4 — the bill's price step, its review state, and whether the caller may open it on menu 30
+      afterPurchase: priceView.state,
     });
   }
 
@@ -482,7 +504,11 @@ export class PurchaseInvoiceService {
   // ═══════════════════════════════════════════════════════════════════════
   async cancel(dto: CancelPurchaseInvoiceDto) {
     const actor = this.actor();
+    let priceNotes: PurchasePriceNote[] = [];
     await this.prisma.$transaction(async (tx) => {
+      // CSP P2 review N2 / S5 — the bill row locked FIRST (bill → price rows, the order the purchase view's save
+      // keeps): a save from the view waits for this cancel, or this cancel waits for it, never both at once
+      await tx.$queryRaw`SELECT h.pi_id FROM purchase.pur_invoice h WHERE h.pi_id = ${dto.piId}::uuid AND h.pi_acc_year = ${dto.accYear}::bpchar FOR UPDATE OF h`;
       const cur = await tx.purInvoice.findFirst({ where: { piId: dto.piId, piAccYear: dto.accYear, piIsDeleted: false } });
       if (!cur) purNotFound(`Purchase invoice ${dto.piId} not found`);
       if (cur.piStatus !== 'POSTED') purConflict(`${cur.piRefno} is ${cur.piStatus} — only a posted bill can be cancelled.`, PUR.NOT_POSTED, 'piId');
@@ -569,6 +595,8 @@ export class PurchaseInvoiceService {
         where: { pshSrcDocType: DOC_TYPE, pshSrcDocId: dto.piId, pshIsDeleted: false },
         data: { pshIsDeleted: true, pshModifiedBy: actor, pshModifiedOn: new Date() },
       });
+      // Change Selling Price P2 §4.9 (Q7) — the prices this bill's post moved go back when untouched since
+      priceNotes = await this.priceStep.undo(tx, { piId: dto.piId, accYear: dto.accYear, refno: cur.piRefno, actor });
       await tx.purInvoice.update({
         where: { piId_piAccYear: { piId: dto.piId, piAccYear: dto.accYear } },
         data: { piStatus: 'CANCELLED', piModifiedBy: actor, piModifiedOn: new Date() },
@@ -580,7 +608,8 @@ export class PurchaseInvoiceService {
         changedBy: actor, remarks: dto.reason, deviceId: cur.piDeviceId,
       });
     }, { timeout: 60000, maxWait: 10000 });
-    return this.get(dto.piId, dto.accYear);
+    // P2 — the put-back's notes (PUR_PRICE_RESTORED / PUR_PRICE_KEPT_ON_CANCEL / PUR_PRICE_REVIEW_KEPT), the post's shape
+    return { ...(await this.get(dto.piId, dto.accYear)), warnings: priceNotes.map((n) => this.issueOf(n, 'WARN', null)) };
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1141,7 +1170,8 @@ export class PurchaseInvoiceService {
       // the rules this bill is made under (an old bill keeps them)
       piPolicy: {
         invAmountCheck: p.settings?.invAmountCheck ?? 'REFUSE', duplicateBillMode: p.settings?.duplicateBillMode ?? 'REFUSE', roundOffStep: 1,
-        allowPriceUpdate: p.settings?.allowPriceUpdate ?? false, priceUpdate: p.settings?.allowPriceUpdate ? p.settings.priceUpdate : 'OFF',
+        // P2 §4.1 — "After a purchase", snapshotted; allowPriceUpdate is derived (the old key is retired)
+        allowPriceUpdate: (p.settings?.priceUpdate ?? 'NONE') !== 'NONE', priceUpdate: p.settings?.priceUpdate ?? 'NONE',
       } as Prisma.InputJsonValue,
       piRemarks: h.remarks ?? null,
       // vehicle / driver ride in the transport object but live on the bill: omitted = kept; transport null = cleared
@@ -1185,7 +1215,8 @@ export class PurchaseInvoiceService {
           piiMarkupBPct: l.markupBPct ?? null, piiMarkupCPct: l.markupCPct ?? null, piiMarkupDPct: l.markupDPct ?? null,
           piiMinPrice: savedMinPrice(l.minPrice),   // P9: only a typed MSP is saved (NULL = leave the item's minimum alone on Post)
           piiSellA: l.sellA ?? null, piiSellB: l.sellB ?? null, piiSellC: l.sellC ?? null, piiSellD: l.sellD ?? null, piiMrp: l.mrp ?? null,
-          piiPriceUpdateResult: p.settings?.allowPriceUpdate && p.settings.priceUpdate === 'UPDATE_PRICES' ? 'NONE' : 'OFF', piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
+          // P2 §7.1 — OFF under Do nothing; else set by the post's price step
+          piiPriceUpdateResult: (p.settings?.priceUpdate ?? 'NONE') === 'NONE' ? 'OFF' : null, piiRemarks: l.remarks ?? null, piiCreatedBy: actor,
         },
         select: { piiId: true },
       });
@@ -1286,13 +1317,13 @@ export class PurchaseInvoiceService {
 
   /** Posts the draft; returns what the screen should be told (prices kept / not written). */
   private async postInTx(tx: Tx, piId: string, accYear: string, actor: string,
-                         opts: { override: boolean; reason: string | null } = { override: false, reason: null }): Promise<{ code: string; message: string; field: string }[]> {
-    const notes: { code: string; message: string; field: string }[] = [];
+                         opts: { override: boolean; reason: string | null } = { override: false, reason: null }): Promise<PostNote[]> {
+    const notes: PostNote[] = [];
     const pi = await tx.purInvoice.findFirst({ where: { piId, piAccYear: accYear, piIsDeleted: false } });
     if (!pi) purNotFound(`Purchase invoice ${piId} not found`);
     if (pi.piStatus !== 'DRAFT') purConflict(`${pi.piRefno} is ${pi.piStatus} — only a draft can be posted.`, PUR.NOT_DRAFT, 'piId');
     const diff = pi.piInvoiceAmountPrinted.minus(pi.piNetPayable);
-    const policy = (pi.piPolicy ?? {}) as { invAmountCheck?: string; allowPriceUpdate?: boolean; priceUpdate?: string };
+    const policy = (pi.piPolicy ?? {}) as { invAmountCheck?: string };
     if (!diff.isZero() && policy.invAmountCheck !== 'WARN') {
       purRefuse(`Invoice amount ${pi.piInvoiceAmountPrinted.toFixed(2)} does not match the net payable ${pi.piNetPayable.toFixed(2)} (difference ${diff.toFixed(2)}).`, PUR.INVOICE_AMOUNT_MISMATCH, 'header.invoiceAmountPrinted');
     }
@@ -1623,28 +1654,29 @@ export class PurchaseInvoiceService {
       }
     }
 
-    // ── 4c · B3 / D16: selling prices from the bill, when the bill's own policy says so ──
-    if (policy.allowPriceUpdate && policy.priceUpdate === 'UPDATE_PRICES') {
+    // ── 4c · Change Selling Price P2: "After a purchase", by the bill's own mode (pi_policy, an old snapshot mapped) ──
+    //    NONE: lines OFF · OPEN_CHANGE_SELLING: nothing written, lines TO_REVIEW / LATER_BILL · COST_ONLY / UPDATE_PRICES:
+    //    the bill's landing cost (+ prices) onto its lines and their chain units, only where this is the latest purchase.
+    //    After stock (the judged stock cost includes this bill), in the bill's transaction; the price rows are locked last.
+    {
+      const mode = purchasePriceModeOf(pi.piPolicy);
       const today = isoDate(postedOn) === docDate;
-      // business time: the bill's own moment — now for today's bill, the end of its day for a late entry
+      // business time (D16): the bill's own moment — now for today's bill, the end of its day for a late entry
       const businessTime = today ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
-      const lv = (v: Prisma.Decimal | null) => (v ? Number(v) : 0);
-      const result = await this.prices.applyPurchasePrices(tx, {
-        companyId: pi.piCompanyId, branchId: pi.piBranchId, actor, billRef: pi.piRefno, businessTime,
-        rows: lines.map((l) => ({
-          key: l.piiId, itemId: l.piiItemId, uomId: l.piiUomId, mrp: l.piiMrp ? Number(l.piiMrp) : null,
-          levels: [{ level: 1, price: lv(l.piiSellA) }, { level: 2, price: lv(l.piiSellB) }, { level: 3, price: lv(l.piiSellC) }, { level: 4, price: lv(l.piiSellD) }],
-          // P9 — a typed MSP, written with the prices (MSP first: the prices are checked against it) when it changes the stored one;
-          //      NULL (not typed) leaves the item's minimum alone, and the prices are checked against that
-          minPrice: l.piiMinPrice === null ? null : Number(l.piiMinPrice),
-        })),
+      // O8 / P2A-Q2: without Edit on Change Selling Price the review waits (a note says so)
+      const canReview = mode === 'OPEN_CHANGE_SELLING' ? (await loadRights(tx, actor, PRICE_MENU_ID.CHANGE_SELLING_PRICE)).edit : true;
+      const step = await this.priceStep.afterPurchase(tx, {
+        piId, accYear, mode, actor, isHq: isHqUserType(this.requestContext.getUserType()), businessTime, canReview,
       });
       for (const l of lines) {
-        const r = result.get(l.piiId);
+        const r = step.lines.get(l.piiId);
         if (!r) continue;
-        await tx.purInvoiceItem.update({ where: { piiId_piiAccYear: { piiId: l.piiId, piiAccYear: accYear } }, data: { piiPriceUpdateResult: r.result } });
-        if (r.note) notes.push({ code: r.result === 'KEPT_NEWER' ? 'PUR_PRICE_KEPT_NEWER' : 'PUR_PRICE_NOT_WRITTEN', field: `lines.${l.piiLineNo}`, message: `Line ${l.piiLineNo}: ${r.note}` });
+        await tx.purInvoiceItem.update({
+          where: { piiId_piiAccYear: { piiId: l.piiId, piiAccYear: accYear } },
+          data: { piiPriceUpdateResult: r.result, piiOldPrices: r.oldPrices.length ? (r.oldPrices as unknown as Prisma.InputJsonValue) : Prisma.DbNull },
+        });
       }
+      notes.push(...step.notes);
     }
 
     // ── 4a · MST-02: the first bill of a (supplier, item) pair makes its supplier–item row (AUTO); an existing row is kept

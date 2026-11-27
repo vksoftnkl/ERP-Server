@@ -140,6 +140,10 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
         ),
       ),
       findBucketRowForUpdate: jest.fn().mockResolvedValue(null),
+      // P2 review S5 / N1 — the sorted locks at the start of every write (no row found: keys only).
+      findPriceRows: jest.fn().mockResolvedValue([]),
+      lockPriceKeys: jest.fn().mockResolvedValue(undefined),
+      lockPriceRows: jest.fn().mockResolvedValue(undefined),
       snapshotRows: jest.fn((_tx: unknown, ids: string[]) =>
         Promise.resolve(
           new Map(ids.map((id) => [id, { ipm_id: id, ipm_bucket_mrp: null, ipm_bucket_sp: null }])),

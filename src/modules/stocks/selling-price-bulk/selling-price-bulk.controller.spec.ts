@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { SellingPriceBulkController } from './selling-price-bulk.controller';
 import { SellingPriceBulkService } from './selling-price-bulk.service';
+import type { PurchasePriceStepService } from './purchase-price-step.service';
 import type { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
 import type { SellingPriceRow, SellingPriceSaveResult } from './types/selling-price-bulk.types';
 
@@ -31,6 +32,7 @@ describe('SellingPriceBulkController', () => {
     backToAllBranches: jest.Mock;
   };
   let controller: SellingPriceBulkController;
+  let step: { purchaseLines: jest.Mock; saveFromPurchase: jest.Mock };
 
   beforeEach(() => {
     service = {
@@ -40,7 +42,30 @@ describe('SellingPriceBulkController', () => {
       saveBulk: jest.fn().mockResolvedValue(SAVED),
       buildSaveMessage: jest.fn().mockReturnValue('2 prices saved.'),
     };
-    controller = new SellingPriceBulkController(service as unknown as SellingPriceBulkService);
+    step = { purchaseLines: jest.fn(), saveFromPurchase: jest.fn().mockResolvedValue(SAVED) };
+    controller = new SellingPriceBulkController(
+      service as unknown as SellingPriceBulkService,
+      step as unknown as PurchasePriceStepService,
+    );
+  });
+
+  // ── P2: the purchase view and its save ───────────────────────────────────
+  it('GET price-bulk/purchase-lines wraps the view, naming the bill, its items and lines', async () => {
+    const view = { bill: { refno: 'PUR/1' }, items: [ROW, ROW], meta: { items: 1, lines: 2 } };
+    step.purchaseLines.mockResolvedValue(view);
+    const q = { companyId: COMPANY_ID, branchId: BRANCH_ID, accYear: '2026-2027', piId: ITEM_ID };
+    await expect(controller.purchaseLines(q)).resolves.toEqual({ success: true, message: 'PUR/1: 1 item, 2 lines', data: view });
+    expect(step.purchaseLines).toHaveBeenCalledWith(q);
+  });
+
+  it('POST price-bulk with fromPurchase goes through the purchase step; without it, P1 exactly', async () => {
+    const dto = { companyId: COMPANY_ID, branchId: BRANCH_ID, rows: [], fromPurchase: { piId: ITEM_ID, accYear: '2026-2027' } } as unknown as SaveSellingPriceBulkDto;
+    await controller.saveBulk(dto);
+    expect(step.saveFromPurchase).toHaveBeenCalledWith(dto);
+    expect(service.saveBulk).not.toHaveBeenCalled();
+    const plain = { companyId: COMPANY_ID, branchId: BRANCH_ID, rows: [] } as unknown as SaveSellingPriceBulkDto;
+    await controller.saveBulk(plain);
+    expect(service.saveBulk).toHaveBeenCalledWith(plain);
   });
 
   // ── GET price-bulk (P1: the lines of a page of items) ─────────────────────

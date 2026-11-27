@@ -5,6 +5,8 @@ import { SellingPriceBulkController } from './selling-price-bulk.controller';
 import { SellingPriceBulkExceptionFilter } from './selling-price-bulk-exception.filter';
 import { SellingPriceBulkService } from './selling-price-bulk.service';
 import { PriceBucketGateway } from './price-bucket.gateway';
+import { PurchasePriceStepGateway } from './purchase-price-step.gateway';
+import { PurchasePriceStepService } from './purchase-price-step.service';
 import { ItemPriceLogModule } from '../../Inventory/item-price-log/item-price-log.module';
 
 /**
@@ -30,7 +32,15 @@ import { ItemPriceLogModule } from '../../Inventory/item-price-log/item-price-lo
   // ItemPriceLogModule: the save's writes go through its PriceMasterWriter (notes 144).
   imports: [AuditLogModule, AppSettingsModule, ItemPriceLogModule],
   controllers: [SellingPriceBulkController],
-  providers: [SellingPriceBulkService, SellingPriceBulkExceptionFilter, PriceBucketGateway],
-  exports: [SellingPriceBulkService, PriceBucketGateway],
+  // P2 — PurchasePriceStepService: the purchase invoice's price step (PurchaseModule) and the
+  // purchase view of menu 30; its gateway reads the bills.
+  providers: [
+    SellingPriceBulkService,
+    SellingPriceBulkExceptionFilter,
+    PriceBucketGateway,
+    PurchasePriceStepGateway,
+    PurchasePriceStepService,
+  ],
+  exports: [SellingPriceBulkService, PriceBucketGateway, PurchasePriceStepService],
 })
 export class SellingPriceBulkModule {}

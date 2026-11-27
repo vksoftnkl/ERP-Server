@@ -415,6 +415,19 @@ export enum StockErrorCode {
    * as STOCK_PRICE_RIGHT_DELETE (codePrefix STOCK_PRICE).
    */
   PRICE_RIGHT_DELETE = 'STOCK_PRICE_RIGHT_DELETE',
+  /**
+   * Change Selling Price P2 (plan 2026-11-24 §7.2 / §7.3) — the purchase bill named by
+   * GET /stock/price-bulk/purchase-lines or POST /stock/price-bulk `fromPurchase` is not at
+   * that company / branch / year (404).
+   */
+  PRICE_BILL_NOT_FOUND = 'STOCK_PRICE_BILL_NOT_FOUND',
+  /** P2 — the bill is DRAFT or CANCELLED: its costs move no price (422; params bill, status). */
+  PRICE_BILL_NOT_POSTED = 'STOCK_PRICE_BILL_NOT_POSTED',
+  /**
+   * P2 B5 — a save from the purchase view of a line a LATER posted bill has bought since the
+   * view loaded (409; params bill, date, item, unit, cost; field rows.<n>). Nothing is written.
+   */
+  PRICE_LATER_PURCHASE = 'STOCK_PRICE_LATER_PURCHASE',
 
   // ── balance reads and presets ─────────────────────────────────────────────
   /** No item stock balance row for the scope asked. */

@@ -20,6 +20,10 @@ export interface PurIssue {
   field: string;
   message: string;
   needsRight: 'OVERRIDE' | null;
+  /** Change Selling Price P2 — the wording's placeholders (fixed.error_message), when the note has them. */
+  params?: Record<string, string | number>;
+  /** The wording variant (e.g. rule=ABOVE_MRP). */
+  rule?: string;
 }
 
 export const PUR_CHECK = {

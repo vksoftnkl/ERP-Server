@@ -413,6 +413,11 @@ export interface SellingPriceSaveResult {
   problems: SellingPriceProblem[];
   /** What `inventory.below_cost_price` resolved to for this caller. */
   belowCostPolicy: BelowCostPolicy;
+  /**
+   * Change Selling Price P2 §7.3 — present only on a save that sent `fromPurchase`: the bill
+   * the purchase view was opened from. A PRICES_REVIEWED step went on its trail when saved > 0.
+   */
+  fromPurchase?: { piId: string; accYear: string; refno: string };
 }
 
 /** Notes 140 B — the prices a scheduled row replaces: the row before it, else what the shelf showed. */
@@ -439,4 +444,232 @@ export interface SellingPriceScheduleCancelResult {
   restoredId: string | null;
   /** `YYYY-MM-DD` — the restored row's new end, null with no restored row. */
   restoredTo: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Change Selling Price P2 — cost after a purchase (plan 2026-11-24 + addendum 1, 2026-11-26)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * `purchase.price_update` ("After a purchase", B1): what a posted purchase INVOICE does to the
+ * price lines of what it bought. A bill keeps the mode it was saved under (pi_policy).
+ */
+export const PURCHASE_PRICE_MODES = ['NONE', 'COST_ONLY', 'UPDATE_PRICES', 'OPEN_CHANGE_SELLING'] as const;
+export type PurchasePriceMode = (typeof PURCHASE_PRICE_MODES)[number];
+
+/** `pii_price_update_result` — ck_pii_price_result's eight values (plan §4.6). */
+export const PURCHASE_PRICE_RESULTS = [
+  'UPDATED',
+  'COST_ONLY',
+  'LATER_BILL',
+  'KEPT_NEWER',
+  'NO_LINE',
+  'TO_REVIEW',
+  'NONE',
+  'OFF',
+] as const;
+export type PurchasePriceResult = (typeof PURCHASE_PRICE_RESULTS)[number];
+
+/**
+ * What a row of the purchase view IS (plan §7.2, addendum decision 25). An OPEN list: packs will
+ * join as MADE_FROM rows (kit RP4); a client shows a kind it does not know as a grey, read-only
+ * row with the server's words.
+ *   BOUGHT      the price line of what a bill line bought (its unit and MRP / sale price key)
+ *   CHAIN       another unit of a bought item, following by the unit chain
+ *   LATER_BILL  a later POSTED bill bought the same item and key: not moved, not pre-filled
+ *   NO_PRICE    the bought key has no price line yet (B3)
+ */
+export type FromBillKind = 'BOUGHT' | 'CHAIN' | 'LATER_BILL' | 'NO_PRICE';
+
+/** Where a proposed level comes from: typed on the bill, the line's Profit Type, or kept as it is. */
+export type FromBillLevelSource = 'BILL' | 'RULE' | 'KEPT';
+
+export interface FromBillLevel {
+  level: PriceLevel;
+  price: number;
+  from: FromBillLevelSource;
+}
+
+/** The proposal the view pre-fills (null on LATER_BILL). Figures of ONE of the row's unit. */
+export interface FromBillProposal {
+  cost: number;
+  costWot: number;
+  levels: FromBillLevel[];
+  /** The bill's MSP (bought unit, when typed and different from the stored one), else null. */
+  minPrice: number | null;
+  /** Q11 — a plain item's bought-unit line takes the bill's MRP, else null (unchanged). */
+  maxPrice: number | null;
+}
+
+/** CHAIN — the bought unit this row follows, and which way. */
+export interface FromBillChain {
+  uomId: string;
+  unitName: string | null;
+  /** The ratio as the words say it: "BOX ÷ 12" (SMALLER) or "PCS × 24" (BIGGER). */
+  factor: number;
+  way: 'SMALLER' | 'BIGGER';
+}
+
+/** LATER_BILL — the latest later bill that bought the item and key (in this row's unit and scope). */
+export interface FromBillLaterBill {
+  piId: string;
+  accYear: string;
+  refno: string;
+  /** `YYYY-MM-DD`. */
+  docDate: string;
+  branchName: string | null;
+  /** That bill's landing cost of ONE of this row's unit, with GST (2 decimals). */
+  cost: number;
+}
+
+/** Review S3 — a newer change of the line after the bill (the price change log). */
+export interface FromBillChange {
+  /** When, ISO with +05:30 (`2026-11-25T10:20:00+05:30`). */
+  at: string;
+  /** The login that changed it (ipcl_user_name); null when the log has none. */
+  who: string | null;
+  /**
+   * Where (ipcl_source): CHANGE_SELLING_PRICE · ITEM_CARD · QTY_PRICE · PURCHASE · BULK_COST_CHANGE ·
+   * IMPORT · BUCKET_REKEY — an open list, show an unknown one as it is.
+   */
+  source: string;
+}
+
+/** The `fromBill` block of one row of GET /stock/price-bulk/purchase-lines. */
+export interface FromBill {
+  kind: FromBillKind;
+  /** The bill line numbers this row comes from (a CHAIN row: its bought line's). */
+  billLines: number[];
+  /** Billed qty and free qty of the bought line(s), in `unitName` (the BOUGHT unit). */
+  qty: number;
+  freeQty: number;
+  unitName: string | null;
+  /** The bill line's rate (bought unit). */
+  rate: number;
+  /** The bill's landing cost of ONE of THIS row's unit: without GST, and with the item's GST. */
+  landedCostWot: number;
+  landedCost: number;
+  chainFrom: FromBillChain | null;
+  laterBill: FromBillLaterBill | null;
+  proposed: FromBillProposal | null;
+  /** The proposal equals the line as it stands (nothing to change). */
+  sameAsNow: boolean;
+  /**
+   * Review S3 (plan §4.5: "the view does not apply D16; it shows the change in Row details · F6") —
+   * the latest logged change of THIS line (item, unit, key; branch null or the bill's) after the
+   * bill's business time, not made by this bill itself (its post, its cancel, a save from this
+   * view); a company-less change only against a company-less line. Null when there is none, and
+   * on a NO_PRICE row (no line yet).
+   */
+  changedSince: FromBillChange | null;
+  /** The server's words for the "From the bill" column (after the pill). */
+  words: string;
+}
+
+/** A row of the purchase view: every key of a P1 GET /stock/price-bulk line, plus fromBill. */
+export type PurchaseViewRow = SellingPriceLineRow & { fromBill: FromBill };
+
+/** The bill the purchase view was opened from. */
+export interface PurchaseViewBill {
+  piId: string;
+  accYear: string;
+  refno: string;
+  /** `YYYY-MM-DD`. */
+  docDate: string;
+  supplierInvNo: string | null;
+  supplierName: string | null;
+  branchId: string;
+  branchName: string | null;
+  /** The POSTED step's time, ISO with +05:30; its user's login name. */
+  postedOn: string | null;
+  postedBy: string | null;
+  /** The bill's own mode (pi_policy, an old snapshot mapped). */
+  afterPurchase: PurchasePriceMode;
+  /** The last PRICES_REVIEWED step (a save from this view), else null. */
+  reviewedOn: string | null;
+  reviewedBy: string | null;
+}
+
+export interface PurchaseViewMeta {
+  items: number;
+  lines: number;
+  bought: number;
+  chain: number;
+  laterBill: number;
+  noPrice: number;
+  /** Rows (not LATER_BILL) whose proposal differs from the line as it stands. */
+  toChange: number;
+  /** Rows that are not LATER_BILL: the reopen button needs at least one. */
+  latestLines: number;
+}
+
+export interface PurchaseViewResult {
+  bill: PurchaseViewBill;
+  items: PurchaseViewRow[];
+  meta: PurchaseViewMeta;
+}
+
+/**
+ * `data.afterPurchase` of the purchase invoice post / save-with-post / get answers (plan §7.4):
+ * what the bill's price step did and whether its prices can be (re)opened on menu 30.
+ */
+export interface AfterPurchaseState {
+  mode: PurchasePriceMode;
+  /** Lines per pii_price_update_result; every key present. */
+  results: Record<PurchasePriceResult, number>;
+  /** Lines waiting for a review (TO_REVIEW). */
+  toReview: number;
+  /** Price lines of the bill (bought + chain) not overtaken by a later purchase; 0 unless POSTED. */
+  latestLines: number;
+  /** POSTED, mode not NONE, the CALLER has Edit on menu 30, latestLines > 0. */
+  canOpen: boolean;
+  reviewedOn: string | null;
+  reviewedBy: string | null;
+  /**
+   * Open mode, lines to review and no save from the view yet: labels printed now carry today's
+   * prices (sticker S-P2's STICKER_DOC_PRICES_PENDING line).
+   */
+  pricesPending: boolean;
+  /**
+   * What the automatic write moved (pii_old_prices): price rows written, of them by the chain, of
+   * them created — the rows in force; `scheduled` (review N4) = the key's scheduled (future-dated)
+   * rows that took the new cost, counted apart.
+   */
+  moved: { rows: number; chain: number; created: number; scheduled: number };
+  /**
+   * (User OK 2026-11-26) the later POSTED purchase that overtakes this bill's lines — B5 live, as
+   * latestLines: the newest by (doc date, doc datetime, id) among the later bills of the bill's
+   * lines that are LATER_BILL now. Null when none is (and on a DRAFT / CANCELLED / NONE bill).
+   * `docDate` in the answer's own date form ('2026-11-15T00:00:00.000Z', as header.piDocDate).
+   */
+  laterBill: { piId: string; refno: string; docDate: string } | null;
+}
+
+/** One entry of `pii_old_prices`: a price row the post wrote, for Cancel's put-back (§4.6 / §4.9). */
+export interface PurchaseOldPriceEntry {
+  ipmId: string;
+  kind: 'BOUGHT' | 'CHAIN';
+  action: 'UPDATE' | 'CREATE';
+  /** The row's figures before the write (exact decimals as text); null for CREATE. */
+  before: {
+    cost: string;
+    costWot: string;
+    prices: [string, string, string, string];
+    pricesWot: [string, string, string, string];
+    markups: [string, string, string, string];
+    min: string;
+    max: string;
+    profitType: string;
+    roundOff: string;
+  } | null;
+  /** md5 of the row as written (cost-price-bulk rowTokenSql): an untouched row still matches it. */
+  afterToken: string;
+  /**
+   * Review N4 — a SCHEDULED row of the key (it starts on this day, `YYYY-MM-DD`, after the post's
+   * day) whose cost the post moved, prices kept. Absent on the row in force.
+   */
+  scheduledFrom?: string;
+  /** For the cancel note. */
+  itemName: string;
+  unitName: string | null;
 }

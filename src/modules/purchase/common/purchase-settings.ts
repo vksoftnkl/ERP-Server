@@ -11,7 +11,13 @@ export interface PurchaseSettings {
   invAmountCheck: 'REFUSE' | 'WARN';
   duplicateBillMode: 'REFUSE' | 'WARN';
   labelsAfterPost: 'ASK' | 'ALWAYS' | 'NEVER';
+  /**
+   * DERIVED (Change Selling Price P2 §7.1): priceUpdate ≠ NONE. `purchase.allow_price_update` is
+   * retired (asd_is_active false, migration 20261128100000); kept in the answer for one release so
+   * an older client keeps working. Never read the retired key.
+   */
   allowPriceUpdate: boolean;
+  /** "After a purchase" (B1): NONE / COST_ONLY / UPDATE_PRICES / OPEN_CHANGE_SELLING (the catalog default). */
   priceUpdate: 'UPDATE_PRICES' | 'COST_ONLY' | 'OPEN_CHANGE_SELLING' | 'NONE';
   priceSetAt: 'INVOICE' | 'GRN';
   rateTolerancePct: number;
@@ -35,13 +41,14 @@ export async function loadPurchaseSettings(tx: Prisma.TransactionClient, company
      WHERE out_asd_key LIKE 'purchase.%'`;
   const s = new Map(rows.map((r) => [r.key, r.value ?? undefined]));
   const g = (k: string) => s.get(`purchase.${k}`);
+  const priceUpdate = pick(g('price_update'), ['UPDATE_PRICES', 'COST_ONLY', 'OPEN_CHANGE_SELLING', 'NONE'] as const, 'OPEN_CHANGE_SELLING');
   return {
     defaultEntry: pick(g('default_entry'), ['DIRECT', 'GRN'] as const, 'DIRECT'),
     invAmountCheck: pick(g('inv_amount_check'), ['REFUSE', 'WARN'] as const, 'REFUSE'),
     duplicateBillMode: pick(g('duplicate_bill_mode'), ['REFUSE', 'WARN'] as const, 'REFUSE'),
     labelsAfterPost: pick(g('labels_after_post'), ['ASK', 'ALWAYS', 'NEVER'] as const, 'ASK'),
-    allowPriceUpdate: bool(g('allow_price_update'), false),
-    priceUpdate: pick(g('price_update'), ['UPDATE_PRICES', 'COST_ONLY', 'OPEN_CHANGE_SELLING', 'NONE'] as const, 'UPDATE_PRICES'),
+    allowPriceUpdate: priceUpdate !== 'NONE',
+    priceUpdate,
     priceSetAt: pick(g('price_set_at'), ['INVOICE', 'GRN'] as const, 'INVOICE'),
     rateTolerancePct: num(g('rate_tolerance_pct'), 2),
     shelfLifeMode: pick(g('shelf_life_mode'), ['OFF', 'WARN', 'REFUSE'] as const, 'WARN'),

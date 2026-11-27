@@ -84,6 +84,9 @@ describe('SellingPriceBulkService', () => {
     snapshotRows: jest.Mock;
     validateRows: jest.Mock;
     findBucketRowForUpdate: jest.Mock;
+    findPriceRows: jest.Mock;
+    lockPriceKeys: jest.Mock;
+    lockPriceRows: jest.Mock;
     listNoStock: jest.Mock;
     calendar: jest.Mock;
     // Change Selling Price P1.
@@ -218,6 +221,10 @@ describe('SellingPriceBulkService', () => {
             Promise.resolve(scope.targetScope === candidate.loadedScope ? { ipmId: IPM_ID } : null),
         ),
       listNoStock: jest.fn().mockResolvedValue([]),
+      // P2 review S5 / N1 — the sorted locks at the start of every write (no row found: keys only).
+      findPriceRows: jest.fn().mockResolvedValue([]),
+      lockPriceKeys: jest.fn().mockResolvedValue(undefined),
+      lockPriceRows: jest.fn().mockResolvedValue(undefined),
       // A save with no effectiveFrom starts today, and runs exactly as before.
       calendar: jest.fn().mockResolvedValue({ today: TODAY, latest: LATEST }),
       listPriceLines: jest.fn(),

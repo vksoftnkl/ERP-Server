@@ -8,8 +8,9 @@ import { Prisma } from '@prisma/client';
  *  - SAVED (`pii_min_price`): only what the operator typed (user 2026-11-02). A typed 0 is kept as 0 ("no MSP":
  *    Post clears the item's minimum). A line without `minPrice` saves NULL, so a draft never carries the item's
  *    MSP of the day it was saved into a later Post. The screen re-sends a draft's stored value on re-save.
- *  - POSTED: a non-null `pii_min_price` rides with Sell A–D into item_price_master (applyPurchasePrices, MSP
- *    first); NULL leaves the item's minimum alone, and the prices are still checked against it.
+ *  - POSTED: a non-null `pii_min_price` rides with Sell A–D into item_price_master (Change Selling Price P2:
+ *    PurchasePriceStepService.afterPurchase under "Update cost and prices", MSP first); NULL leaves the item's
+ *    minimum alone, and the prices are still checked against it.
  */
 const r2 = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 

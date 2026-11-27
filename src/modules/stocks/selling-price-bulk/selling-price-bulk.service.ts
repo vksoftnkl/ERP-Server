@@ -27,8 +27,11 @@ import { exclusiveOfTax, markupReproduces, recomputeLevel } from './selling-pric
 import { resolveTargetScope, type ScopeResolution } from './selling-price-scope.helper';
 import {
   PriceBucketGateway,
+  priceKeyLockId,
   type BucketPriceCandidate,
+  type FoundPriceRow,
   type PriceGridRecord,
+  type PriceKeyProbe,
   type PriceLineRecord,
   type RowCost,
 } from './price-bucket.gateway';
@@ -115,6 +118,10 @@ export interface PreparedBulkSave {
   /** Everything Q26 said (below cost included). */
   problems: SellingPriceProblem[];
   belowCost: SellingPriceProblem[];
+  /** P2 review S5 — lockTargets ran: the target rows are held (sorted), so the write locks no more. */
+  locked?: boolean;
+  /** P2 review N4 — lockTargets({future: true}): the scheduled rows of each candidate's key, locked too. */
+  futureRows?: FoundPriceRow[];
 }
 
 /**
@@ -144,11 +151,33 @@ export interface PrepareBulkContext {
    * Change Selling Price P1, decision A1 — menu 30 and the Ctrl+R popup (saveBulk) only: a
    * row that sends no costPrice keeps the LINE's own cost (ipm_cost_price of the line of its
    * key) instead of being overwritten with the stock-first cost. A key with no line yet, or a
-   * line with no cost, takes the stock-first cost as before. Purchases (applyPurchasePrices)
+   * line with no cost, takes the stock-first cost as before. Purchases (PurchasePriceStepService, P2: it sends the bill cost)
    * and menu 244 do not set it: their rows are costed and stored exactly as before (P2 moves
    * the purchase write).
    */
   keepLineCost?: boolean;
+}
+
+/**
+ * Change Selling Price P2 (plan 2026-11-24 §7.3) — what a save from the purchase view adds to
+ * P1's save, all in P1's one transaction (PurchasePriceStepService.saveFromPurchase builds it).
+ */
+export interface PurchaseSaveHooks {
+  /**
+   * Review N2 — FIRST in the transaction, before any price row is read or locked: the bill row
+   * re-read FOR SHARE (a cancel that committed meanwhile → 422; one still running waits for us).
+   */
+  beforePrepare?: (tx: Prisma.TransactionClient) => Promise<void>;
+  /** Review N4 — lock the scheduled rows of each key too (afterWrite moves their cost). */
+  lockFuture?: boolean;
+  /** After prepareBulk and the sorted locks (S5): B5 — a later bill refuses the save (409). */
+  afterPrepare: (tx: Prisma.TransactionClient, prepared: PreparedBulkSave) => Promise<void>;
+  /** The price log reason on every row written. */
+  reason: string;
+  /** After the write: N4's scheduled rows, the PRICES_REVIEWED step on the bill (only when a row was written). */
+  afterWrite: (tx: Prisma.TransactionClient, result: SellingPriceSaveResult, prepared: PreparedBulkSave) => Promise<void>;
+  /** Echoed in the answer. */
+  fromPurchase: { piId: string; accYear: string; refno: string };
 }
 
 /** `YYYY-MM-DD` as the screen says it: `DD-MM-YYYY`. */
@@ -245,28 +274,76 @@ export class SellingPriceBulkService {
       limit,
       offset,
     });
-    const records = page.items;
-    const taxRates = await this.resolveItemTaxRates(this.prisma, [
+    const items = await this.decorateLines(this.prisma, page.items, {
+      companyId: queryDto.companyId,
+      branchId: queryDto.branchId,
+      withSpread: true,
+    });
+    return { items, meta: page.meta };
+  }
+
+  /**
+   * Change Selling Price P2 (plan 2026-11-24 §7.1) — every P1 grid line of these items at a
+   * branch, in the caller's client (the purchase post reads them inside its own transaction),
+   * with NO right checked: the caller has. The purchase view and the post's price step pick the
+   * bill's lines and their chain units out of them. `withSpread` adds the other branches' stock
+   * cost of All branches lines (C5), as the GET does.
+   */
+  async linesOfItems(
+    client: Prisma.TransactionClient,
+    args: { companyId: string; branchId: string; itemIds: readonly string[]; withSpread?: boolean },
+  ): Promise<SellingPriceLineRow[]> {
+    const itemIds = [...new Set(args.itemIds)];
+    if (!itemIds.length) {
+      return [];
+    }
+    const page = await this.gateway.listPriceLines(
+      {
+        companyId: args.companyId,
+        branchId: args.branchId,
+        itemIds,
+        activeOnly: false,
+        limit: itemIds.length,
+        offset: 0,
+      },
+      client,
+    );
+    return this.decorateLines(client, page.items, {
+      companyId: args.companyId,
+      branchId: args.branchId,
+      withSpread: args.withSpread === true,
+    });
+  }
+
+  /** The gateway's line records as the GET answers them: tax, the tax name, the C5 spread. */
+  private async decorateLines(
+    client: Prisma.TransactionClient | PrismaService,
+    records: readonly PriceLineRecord[],
+    ctx: { companyId: string; branchId: string; withSpread: boolean },
+  ): Promise<SellingPriceLineRow[]> {
+    const taxRates = await this.resolveItemTaxRates(client, [
       ...new Set(records.map((record) => record.itemId)),
     ]);
-    const taxNames = await this.gateway.taxNames(this.prisma, [
+    const taxNames = await this.gateway.taxNames(client, [
       ...new Set([...taxRates.values()].map((tax) => tax.taxId).filter((id): id is string => !!id)),
     ]);
     // C5 — the other branches that read each All branches line, and their stock cost.
-    const chainAt = records
-      .map((record, index) => ({ record, index }))
-      .filter(
-        ({ record }) =>
-          record.lineKind !== 'NO_PRICE' &&
-          record.bucketId !== null &&
-          record.priceScope === 'CHAIN' &&
-          // S7 — an MRP item's main line ("other MRPs") has no stock cost anywhere.
-          !(record.trackMrp && record.mrp === null),
-      );
+    const chainAt = ctx.withSpread
+      ? records
+          .map((record, index) => ({ record, index }))
+          .filter(
+            ({ record }) =>
+              record.lineKind !== 'NO_PRICE' &&
+              record.bucketId !== null &&
+              record.priceScope === 'CHAIN' &&
+              // S7 — an MRP item's main line ("other MRPs") has no stock cost anywhere.
+              !(record.trackMrp && record.mrp === null),
+          )
+      : [];
     const spread = chainAt.length
-      ? await this.gateway.otherBranchStockCosts(this.prisma, {
-          companyId: queryDto.companyId,
-          excludeBranchId: queryDto.branchId,
+      ? await this.gateway.otherBranchStockCosts(client, {
+          companyId: ctx.companyId,
+          excludeBranchId: ctx.branchId,
           probes: chainAt.map(({ record }) => ({
             itemId: record.itemId,
             uomId: record.uomId,
@@ -276,7 +353,7 @@ export class SellingPriceBulkService {
         })
       : [];
     const spreadAt = new Map(chainAt.map(({ index }, at) => [index, spread[at] ?? []]));
-    const items = records.map((record, index) => {
+    return records.map((record, index) => {
       const tax = taxRates.get(record.itemId);
       return this.toLineRow(
         record,
@@ -286,7 +363,6 @@ export class SellingPriceBulkService {
         spreadOf(spreadAt.get(index) ?? []),
       );
     });
-    return { items, meta: page.meta };
   }
 
   /**
@@ -307,7 +383,7 @@ export class SellingPriceBulkService {
    * (menu 244, plan 2026-11-05 §4.6 item 1) runs the same prepareBulk and
    * writeBulkInTx inside ITS transaction, around its own slab checks.
    */
-  async saveBulk(dto: SaveSellingPriceBulkDto): Promise<SellingPriceSaveResult> {
+  async saveBulk(dto: SaveSellingPriceBulkDto, purchase?: PurchaseSaveHooks): Promise<SellingPriceSaveResult> {
     // BEFORE anything reads or writes: the right to change prices at all, then
     // the scope. A downgraded scope would be a save that silently did something
     // other than what the header radio said.
@@ -324,8 +400,19 @@ export class SellingPriceBulkService {
     const actor = resolveActor(dto.userId, this.requestContext.getUserId());
 
     return this.prisma.$transaction(async (tx) => {
+      // P2 review N2 — the purchase view's bill, FOR SHARE, before any price row (bill → keys → rows).
+      if (purchase?.beforePrepare) {
+        await purchase.beforePrepare(tx);
+      }
       // P1 A1 — a line that sends no cost keeps its own (menu 30 / Ctrl+R only).
       const prepared = await this.prepareBulk(tx, dto, { actor, policy, keepLineCost: true });
+      // P2 §7.3 — a save from the purchase view: the rows locked once, sorted (S5), then B5 (a later
+      // bill refuses all). A plain save locks at the start of writeBulkInTx.
+      if (purchase) {
+        await this.lockTargets(tx, prepared, { future: purchase.lockFuture === true });
+        await purchase.afterPrepare(tx, prepared);
+      }
+      const fromPurchase = purchase ? { fromPurchase: purchase.fromPurchase } : {};
       if (
         prepared.belowCost.length &&
         resolveBelowCostAction(policy, confirmed) === 'CONFIRM'
@@ -333,10 +420,53 @@ export class SellingPriceBulkService {
         // 200, not an error: nothing is wrong yet, the user is being asked.
         // Nothing has been written, so returning out of the transaction
         // commits an empty unit of work.
-        return this.confirmResult(prepared, policy);
+        return { ...this.confirmResult(prepared, policy), ...fromPurchase };
       }
-      return this.writeBulkInTx(tx, prepared, { confirmed, via, policy });
+      const result = await this.writeBulkInTx(tx, prepared, {
+        confirmed,
+        via,
+        policy,
+        reason: purchase?.reason ?? null,
+      });
+      if (purchase) {
+        await purchase.afterWrite(tx, result, prepared);
+      }
+      return { ...result, ...fromPurchase };
     });
+  }
+
+  /**
+   * Change Selling Price P2 review S5 / N1 — every price row a prepared save will write, locked
+   * ONCE, in ipm_id order, before the first write (the purchase post locks in the same order),
+   * and before that an advisory lock on each key that has no row yet (an insert): keys first,
+   * then rows, for every writer. `future` (N4, the purchase view's save) adds the scheduled rows
+   * of each key, kept on `prepared.futureRows`. Idempotent: a second call does nothing.
+   */
+  async lockTargets(
+    tx: Prisma.TransactionClient,
+    prepared: PreparedBulkSave,
+    opts: { future?: boolean } = {},
+  ): Promise<void> {
+    if (prepared.locked) {
+      return;
+    }
+    const probes: PriceKeyProbe[] = prepared.candidates.map((candidate, index) => ({
+      companyId: candidate.companyId,
+      branchId: prepared.resolutions[index].targetBranchId,
+      itemId: candidate.itemId,
+      uomId: candidate.uomId,
+      mrp: candidate.mrp,
+      salePrice: candidate.salePrice,
+    }));
+    const found = await this.gateway.findPriceRows(tx, probes, prepared.scheduledFrom, { future: opts.future === true });
+    const lined = new Set(found.filter((row) => !row.future).map((row) => row.index));
+    await this.gateway.lockPriceKeys(
+      tx,
+      probes.filter((_, index) => !lined.has(index)).map((probe) => priceKeyLockId(probe)),
+    );
+    await this.gateway.lockPriceRows(tx, found.map((row) => row.ipmId));
+    prepared.locked = true;
+    prepared.futureRows = found.filter((row) => row.future);
   }
 
   /**
@@ -479,10 +609,19 @@ export class SellingPriceBulkService {
   async writeBulkInTx(
     tx: Prisma.TransactionClient,
     prepared: PreparedBulkSave,
-    opts: { confirmed: boolean; via: string | null; policy: BelowCostPolicy },
+    opts: {
+      confirmed: boolean;
+      via: string | null;
+      policy: BelowCostPolicy;
+      /** P2 — the price log reason every row carries ("From purchase PI-00123 (12-11-2026)"). */
+      reason?: string | null;
+    },
   ): Promise<SellingPriceSaveResult> {
     const { dto, candidates, resolutions, scheduledFrom, belowCost, actor } = prepared;
     const { confirmed, via, policy } = opts;
+    // P2 review S5 — the rows locked once, sorted, before the first write (not row by row in grid
+    // order, which could meet a purchase post locking the same rows in ipm_id order).
+    await this.lockTargets(tx, prepared);
     // ── Steps 2–4 — write, report, commit. §5.4 ───────────────────────────
     const applied: AppliedBucketPrice[] = [];
     for (let index = 0; index < candidates.length; index += 1) {
@@ -492,6 +631,7 @@ export class SellingPriceBulkService {
         ? belowCost.filter((problem) => problem.lineNo === candidates[index].lineNo)
         : [];
       const reason = [
+        opts.reason ?? null,
         confirmedHere.length
           ? `Confirmed below cost: ${confirmedHere.map((p) => p.message).join('; ')}`
           : null,
@@ -551,107 +691,9 @@ export class SellingPriceBulkService {
   }
 
   /**
-   * Purchase B3 / D16 — a posted bill's selling prices, written in THE BILL'S
-   * transaction (purchase.allow_price_update on, purchase.price_update =
-   * UPDATE_PRICES; the caller decides that). Per row, this branch's price row
-   * for the bill line's unit and MRP bucket, by the same S1 → S2/S3 as the
-   * screen (applyBucketPrice), logged with source PURCHASE.
-   *
-   * D16: a row someone changed LATER than the bill in business time (the
-   * price log's changed_on against the bill's time) is KEPT — the bill keeps
-   * its prices as history. A row the screen would refuse (above MRP, below
-   * the minimum) or that would go below cost is not written either: a bill is
-   * never stopped by its prices. Neither needs the price-change right: the
-   * company opted into purchase writing prices.
-   *
-   * 2026-11-02 — the line's MSP (`minPrice`, purchase entry P9) rides in the
-   * same row write, MSP FIRST: when it differs from the row's stored minimum
-   * it is the minimum the bill's prices are checked against (validateRows
-   * takes the candidate's) and S2 / S3 store it with them. One write or none:
-   * a price below the bill's own MSP (or above MRP / below cost) keeps the
-   * whole row — prices and MSP — as it is, and says so. A line that changes
-   * only the MSP rewrites the prices in force unchanged (a new branch / bucket
-   * row keeps them); with no price row at all for the unit there is nothing to
-   * hang an MSP on, and it says so. An MSP equal to the stored one is no change.
-   */
-  async applyPurchasePrices(
-    tx: Prisma.TransactionClient,
-    args: {
-      companyId: string;
-      branchId: string;
-      actor: string;
-      billRef: string;
-      businessTime: Date;
-      rows: { key: string; itemId: string; uomId: string; mrp: number | null; levels: { level: number; price: number }[]; minPrice?: number | null }[];
-    },
-  ): Promise<Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>> {
-    const out = new Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>();
-    const hasMsp = (r: { minPrice?: number | null }) => r.minPrice !== null && r.minPrice !== undefined && r.minPrice >= 0;
-    const live = args.rows.filter((r) => r.levels.some((l) => l.price > 0) || hasMsp(r));
-    for (const r of args.rows) if (!live.includes(r)) out.set(r.key, { result: 'NONE', note: null });
-    if (!live.length) return out;
-    // D16 — a logged change of the row newer than the bill, in business time
-    const newer = await tx.$queryRaw<{ item_id: string; unit_id: string; at: Date; who: string | null; source: string }[]>`
-      SELECT DISTINCT ON (l.ipcl_item_id, l.ipcl_unit_id) l.ipcl_item_id AS item_id, l.ipcl_unit_id AS unit_id, l.ipcl_changed_on AS at,
-             l.ipcl_user_name AS who, l.ipcl_source AS source
-        FROM inventory.item_price_change_log l
-       WHERE l.ipcl_company_id = ${args.companyId}::uuid
-         AND (l.ipcl_branch_id IS NULL OR l.ipcl_branch_id = ${args.branchId}::uuid)
-         AND l.ipcl_price_table = 'IPM'
-         AND l.ipcl_item_id = ANY(${live.map((r) => r.itemId)}::uuid[])
-         AND l.ipcl_changed_on > ${args.businessTime}
-       ORDER BY l.ipcl_item_id, l.ipcl_unit_id, l.ipcl_changed_on DESC`;
-    const newerOf = new Map(newer.map((n) => [`${n.item_id}|${n.unit_id}`, n]));
-    const writable = live.filter((r) => {
-      const n = newerOf.get(`${r.itemId}|${r.uomId}`);
-      if (!n) return true;
-      // shown as the screens show times: dd-MM-yyyy hh:mm AM/PM, India time
-      const when = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
-        .format(n.at).replace(/\//g, '-').replace(',', '').toUpperCase();
-      out.set(r.key, { result: 'KEPT_NEWER', note: `Price not updated — changed later on ${when} (${n.source}${n.who ? `, ${n.who}` : ''}); the bill keeps its own price as history.` });
-      return false;
-    });
-    if (!writable.length) return out;
-    const costs = await this.gateway.loadRowCosts(
-      tx, writable.map((r) => ({ itemId: r.itemId, uomId: r.uomId, mrp: r.mrp ?? null, salePrice: null })), args.companyId, args.branchId, undefined,
-    );
-    // the MSP only when it changes the stored one; a line with no price of its own re-states the prices in force
-    const plans = writable.map((r, i) => {
-      const msp = hasMsp(r) && !new Prisma.Decimal(r.minPrice!).equals(new Prisma.Decimal(costs[i].minPrice)) ? r.minPrice! : null;
-      const own = r.levels.filter((l) => l.price > 0).map((l) => ({ level: l.level, price: l.price }));
-      if (own.length) return { r, cost: costs[i], msp, levels: own, skip: null as string | null };
-      if (msp === null) return { r, cost: costs[i], msp, levels: own, skip: '' };
-      const inForce = costs[i].prices;
-      if (!inForce) return { r, cost: costs[i], msp, levels: own, skip: `MSP ${msp} not written — the item has no selling price for this unit here; set its prices first.` };
-      return { r, cost: costs[i], msp, levels: inForce.map((price, k) => ({ level: k + 1, price })).filter((l) => l.price > 0), skip: null };
-    });
-    for (const x of plans) if (x.skip !== null) out.set(x.r.key, { result: 'NONE', note: x.skip || null });
-    const todo = plans.filter((x) => x.skip === null);
-    if (!todo.length) return out;
-    const rows = todo.map((x, i) => ({
-      lineNo: i + 1, itemId: x.r.itemId, uomId: x.r.uomId, mrp: x.r.mrp, salePrice: null, minPrice: x.msp, levels: x.levels,
-    })) as unknown as SaveSellingPriceRowDto[];
-    const taxRates = await this.resolveItemTaxRates(tx, rows.map((r) => r.itemId));
-    const candidates = rows.map((row, i) => this.toCandidate(row, i, args.companyId, args.actor, taxRates, todo[i].cost));
-    const problems = this.gateway.validateRows(candidates, todo.map((x) => x.cost.minPrice));
-    const origin = { source: 'PURCHASE' as const, menuId: PRICE_MENU_ID.PURCHASE_ENTRY, reason: `Purchase ${args.billRef}` };
-    for (let i = 0; i < candidates.length; i += 1) {
-      const mine = problems.filter((p) => p.lineNo === candidates[i].lineNo);
-      if (mine.length) {
-        const msp = todo[i].msp !== null ? ` The MSP ${todo[i].msp} is not written either.` : '';
-        out.set(todo[i].r.key, { result: 'NONE', note: `Price not updated — ${mine.map((p) => p.message).join('; ')}${msp}` });
-        continue;
-      }
-      await this.applyBucketPrice(tx, candidates[i], resolveTargetScope('BRANCH', null, args.branchId), undefined, origin);
-      out.set(todo[i].r.key, { result: 'UPDATED', note: null });
-    }
-    return out;
-  }
-
-  /**
    * Purchase entry P9 — the MSP each purchase line starts from: the minimum on
    * the price row in force at this branch today for the line's unit and MRP
-   * bucket (the row applyPurchasePrices would write). Null when no row prices
+   * bucket (the row the purchase price step would write). Null when no row prices
    * the unit or its minimum is 0 (no MSP).
    */
   async currentMinPrices(
@@ -920,7 +962,7 @@ export class SellingPriceBulkService {
    * §5.3 — a confirmed below-cost save SAYS SO on each row it confirmed: a
    * confirmation nobody can find afterwards is a rule that was never enforced.
    */
-  private async auditWrites(
+  async auditWrites(
     tx: Prisma.TransactionClient,
     applied: readonly AppliedBucketPrice[],
     context: {
@@ -929,6 +971,12 @@ export class SellingPriceBulkService {
       scheduledFrom?: string;
       /** P1 §4.6 — the scope each row was written at, in `applied` order. */
       scopes: readonly PriceScope[];
+      /**
+       * P2 §5 — who wrote it, when not menu 30 ("Purchase PI-00123 (12-11-2026)"), and each
+       * row's own scope words ("→ this branch"), in `applied` order. Absent: menu 30's words.
+       */
+      writer?: string;
+      scopeLabels?: readonly string[];
     },
   ): Promise<Map<string, Prisma.JsonObject>> {
     const after = await this.gateway.snapshotRows(tx, [
@@ -937,8 +985,10 @@ export class SellingPriceBulkService {
     ]);
     // Notes 140 A — a scheduled save names its day on every row it wrote.
     const fromLabel = context.scheduledFrom ? `, from ${displayDay(context.scheduledFrom)}` : '';
+    const writer = context.writer ?? `${AUDIT_SCREEN_NAME} (menu 30)`;
     for (const [index, row] of applied.entries()) {
-      const scopeLabel = context.scopes[index] === 'CHAIN' ? 'all branches' : 'this branch';
+      const scopeLabel =
+        context.scopeLabels?.[index] ?? (context.scopes[index] === 'CHAIN' ? 'all branches' : 'this branch');
       const modified = after.get(row.ipmId) ?? null;
       const confirmed = context.confirmedBelowCost.filter((p) => p.lineNo === row.lineNo);
       const displayName = `${row.itemName} · ${this.describeBucket(modified)}`;
@@ -955,7 +1005,7 @@ export class SellingPriceBulkService {
             originalRecord: row.closed.before,
             modifiedRecord: after.get(row.closed.ipmId) ?? null,
             userId: context.actor,
-            notes: `${AUDIT_SCREEN_NAME} (menu 30), ${scopeLabel} — ends the day before the new price${fromLabel}`,
+            notes: `${writer}, ${scopeLabel} — ends the day before the new price${fromLabel}`,
           },
           tx,
         );
@@ -972,7 +1022,7 @@ export class SellingPriceBulkService {
           modifiedRecord: modified,
           userId: context.actor,
           notes:
-            `${AUDIT_SCREEN_NAME} (menu 30), ${scopeLabel}${fromLabel}` +
+            `${writer}, ${scopeLabel}${fromLabel}` +
             (confirmed.length
               ? ` — confirmed below cost: ${confirmed.map((p) => p.message).join('; ')}`
               : ''),
@@ -1480,7 +1530,7 @@ export class SellingPriceBulkService {
    * echoes what it loaded, but an MRP the policy does not track is not a
    * dimension, and the row is the headline.
    */
-  private toCandidate(
+  toCandidate(
     row: SaveSellingPriceRowDto,
     index: number,
     companyId: string,

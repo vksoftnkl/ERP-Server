@@ -189,7 +189,9 @@ export class PurchaseGrnService {
       dto.lines.forEach((l, i) => { if (l.damageReasonId && !ok.has(l.damageReasonId)) problems.push({ field: `lines.${i}.damageReasonId`, code: 'PUR_REASON_NOT_FOUND', message: `Line ${l.lineNo}: that damage reason is not in Stock Reasons` }); });
     }
     const settings = await loadPurchaseSettings(db, h.companyId, h.branchId);
-    const priceAtGrn = settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN';
+    // Change Selling Price P2 (Q3): a GRN never writes prices — Sell A–D typed on it ride to the bill and apply at the
+    // bill's post ("After a purchase"). Its lines' price result is always OFF.
+    const priceAtGrn = false;
 
     // F4 excess: what came beyond the PO line's pending qty. HOLD_FOR_BILL (default) keeps it at the
     // provisional rate for the bill; KEEP_FREE takes it as free goods (no value); RETURN = sent back at
@@ -739,35 +741,8 @@ export class PurchaseGrnService {
         pshReason: 'SHORT_CHALLAN', pshQtyBase: short.times(l.griToBaseFactor), pshOriginCostRate: cost(l), pshCreatedBy: actor,
       } });
     }
-    // purchase.price_set_at = GRN: the GRN's Sell A–D / MRP go through the purchase price writer (D16: a newer change wins).
-    // An amend (#15) writes only the lines whose MRP / Sell A–D it changed, timed now (the user just keyed them); a line
-    // whose prices it left alone is not written again — the first post's write stands, and a price changed on the master
-    // since is not put back — and keeps the first post's result.
-    if (settings.allowPriceUpdate && settings.priceUpdate === 'UPDATE_PRICES' && settings.priceSetAt === 'GRN') {
-      const lv = (v: Prisma.Decimal | null) => (v ? Number(v) : 0);
-      const businessTime = amend || docDate === isoDate(postedOn) ? postedOn : new Date(`${docDate}T23:59:59.999+05:30`);
-      const kept = (l: (typeof lines)[number]) => {
-        const p = amend?.prevPrices.get(priceKey(l));
-        return !!p && sameDec(p.mrp, l.griMrp) && [l.griSellA, l.griSellB, l.griSellC, l.griSellD].every((v, i) => sameDec(p.levels[i], v)) ? p : null;
-      };
-      const write = lines.filter((l) => !kept(l));
-      const result = write.length ? await this.prices.applyPurchasePrices(tx, {
-        companyId: g.grnCompanyId, branchId: g.grnBranchId, actor, billRef: g.grnRefno, businessTime,
-        rows: write.map((l) => ({ key: l.griId, itemId: l.griItemId, uomId: l.griUomId, mrp: l.griMrp ? Number(l.griMrp) : null,
-                                  levels: [{ level: 1, price: lv(l.griSellA) }, { level: 2, price: lv(l.griSellB) }, { level: 3, price: lv(l.griSellC) }, { level: 4, price: lv(l.griSellD) }] })),
-      }) : new Map<string, { result: 'UPDATED' | 'KEPT_NEWER' | 'NONE'; note: string | null }>();
-      for (const l of lines) {
-        const before = kept(l);
-        if (before) {
-          if (before.result) await tx.purGrnItem.update({ where: { griId_griAccYear: { griId: l.griId, griAccYear: accYear } }, data: { griPriceUpdateResult: before.result } });
-          continue;
-        }
-        const r = result.get(l.griId);
-        if (!r) continue;
-        await tx.purGrnItem.update({ where: { griId_griAccYear: { griId: l.griId, griAccYear: accYear } }, data: { griPriceUpdateResult: r.result } });
-        if (r.note) notes.push({ field: `lines.${l.griLineNo - 1}`, code: r.result === 'KEPT_NEWER' ? 'PUR_PRICE_KEPT_NEWER' : 'PUR_PRICE_NOT_WRITTEN', message: `Line ${l.griLineNo}: ${r.note}` });
-      }
-    }
+    // Change Selling Price P2 (Q3): the GRN's own price write (purchase.price_set_at = GRN) is gone — its Sell A–D / MRP
+    // ride to the bill (grn-lines) and move prices only when the BILL is posted. Lines stay OFF.
     await tx.purGrn.update({ where: { grnId_grnAccYear: { grnId, grnAccYear: accYear } }, data: { grnStatus: 'POSTED', grnPostedVoucherId: posted.voucherId, grnModifiedBy: actor, grnModifiedOn: postedOn } });
     await statusLog(tx, { companyId: g.grnCompanyId, branchId: g.grnBranchId, accYear, docType: TxnStatusDocType.GRN, docId: grnId, refno: g.grnRefno,
       ...(amend ? { event: TxnStatusEvent.AMENDED, remarks: `Revision ${g.grnRevisionNo}${amend.reason ? `: ${amend.reason}` : ''}`.slice(0, 250) } : { event: TxnStatusEvent.POSTED }),

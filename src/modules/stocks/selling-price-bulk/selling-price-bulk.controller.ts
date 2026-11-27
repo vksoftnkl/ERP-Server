@@ -23,6 +23,9 @@ import { PriceScheduleQueryDto } from './dto/price-schedule-query.dto';
 import { CancelPriceScheduleDto } from './dto/cancel-price-schedule.dto';
 import { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
 import { BackToAllBranchesDto } from './dto/back-to-all-branches.dto';
+import { PurchaseLinesQueryDto } from './dto/purchase-lines-query.dto';
+import { PurchaseViewSuccessDto } from './dto/purchase-lines-response.dto';
+import { PurchasePriceStepService } from './purchase-price-step.service';
 import {
   SellingPriceBackSuccessDto,
   SellingPriceBucketsSuccessDto,
@@ -33,6 +36,7 @@ import {
   SellingPriceScheduleSuccessDto,
 } from './dto/selling-price-bulk-response.dto';
 import type {
+  PurchaseViewResult,
   SellingPriceBackResult,
   SellingPriceLinePageMeta,
   SellingPriceLineRow,
@@ -75,7 +79,11 @@ interface SellingPriceSuccessResponse<TData> {
 @Controller('stock')
 @UseFilters(SellingPriceBulkExceptionFilter)
 export class SellingPriceBulkController {
-  constructor(private readonly sellingPriceBulkService: SellingPriceBulkService) {}
+  constructor(
+    private readonly sellingPriceBulkService: SellingPriceBulkService,
+    /** Change Selling Price P2 — the purchase view (purchase-lines) and its save (fromPurchase). */
+    private readonly purchasePriceStep: PurchasePriceStepService,
+  ) {}
 
   @Get('price-bulk')
   @Version(API_VERSION)
@@ -117,6 +125,47 @@ export class SellingPriceBulkController {
       message:
         `${data.meta.count} item${data.meta.count === 1 ? '' : 's'}, ` +
         `${data.items.length} line${data.items.length === 1 ? '' : 's'} loaded`,
+      data,
+    };
+  }
+
+  @Get('price-bulk/purchase-lines')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'P2 — menu 30 opened after a purchase: a posted bill\'s price lines and their chain units',
+    description:
+      'Change Selling Price P2 (plan 2026-11-24 §7.2, addendum 1). Rights in order: Edit on menu 30 ' +
+      '(403 STOCK_PRICE_RIGHT_EDIT), View on menu 24 (403 PUR_RIGHT_VIEW), branchId the login\'s own ' +
+      'unless head office (403 STOCK_PRICE_BRANCH_HQ_ONLY). 404 STOCK_PRICE_BILL_NOT_FOUND (no such ' +
+      'bill at that company / branch / year); 422 STOCK_PRICE_BILL_NOT_POSTED (DRAFT / CANCELLED; ' +
+      'params bill, status). Rows = every key of a P1 GET /stock/price-bulk line + fromBill {kind ' +
+      'BOUGHT / CHAIN / LATER_BILL / NO_PRICE (an open list), billLines, qty, freeQty, unitName, ' +
+      'rate, landedCostWot, landedCost, chainFrom, laterBill, proposed {cost, costWot, levels[{level, ' +
+      'price, from BILL / RULE / KEPT}], minPrice, maxPrice}, sameAsNow, words}. Order (decision 24): ' +
+      'items in the order of their first bill line; inside an item each bought line, then its chain ' +
+      'units in unit order. No paging. bill {…, postedOn, postedBy, afterPurchase, reviewedOn, ' +
+      'reviewedBy}; meta {items, lines, bought, chain, laterBill, noPrice, toChange, latestLines}.',
+  })
+  @ApiOkResponse({ type: PurchaseViewSuccessDto })
+  @ApiBadRequestResponse({ type: SellingPriceErrorResponseDto })
+  @ApiForbiddenResponse({
+    type: SellingPriceErrorResponseDto,
+    description: 'STOCK_PRICE_RIGHT_EDIT · PUR_RIGHT_VIEW · STOCK_PRICE_BRANCH_HQ_ONLY.',
+  })
+  @ApiNotFoundResponse({ type: SellingPriceErrorResponseDto, description: 'STOCK_PRICE_BILL_NOT_FOUND.' })
+  @ApiUnprocessableEntityResponse({
+    type: SellingPriceErrorResponseDto,
+    description: 'STOCK_PRICE_BILL_NOT_POSTED (params bill, status).',
+  })
+  async purchaseLines(
+    @Query() queryDto: PurchaseLinesQueryDto,
+  ): Promise<SellingPriceSuccessResponse<PurchaseViewResult>> {
+    const data = await this.purchasePriceStep.purchaseLines(queryDto);
+    return {
+      success: true,
+      message:
+        `${data.bill.refno}: ${data.meta.items} item${data.meta.items === 1 ? '' : 's'}, ` +
+        `${data.meta.lines} line${data.meta.lines === 1 ? '' : 's'}`,
       data,
     };
   }
@@ -194,12 +243,18 @@ export class SellingPriceBulkController {
   })
   @ApiConflictResponse({
     type: SellingPriceErrorResponseDto,
-    description: 'ex_ipm_overlap (23P01) — another price already covers this bucket and period.',
+    description:
+      'ex_ipm_overlap (23P01) — another price already covers this bucket and period. P2: ' +
+      'STOCK_PRICE_LATER_PURCHASE (fromPurchase; a later posted bill bought the row\'s item and key).',
   })
+  @ApiNotFoundResponse({ type: SellingPriceErrorResponseDto, description: 'P2: STOCK_PRICE_BILL_NOT_FOUND (fromPurchase).' })
   async saveBulk(
     @Body() dto: SaveSellingPriceBulkDto,
   ): Promise<SellingPriceSuccessResponse<SellingPriceSaveResult>> {
-    const data = await this.sellingPriceBulkService.saveBulk(dto);
+    // P2 §7.3 — a save from the purchase view: P1's save + the bill checks + PRICES_REVIEWED.
+    const data = dto.fromPurchase
+      ? await this.purchasePriceStep.saveFromPurchase(dto)
+      : await this.sellingPriceBulkService.saveBulk(dto);
     return {
       success: true,
       message: this.sellingPriceBulkService.buildSaveMessage(data),

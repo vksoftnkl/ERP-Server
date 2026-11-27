@@ -52,6 +52,11 @@ export interface ListSellingPricesArgs {
   offset: number;
   /** Change Selling Price P1 — only items with a NO_PRICE line (limit / offset count items). */
   unpricedOnly?: boolean;
+  /**
+   * Change Selling Price P2 — internal: only these items (the purchase view's bill items). Never
+   * a query key of the GET; absent = every item the other filters let through.
+   */
+  itemIds?: readonly string[];
 }
 
 /**
@@ -173,6 +178,49 @@ export interface LockedPriceRow {
   effectiveTo: string;
 }
 
+/**
+ * Change Selling Price P2 review S5 / N1 / N4 — one price key at the scope a write lands on:
+ * what findPriceRows looks for and what lockPriceKeys serialises.
+ */
+export interface PriceKeyProbe {
+  companyId: string;
+  /** NULL = the All branches (chain) row. */
+  branchId: string | null;
+  itemId: string;
+  uomId: string;
+  /** The bucket key AFTER policy blanking; null = none (the headline). */
+  mrp: number | null;
+  salePrice: number | null;
+}
+
+/** A price row of a probed key: the one in force on the day, or a later (scheduled) one. */
+export interface FoundPriceRow {
+  /** The probe's index. */
+  index: number;
+  ipmId: string;
+  /** `YYYY-MM-DD`. */
+  effectiveFrom: string;
+  /** true = it starts after the day (a scheduled row of the key), false = in force on the day. */
+  future: boolean;
+}
+
+/**
+ * The advisory-lock key of a price key at a scope (N1): the same text for every writer, so two
+ * transactions that would both INSERT the line of one key wait for each other instead of one
+ * failing on ex_ipm_overlap.
+ */
+export function priceKeyLockId(probe: PriceKeyProbe): string {
+  const key = (value: number | null) => (value === null ? '-1' : new Prisma.Decimal(value).toFixed(6));
+  return [
+    probe.companyId.toLowerCase(),
+    (probe.branchId ?? '').toLowerCase(),
+    probe.itemId.toLowerCase(),
+    probe.uomId.toLowerCase(),
+    key(probe.mrp),
+    key(probe.salePrice),
+  ].join('|');
+}
+
 /** What pricing a save row needs before its levels can be recomputed. */
 export interface RowCost {
   /** The item's code and name, for the problem list. */
@@ -192,8 +240,9 @@ export interface RowCost {
   minPrice: number;
   /**
    * The resolved row's selling prices A–D; absent when no row prices this unit.
-   * A purchase bill that changes only the MSP writes them back unchanged
-   * (applyPurchasePrices), so a new branch / bucket row keeps the prices in force.
+   * A purchase bill that changes only the cost or the MSP writes them back unchanged
+   * (PurchasePriceStepService.afterPurchase, Change Selling Price P2), so a new branch /
+   * bucket row keeps the prices in force.
    */
   prices?: [number, number, number, number];
   /** Change Selling Price P1 — the unit's name and to-base factor (messages, the branch check). */
@@ -1244,6 +1293,101 @@ export class PriceBucketGateway {
   }
 
   /**
+   * Change Selling Price P2 review S5 / N4 — S1's search for MANY keys at once, with NO lock:
+   * per probe the row in force on `onDate` (today when omitted) by S1's own rule (the company's
+   * row first, else a company-less row of an item of this company), and — `future` — every live
+   * row of the key that starts after that day (a scheduled change). The caller locks what it
+   * found with lockPriceRows, sorted, before it writes.
+   */
+  async findPriceRows(
+    client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    probes: readonly PriceKeyProbe[],
+    onDate: string | undefined,
+    opts: { inForce?: boolean; future?: boolean } = {},
+  ): Promise<FoundPriceRow[]> {
+    const inForce = opts.inForce !== false;
+    const future = opts.future === true;
+    if (!probes.length || (!inForce && !future)) {
+      return [];
+    }
+    const text = (value: string | number | null) => (value === null ? '' : String(value));
+    const rows = await client.$queryRaw<Array<{ index: number; ipmId: string; effectiveFrom: string; future: boolean }>>`
+      WITH q AS (
+        SELECT (q.ord - 1)::int AS idx, q.company_id::uuid AS company_id, NULLIF(q.branch_id, '')::uuid AS branch_id,
+               q.item_id::uuid AS item_id, q.uom_id::uuid AS uom_id,
+               COALESCE(NULLIF(q.mrp, '')::numeric, -1) AS key_mrp, COALESCE(NULLIF(q.sp, '')::numeric, -1) AS key_sp
+          FROM unnest(${probes.map((p) => p.companyId)}::text[],
+                      ${probes.map((p) => text(p.branchId))}::text[],
+                      ${probes.map((p) => p.itemId)}::text[],
+                      ${probes.map((p) => p.uomId)}::text[],
+                      ${probes.map((p) => text(p.mrp))}::text[],
+                      ${probes.map((p) => text(p.salePrice))}::text[])
+               WITH ORDINALITY AS q(company_id, branch_id, item_id, uom_id, mrp, sp, ord)
+      ),
+      keyed AS (
+        SELECT q.idx, p.ipm_id, p.ipm_effective_from, p.ipm_effective_to, p.ipm_company_id
+          FROM q
+          JOIN inventory.item_price_master p
+            ON p.ipm_item_id = q.item_id
+           AND p.ipm_uc_unit_id = q.uom_id
+           AND p.ipm_key_mrp = q.key_mrp
+           AND p.ipm_key_sp = q.key_sp
+           AND p.ipm_branch_id IS NOT DISTINCT FROM q.branch_id
+           AND p.ipm_is_deleted = false
+           AND (p.ipm_company_id = q.company_id
+                OR (p.ipm_company_id IS NULL
+                    AND EXISTS (SELECT 1 FROM inventory.item_master im
+                                 WHERE im.item_id = p.ipm_item_id AND im.item_company_id = q.company_id)))
+      )
+      (SELECT DISTINCT ON (k.idx) k.idx AS "index", k.ipm_id::text AS "ipmId",
+              k.ipm_effective_from::text AS "effectiveFrom", false AS "future"
+         FROM keyed k
+        WHERE ${inForce}::boolean
+          AND ${daySql(onDate)} BETWEEN k.ipm_effective_from AND k.ipm_effective_to
+        ORDER BY k.idx, (k.ipm_company_id IS NULL))
+      UNION ALL
+      (SELECT k.idx, k.ipm_id::text, k.ipm_effective_from::text, true
+         FROM keyed k
+        WHERE ${future}::boolean
+          AND k.ipm_effective_from > ${daySql(onDate)})
+    `;
+    return rows
+      .map((row) => ({ index: Number(row.index), ipmId: row.ipmId, effectiveFrom: row.effectiveFrom, future: row.future === true }))
+      .sort((a, b) => a.index - b.index || a.effectiveFrom.localeCompare(b.effectiveFrom));
+  }
+
+  /**
+   * S5 — price rows locked FOR UPDATE in ONE order for every writer: ipm_id (the purchase post,
+   * every menu 30 / menu 244 save, the purchase view's save, Cancel's put-back). Rows already
+   * held by this transaction are no-ops.
+   */
+  async lockPriceRows(client: Pick<Prisma.TransactionClient, '$queryRaw'>, ipmIds: readonly string[]): Promise<void> {
+    const ids = [...new Set(ipmIds.map((id) => id.toLowerCase()))].sort();
+    if (!ids.length) {
+      return;
+    }
+    await client.$queryRaw`
+      SELECT p.ipm_id
+        FROM inventory.item_price_master p
+       WHERE p.ipm_id = ANY(${ids}::uuid[])
+       ORDER BY p.ipm_id
+       FOR UPDATE OF p`;
+  }
+
+  /**
+   * N1 — transaction advisory locks on price keys that a write may INSERT a line for (a Q9 new
+   * line, "→ this branch", a menu 30 + Line), sorted, so two writers of one new key queue
+   * instead of one failing on ex_ipm_overlap. Taken BEFORE any price-row lock (keys, then rows,
+   * for every writer). `count(...)` keeps the call in the select list (a bare call in an unused
+   * CTE never runs).
+   */
+  async lockPriceKeys(client: Pick<Prisma.TransactionClient, '$queryRaw'>, keys: readonly string[]): Promise<void> {
+    for (const key of [...new Set(keys)].sort()) {
+      await client.$queryRaw`SELECT count(pg_advisory_xact_lock(hashtext('inventory.item_price_master.key'), hashtext(${key})))::int AS locked`;
+    }
+  }
+
+  /**
    * Notes 140 A — the database's today, and the furthest day a price may be
    * scheduled for. CURRENT_DATE rather than the server clock: every statement
    * here compares the effective dates with CURRENT_DATE, and the two disagree
@@ -1605,7 +1749,11 @@ export class PriceBucketGateway {
    * the items with at least one NO_PRICE line. Ordered by item name, unit order, headline
    * first, then MRP / sale price.
    */
-  async listPriceLines(args: ListSellingPricesArgs): Promise<{
+  async listPriceLines(
+    args: ListSellingPricesArgs,
+    /** P2 — the purchase post reads the lines inside its own transaction (after its stock). */
+    client: Pick<Prisma.TransactionClient, '$queryRaw'> = this.prisma,
+  ): Promise<{
     items: PriceLineRecord[];
     meta: { limit: number; offset: number; count: number; lines: number };
   }> {
@@ -1628,7 +1776,8 @@ export class PriceBucketGateway {
     const exact = Prisma.raw(
       '(p.ipm_id IS NOT NULL AND p.ipm_key_mrp = k.key_mrp AND p.ipm_key_sp = k.key_sp)',
     );
-    const rows = await this.prisma.$queryRaw<
+    const itemIds = args.itemIds?.length ? [...args.itemIds] : null;
+    const rows = await client.$queryRaw<
       Array<
         GridSqlRow & {
           pageItems: bigint;
@@ -1673,6 +1822,7 @@ export class PriceBucketGateway {
            AND (${args.itemSectionId ?? null}::uuid IS NULL OR i.item_section_id = ${args.itemSectionId ?? null}::uuid)
            AND (${args.supplierId ?? null}::uuid IS NULL OR i.item_supplier_id = ${args.supplierId ?? null}::uuid)
            AND (${args.itemId ?? null}::uuid IS NULL OR i.item_id = ${args.itemId ?? null}::uuid)
+           AND (${itemIds}::uuid[] IS NULL OR i.item_id = ANY(${itemIds}::uuid[]))
            ${this.popupFilter(args)}
       ),
       pol AS (
