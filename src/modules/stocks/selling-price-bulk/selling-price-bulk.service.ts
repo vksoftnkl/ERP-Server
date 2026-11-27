@@ -25,6 +25,7 @@ import { SaveSellingPriceBulkDto, SaveSellingPriceRowDto } from './dto/save-sell
 import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-policy.helper';
 import { exclusiveOfTax, markupReproduces, recomputeLevel } from './selling-price-math.helper';
 import { resolveTargetScope, type ScopeResolution } from './selling-price-scope.helper';
+import { stockCostWithGst } from './stock-cost.reader';
 import {
   PriceBucketGateway,
   priceKeyLockId,
@@ -156,6 +157,20 @@ export interface PrepareBulkContext {
    * the purchase write).
    */
   keepLineCost?: boolean;
+  /**
+   * CSP P2 follow-up (user "Go" 2026-11-27: "every purchase and its stock is a single line
+   * maintenance") — asked per row that SENDS a cost, with its index, its bucket key after the
+   * policy blanked it, and its row costs: true = a purchase's own row, judged below cost on that
+   * cost only (the cost the line stores): no stock cost beside it (A3-C) and no other branch's
+   * (C6 / O10). The post's step answers true for every row; the purchase view's save for the
+   * bill's own keys with a cost on the bill. Absent / false = A3-C as before.
+   */
+  ownCostOnly?: (
+    index: number,
+    row: SaveSellingPriceRowDto,
+    key: { mrp: number | null; salePrice: number | null },
+    cost: RowCost,
+  ) => boolean;
 }
 
 /**
@@ -170,6 +185,8 @@ export interface PurchaseSaveHooks {
   beforePrepare?: (tx: Prisma.TransactionClient) => Promise<void>;
   /** Review N4 — lock the scheduled rows of each key too (afterWrite moves their cost). */
   lockFuture?: boolean;
+  /** 2026-11-27 — PrepareBulkContext.ownCostOnly for the bill's own rows (judged on their own cost only). */
+  ownCostOnly?: PrepareBulkContext['ownCostOnly'];
   /** After prepareBulk and the sorted locks (S5): B5 — a later bill refuses the save (409). */
   afterPrepare: (tx: Prisma.TransactionClient, prepared: PreparedBulkSave) => Promise<void>;
   /** The price log reason on every row written. */
@@ -349,6 +366,7 @@ export class SellingPriceBulkService {
             uomId: record.uomId,
             mrp: record.mrp,
             salePrice: record.salePrice,
+            taxPerc: taxRates.get(record.itemId)?.taxPerc ?? 0,
           })),
         })
       : [];
@@ -404,8 +422,14 @@ export class SellingPriceBulkService {
       if (purchase?.beforePrepare) {
         await purchase.beforePrepare(tx);
       }
-      // P1 A1 — a line that sends no cost keeps its own (menu 30 / Ctrl+R only).
-      const prepared = await this.prepareBulk(tx, dto, { actor, policy, keepLineCost: true });
+      // P1 A1 — a line that sends no cost keeps its own (menu 30 / Ctrl+R only). 2026-11-27 — the
+      // purchase view's own rows are judged on their own cost only.
+      const prepared = await this.prepareBulk(tx, dto, {
+        actor,
+        policy,
+        keepLineCost: true,
+        ...(purchase?.ownCostOnly ? { ownCostOnly: purchase.ownCostOnly } : {}),
+      });
       // P2 §7.3 — a save from the purchase view: the rows locked once, sorted (S5), then B5 (a later
       // bill refuses all). A plain save locks at the start of writeBulkInTx.
       if (purchase) {
@@ -528,12 +552,14 @@ export class SellingPriceBulkService {
     );
     // P1 §4.7 (C6, O10) — an All branches line is judged at every other branch reading it.
     // S7 — an MRP item's main line ("other MRPs") has no stock cost anywhere: not probed.
+    // 2026-11-27 — nor a purchase's own row (ownCostOnly: judged on its own cost only).
     const chainAt = resolutions
       .map((resolution, index) => ({ resolution, index }))
       .filter(
         ({ resolution, index }) =>
           resolution.targetScope === 'CHAIN' &&
-          !(costs[index].trackMrp && candidates[index].mrp === null),
+          !(costs[index].trackMrp && candidates[index].mrp === null) &&
+          candidates[index].ownCostOnly !== true,
       )
       .map(({ index }) => index);
     if (chainAt.length) {
@@ -546,6 +572,7 @@ export class SellingPriceBulkService {
           uomId: candidates[index].uomId,
           mrp: candidates[index].mrp,
           salePrice: candidates[index].salePrice,
+          taxPerc: taxRates.get(candidates[index].itemId)?.taxPerc ?? 0,
         })),
       });
       problems.push(
@@ -1537,7 +1564,7 @@ export class SellingPriceBulkService {
     actor: string,
     taxRates: ReadonlyMap<string, ItemTaxRate>,
     cost: RowCost,
-    ctx?: Pick<PrepareBulkContext, 'keepCost' | 'keepLineCost'>,
+    ctx?: Pick<PrepareBulkContext, 'keepCost' | 'keepLineCost' | 'ownCostOnly'>,
   ): PriceCandidateWrite {
     const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
     const key = bucketKeyFor(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
@@ -1560,13 +1587,15 @@ export class SellingPriceBulkService {
       cost.lineCost > 0
         ? cost.lineCost
         : null;
+    // CSP P2 follow-up (user 2026-11-27) — a purchase's own row (the post's step; the bill's own
+    // keys saved from the purchase view) is judged on the cost it sends only: the bill's cost IS its
+    // stock (one lot per bill line), so no stock average beside it.
+    const ownCostOnly = keyedCost !== null && ctx?.ownCostOnly?.(index, row, key, cost) === true;
     // P1, A3 option C — below cost is judged on the HIGHER of the line's own cost and the stock
     // cost (this MRP's landing cost, else the branch average; none for an MRP with no lot — U2 —
-    // and none on an MRP item's "other MRPs" line — S7).
-    const stockCost =
-      cost.stockCost !== undefined && cost.stockCost !== null && cost.stockCost > 0
-        ? cost.stockCost
-        : null;
+    // and none on an MRP item's "other MRPs" line — S7). 2026-11-27 — both WITH GST: the stock
+    // cost is made with stockCostWithGst and the row's own tax (the one definition).
+    const stockCost = ownCostOnly ? null : stockCostWithGst(cost.stockCostWot, taxPerc);
     // Review S1 / S8 (user 2026-11-24) — menu 30 / Ctrl+R: no cost sent and no cost of its own →
     // the stock cost above, else NOTHING (0). Never the old stock-first figure, which fell back to
     // the branch average for an MRP with no lot and to another line's cost. Menu 244 and purchases
@@ -1627,6 +1656,7 @@ export class SellingPriceBulkService {
       judgeCost,
       ownCost,
       stockCost,
+      ...(ownCostOnly ? { ownCostOnly: true } : {}),
       unitName: cost.unitName ?? null,
       // Plan 2026-11-05 §4.6 item 2 — the unit's Rule and a typed MRP ride only
       // when sent (Qty-wise Prices, menu 30 since P1); absent, the candidate is
@@ -1673,7 +1703,8 @@ export class SellingPriceBulkService {
       lineKind: record.lineKind,
       lineCost: record.lineCost,
       lineCostWot: record.lineCostWot,
-      stockCost: record.stockCost,
+      // 2026-11-27 — the stock cost WITH GST, on the line cost's footing (stock-cost.reader.ts).
+      stockCost: stockCostWithGst(record.stockCostWot, tax?.taxPerc ?? 0),
       stockCostWot: record.stockCostWot,
       stockCostBasis: record.stockCostBasis,
       otherBranchesStockCost,

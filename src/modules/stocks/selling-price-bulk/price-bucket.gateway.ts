@@ -69,7 +69,10 @@ export interface PriceLineRecord extends PriceGridRecord {
   /** The line's own cost; null on NO_PRICE and an unpriced HEADLINE. */
   lineCost: number | null;
   lineCostWot: number | null;
-  stockCost: number | null;
+  /**
+   * The stock cost WITHOUT GST (stock-cost.reader.ts). There is no with-GST figure here: the
+   * service makes `stockCost` with stockCostWithGst and the item's tax (2026-11-27, one footing).
+   */
   stockCostWot: number | null;
   stockCostBasis: 'MRP' | 'ITEM' | null;
   profitType: string;
@@ -259,8 +262,9 @@ export interface RowCost {
   /**
    * P1 A3 — the STOCK cost (stock-cost.reader.ts): this MRP's landing cost, else the branch
    * average, × the unit factor. Null when the branch has neither — never the price row's.
+   * WITHOUT GST only (2026-11-27): the judge makes the with-GST figure with stockCostWithGst and
+   * the row's own tax (SellingPriceBulkService.toCandidate), the footing of the line's own cost.
    */
-  stockCost?: number | null;
   stockCostWot?: number | null;
   stockCostBasis?: 'MRP' | 'ITEM' | null;
 }
@@ -315,6 +319,11 @@ export interface BucketPriceCandidate {
   ownCost?: number | null;
   /** P1 — the stock cost judged beside the line cost; null / absent when there is none. */
   stockCost?: number | null;
+  /**
+   * CSP P2 (user 2026-11-27, "every purchase and its stock is a single line maintenance") — a
+   * purchase's own row: judged on its own cost only (no stock cost beside it, no other branch's).
+   */
+  ownCostOnly?: boolean;
   /** P1 — the unit's name, for the problem's words. */
   unitName?: string | null;
 }
@@ -383,9 +392,12 @@ function belowCostOf(
     candidate.stockCost !== undefined && candidate.stockCost !== null && candidate.stockCost > 0
       ? candidate.stockCost
       : null;
+  // 2026-11-27 — both costs are on one footing (with GST) now, and a bill's cost and its own
+  // lot's stock cost differ only past the 2nd decimal (1,415.631 vs 1,415.631004): the rule
+  // names the higher of the two AS SHOWN (2 dp), a tie being the line cost.
   const rule: BelowCostRule | undefined =
     lineCost !== null && stockCost !== null
-      ? lineCost >= stockCost
+      ? round2(lineCost) >= round2(stockCost)
         ? 'LINE_COST'
         : 'STOCK_COST'
       : undefined;
@@ -919,7 +931,6 @@ export class PriceBucketGateway {
         lineCost?: Prisma.Decimal | null;
         lineCostWot?: Prisma.Decimal | null;
         lineRoundOff?: Prisma.Decimal | null;
-        stockCost?: Prisma.Decimal | null;
         stockCostWot?: Prisma.Decimal | null;
         stockCostBasis?: 'MRP' | 'ITEM' | null;
       }>
@@ -975,7 +986,6 @@ export class PriceBucketGateway {
              CASE WHEN ${exact} THEN p.ipm_cost_price END AS "lineCost",
              CASE WHEN ${exact} THEN p.ipm_cost_wot   END AS "lineCostWot",
              CASE WHEN ${exact} THEN p.ipm_round_off  END AS "lineRoundOff",
-             ${stock.rate}  AS "stockCost",
              ${stock.wot}   AS "stockCostWot",
              ${stock.basis} AS "stockCostBasis"
         FROM keyed k
@@ -1011,7 +1021,6 @@ export class PriceBucketGateway {
         lineCost: orNull(row?.lineCost),
         lineCostWot: orNull(row?.lineCostWot),
         lineRoundOff: orNull(row?.lineRoundOff),
-        stockCost: orNull(row?.stockCost),
         stockCostWot: orNull(row?.stockCostWot),
         stockCostBasis: row?.stockCostBasis ?? null,
         itemCode: row?.itemCode ?? null,
@@ -1786,7 +1795,6 @@ export class PriceBucketGateway {
           exact: boolean;
           lineCost: Prisma.Decimal | null;
           lineCostWot: Prisma.Decimal | null;
-          stockCost: Prisma.Decimal | null;
           stockCostWot: Prisma.Decimal | null;
           stockCostBasis: 'MRP' | 'ITEM' | null;
           profitType: string;
@@ -1953,7 +1961,6 @@ export class PriceBucketGateway {
              CASE WHEN ${exact} THEN p.ipm_price_b_markup_perc END AS "markupB",
              CASE WHEN ${exact} THEN p.ipm_price_c_markup_perc END AS "markupC",
              CASE WHEN ${exact} THEN p.ipm_price_d_markup_perc END AS "markupD",
-             ${stock.rate}                AS "stockCost",
              ${stock.wot}                 AS "stockCostWot",
              ${stock.basis}               AS "stockCostBasis",
              COALESCE(NULLIF(btrim(p.ipm_profit_type), ''), 'By User') AS "profitType",
@@ -2034,7 +2041,6 @@ export class PriceBucketGateway {
         lineKind,
         lineCost: amount(row.lineCost),
         lineCostWot: amount(row.lineCostWot),
-        stockCost: amount(row.stockCost),
         stockCostWot: amount(row.stockCostWot),
         stockCostBasis: row.stockCostBasis,
         profitType: row.profitType,

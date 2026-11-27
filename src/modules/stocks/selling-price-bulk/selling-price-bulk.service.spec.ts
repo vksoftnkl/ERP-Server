@@ -191,8 +191,8 @@ describe('SellingPriceBulkService', () => {
               costRate: COST,
               costWot: COST / 1.18,
               costBasis: 'ITEM',
-              // P1 / review S1: COST is the stock cost (what the stock-first figure was).
-              stockCost: COST,
+              // P1 / review S1: COST is the stock cost (what the stock-first figure was); the
+              // reader answers it without GST (2026-11-27), the judge adds the item's 18 % back.
               stockCostWot: COST / 1.18,
               stockCostBasis: 'ITEM',
               minPrice: 0,

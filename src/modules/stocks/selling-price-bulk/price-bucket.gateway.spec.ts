@@ -367,7 +367,6 @@ describe('PriceBucketGateway', () => {
         lineCost: null,
         lineCostWot: null,
         lineRoundOff: null,
-        stockCost: null,
         stockCostWot: null,
         stockCostBasis: null,
       };

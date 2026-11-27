@@ -100,7 +100,8 @@ export class SellingPriceBulkController {
       'own (priced by the headline). Every old key stays with its old meaning (costRate / ' +
       'costWot / costBasis = the stock-first cost, deprecated); new per line: lineKind, ' +
       "lineCost / lineCostWot (the line's own ipm_cost_price), stockCost / stockCostWot / " +
-      'stockCostBasis (MRP landing cost or branch average × unitFactor, null = none), ' +
+      'stockCostBasis (MRP landing cost or branch average × unitFactor; stockCost WITH GST = ' +
+      'stockCostWot × (1 + taxPerc ÷ 100), null = none), ' +
       'otherBranchesStockCost (All branches lines: the other branches reading it, lowest – ' +
       'highest), profitType, companyId / companyName, branchId / branchName (null = All ' +
       "branches), unitFactor / unitSlNo / isDefaultUnit, and the item row's facts " +

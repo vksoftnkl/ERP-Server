@@ -164,7 +164,8 @@ describe('PurchasePriceStepService', () => {
             itemCode: 'X', itemName: itemRow?.itemName ?? 'ITEM', uomBelongs: true, trackMrp: itemRow?.trackMrp ?? false, trackSalePrice: false,
             costRate: 0, costWot: 0, costBasis: null, minPrice: row?.minPrice ?? 0, unitName: row?.unitName ?? null, unitFactor: row?.unitFactor ?? 1,
             lineCost: row?.lineCost ?? null, lineCostWot: row?.lineCostWot ?? null, lineRoundOff: row?.roundOff ?? null,
-            stockCost: sc, stockCostWot: sc === null ? null : sc / 1.05, stockCostBasis: sc === null ? null : 'ITEM',
+            // 2026-11-27 — the reader answers the stock cost without GST (the oil's 5 % is added by the judge)
+            stockCostWot: sc === null ? null : sc / 1.05, stockCostBasis: sc === null ? null : 'ITEM',
           };
         })),
       // the real verdicts
@@ -386,8 +387,19 @@ describe('PurchasePriceStepService', () => {
   });
 
   // ── the policy table (§4.8 + addendum §4) ─────────────────────────────────
-  it('below the judged cost under warning: prices + MSP kept, the cost moves, COST_ONLY, PUR_PRICE_NOT_WRITTEN', async () => {
+  it("2026-11-27 (one lot per bill line): a stock cost above this bill's cost is not judged at post — UPDATED, no note", async () => {
     stockCost.set(`${BOX}|`, 1650);
+    const out = await run('UPDATE_PRICES');
+    expect(out.lines.get('L1')!.result).toBe('UPDATED');
+    expect(pricesOf(BOX)).toEqual([[1, 1628], [2, 1699]]);
+    expect(out.notes).toEqual([]);
+    // judged on the bill's own cost alone: no stock cost beside it
+    expect(written(BOX)!.candidate).toMatchObject({ costRate: 1415.631, judgeCost: 1415.631, stockCost: null, ownCostOnly: true });
+  });
+
+  it("below this bill's cost under warning: prices + MSP kept, the cost moves, COST_ONLY, PUR_PRICE_NOT_WRITTEN names only the bill's cost", async () => {
+    stockCost.set(`${BOX}|`, 1650);
+    lines = [billLine({ sells: [D(1400), null, null, null] })];
     const out = await run('UPDATE_PRICES');
     // the bill line says what its BOUGHT line got (the PCS chain moved by its own rule, and is in pii_old_prices)
     expect(out.lines.get('L1')!.result).toBe('COST_ONLY');
@@ -396,35 +408,33 @@ describe('PurchasePriceStepService', () => {
     expect(written(BOX)!.candidate.costRate).toBe(1415.631);
     const nw = out.notes.filter((n) => n.code === 'PUR_PRICE_NOT_WRITTEN');
     expect(nw.map((n) => n.params?.level)).toEqual(['WS']);
-    // S4 — rule=BELOW_COST: {level} {price} {cost} (the judged, higher cost), and both costs (A3-C)
+    // S4 — rule=BELOW_COST: {level} {price} {cost}; 2026-11-27 — the cost is this bill's, no stock cost
     expect(nw[0]).toMatchObject({ rule: 'BELOW_COST' });
     expect(nw[0].params).toEqual({
-      n: 1, level: 'WS', price: '1,628.00', item: 'GOLD WINNER OIL 1L', unit: 'BOX', cost: '1,650.00', lineCost: '1,415.63', stockCost: '1,650.00',
+      n: 1, level: 'WS', price: '1,400.00', item: 'GOLD WINNER OIL 1L', unit: 'BOX', cost: '1,415.63', lineCost: '1,415.63',
     });
     expect(nw[0].message).toBe(
-      'Line 1: WS 1,628.00 of GOLD WINNER OIL 1L BOX would be below the cost 1,650.00 (this bill 1,415.63, stock 1,650.00), ' +
-        'so its prices were kept; its cost moved.',
+      'Line 1: WS 1,400.00 of GOLD WINNER OIL 1L BOX would be below the cost 1,415.63, so its prices were kept; its cost moved.',
     );
   });
 
-  it('below the judged cost under restrict: the same (nobody can confirm at post)', async () => {
+  it("below this bill's cost under restrict: the same (nobody can confirm at post)", async () => {
     settings.belowCost = 'restrict';
-    stockCost.set(`${BOX}|`, 1650);
-    lines = [billLine({ itemId: OIL })];
+    lines = [billLine({ itemId: OIL, sells: [D(1400), null, null, null] })];
     rows = [oilRows()[0]];
     const out = await run('UPDATE_PRICES');
     expect(out.lines.get('L1')!.result).toBe('COST_ONLY');
     expect(pricesOf(BOX)).toEqual([[1, 1565], [2, 1633]]);
   });
 
-  it('below the judged cost under allow: written, and PUR_PRICE_BELOW_NEW_COST says so', async () => {
+  it("below this bill's cost under allow: written, and PUR_PRICE_BELOW_NEW_COST says so (the bill's cost)", async () => {
     settings.belowCost = 'allow';
-    stockCost.set(`${BOX}|`, 1650);
+    lines = [billLine({ sells: [D(1400), null, null, null] })];
     rows = [oilRows()[0]];
     const out = await run('UPDATE_PRICES');
     expect(out.lines.get('L1')!.result).toBe('UPDATED');
-    expect(pricesOf(BOX)).toEqual([[1, 1628], [2, 1699]]);
-    expect(out.notes.map((n) => [n.code, n.params?.level])).toEqual([['PUR_PRICE_BELOW_NEW_COST', 'WS']]);
+    expect(pricesOf(BOX)).toEqual([[1, 1400], [2, 1699]]);
+    expect(out.notes.map((n) => [n.code, n.params?.level, n.params?.cost])).toEqual([['PUR_PRICE_BELOW_NEW_COST', 'WS', '1,415.63']]);
   });
 
   it('U1 (decision 35): above a plain line\'s TYPED MRP — kept, COST_ONLY, rule=ABOVE_MRP; not judged under skip_mrp', async () => {
@@ -593,6 +603,33 @@ describe('PurchasePriceStepService', () => {
     // S5 — the rows come locked (lockTargets, sorted, in saveBulk): assertLatest locks none row by row
     expect(priceGateway.findBucketRowForUpdate).not.toHaveBeenCalled();
     expect(afterWrite).not.toHaveBeenCalled();
+  });
+
+  it("fromPurchase (2026-11-27): the bill's own keys with a cost on the bill are judged on their own cost only (ownCostOnly)", async () => {
+    rows = [...oilRows(), ...bruRows()];
+    lines = [
+      billLine(),
+      bruLine(),
+      bruLine({ piiId: 'L3', lineNo: 3, landedCostWot: D(0), billedQty: D(0), freeQty: D(12), portions: [{ mrp: D(560), salePrice: null, baseQty: D(12) }] }),
+    ];
+    jest.spyOn(bulk, 'assertCanEditPrices').mockResolvedValue(undefined);
+    jest.spyOn(bulk, 'assertBranchAllowed').mockResolvedValue(undefined);
+    let hooks: Parameters<SellingPriceBulkService['saveBulk']>[1];
+    jest.spyOn(bulk, 'saveBulk').mockImplementation(async (_dto, given) => {
+      hooks = given;
+      return {} as never;
+    });
+    await service.saveFromPurchase({ companyId: CO, branchId: BR, rows: [], fromPurchase: { piId: BILL.piId, accYear: BILL.accYear } } as never);
+    const ask = (itemId: string, mrp: number | null, cost: Partial<RowCost>) =>
+      hooks!.ownCostOnly!(0, { itemId } as never, { mrp, salePrice: null }, { trackMrp: false, trackSalePrice: false, unitFactor: 1, ...cost } as RowCost);
+    // OIL is a plain item (its key is the item): the bought BOX and its PCS chain unit
+    expect(ask(OIL, null, { unitFactor: 12 })).toBe(true);
+    expect(ask(OIL, null, { unitFactor: 1 })).toBe(true);
+    // BRU MRP 300 bought at a cost; MRP 560 free only (no bill cost: A3-C as before); MRP 540 not on the bill
+    expect(ask(BRU, 300, { trackMrp: true })).toBe(true);
+    expect(ask(BRU, 560, { trackMrp: true })).toBe(false);
+    expect(ask(BRU, 540, { trackMrp: true })).toBe(false);
+    expect(ask('01000000-0000-7000-8000-00000000a0ff', null, {})).toBe(false);
   });
 
   // ── afterPurchase.laterBill (user OK 2026-11-26) ──────────────────────────

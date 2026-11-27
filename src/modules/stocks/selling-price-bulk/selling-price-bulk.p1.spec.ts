@@ -39,7 +39,13 @@ const TODAY = '2026-11-23';
 
 const dec = (value: number) => new Prisma.Decimal(value);
 
-/** A cost probe answer: line cost 100, stock cost 90 unless overridden. */
+/**
+ * 2026-11-27 — the reader answers the stock cost WITHOUT GST; the judge adds the item's GST (5 % in
+ * this file) with stockCostWithGst. `wot5(90)` is the without-GST figure of a 90.00 stock cost.
+ */
+const wot5 = (withGst: number) => withGst / 1.05;
+
+/** A cost probe answer: line cost 100, stock cost 90 (85.714286 + 5 % GST) unless overridden. */
 const rowCost = (overrides: Partial<RowCost> = {}): RowCost => ({
   itemCode: 'ZT1',
   itemName: 'ZT-CSP-PLAIN',
@@ -55,7 +61,6 @@ const rowCost = (overrides: Partial<RowCost> = {}): RowCost => ({
   lineCost: 100,
   lineCostWot: 95.238095,
   lineRoundOff: 0,
-  stockCost: 90,
   stockCostWot: 85.714286,
   stockCostBasis: 'ITEM',
   ...overrides,
@@ -208,7 +213,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
   // ── A3 option C — the higher of the line's own cost and the stock cost ──────
   describe('below cost on the higher of the two costs (A3 option C)', () => {
     it('judges on the line cost when it is the higher one: rule LINE_COST, both costs named', async () => {
-      cost = rowCost({ lineCost: 100, stockCost: 90 });
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(90) });
       const result = await service.saveBulk(save([line({ levels: [{ level: 1, price: 95 }] })]));
 
       expect(result.needsConfirm).toBe(true);
@@ -236,7 +241,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
     });
 
     it('judges on the stock cost when it is the higher one, even under a typed lower cost: rule STOCK_COST', async () => {
-      cost = rowCost({ stockCost: 200 });
+      cost = rowCost({ stockCostWot: wot5(200) });
       const result = await service.saveBulk(
         save([line({ costPrice: 100, levels: [{ level: 1, price: 150 }] })]),
       );
@@ -261,7 +266,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
     });
 
     it('a price between the two costs is below cost (the higher one wins), above both is not', async () => {
-      cost = rowCost({ lineCost: 300, stockCost: 200 });
+      cost = rowCost({ lineCost: 300, stockCostWot: wot5(200) });
       const between = await service.saveBulk(save([line({ levels: [{ level: 1, price: 210 }] })]));
       expect(between.problems).toEqual([expect.objectContaining({ rule: 'LINE_COST', cost: 300 })]);
 
@@ -304,7 +309,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       settings.resolveEffective.mockResolvedValue([
         { asdKey: 'inventory.below_cost_price', value: 'restrict' },
       ]);
-      cost = rowCost({ lineCost: 100, stockCost: 90 });
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(90) });
       const refused = await codesOf(
         service.saveBulk(save([line({ levels: [{ level: 1, price: 95 }] })])),
       );
@@ -317,8 +322,8 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       });
     });
 
-    it('menu 244 / purchases get the same judge: prepareBulk without keepLineCost still judges the stock cost', async () => {
-      cost = rowCost({ costRate: 90, lineCost: 100, stockCost: 150 });
+    it('menu 244 gets the same judge: prepareBulk without keepLineCost still judges the stock cost', async () => {
+      cost = rowCost({ costRate: 90, lineCost: 100, stockCostWot: wot5(150) });
       const prepared = await service.prepareBulk(
         tx as never,
         save([
@@ -345,7 +350,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
         costWot: 85.714286,
         lineCost: 100,
         lineCostWot: 95.238095,
-        stockCost: 90,
+        stockCostWot: wot5(90),
       });
       await service.saveBulk(save([line({ levels: [{ level: 1, price: 120 }] })]));
 
@@ -420,7 +425,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
     });
 
     it('names a branch whose stock cost is above the line cost and the price; asks before writing', async () => {
-      cost = rowCost({ lineCost: 100, stockCost: 90 });
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(90) });
       gateway.otherBranchStockCosts.mockResolvedValue([[counter2(125)]]);
       const result = await service.saveBulk(save([line()]));
 
@@ -428,7 +433,8 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
         companyId: COMPANY,
         excludeBranchId: BRANCH,
         onDate: TODAY,
-        probes: [{ itemId: ITEM, uomId: UOM, mrp: null, salePrice: null }],
+        // 2026-11-27 — the item's GST %: the other branches' stock cost is made WITH it
+        probes: [{ itemId: ITEM, uomId: UOM, mrp: null, salePrice: null, taxPerc: 5 }],
       });
       expect(result.needsConfirm).toBe(true);
       expect(result.problems).toEqual([
@@ -453,7 +459,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
     });
 
     it('a branch whose stock cost is under the line cost is not named (the line cost was reported once)', async () => {
-      cost = rowCost({ lineCost: 130, stockCost: 90 });
+      cost = rowCost({ lineCost: 130, stockCostWot: wot5(90) });
       gateway.otherBranchStockCosts.mockResolvedValue([[counter2(125)]]);
       const result = await service.saveBulk(save([line({ levels: [{ level: 1, price: 120 }] })]));
 
@@ -502,8 +508,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
             branchId: OTHER_BRANCH,
             branchName: 'Counter2',
             stockQty: dec(50),
-            stockCost: dec(11),
-            stockCostWot: dec(10.47),
+            stockCostWot: dec(10),
             basis: 'ITEM',
           },
           {
@@ -511,7 +516,6 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
             branchId: 'x',
             branchName: 'No cost',
             stockQty: dec(5),
-            stockCost: null,
             stockCostWot: null,
             basis: null,
           },
@@ -520,10 +524,11 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       const answer = await StockCostReader.otherBranches(client, {
         companyId: COMPANY,
         excludeBranchId: BRANCH,
-        probes: [{ itemId: ITEM, uomId: UOM, mrp: null, salePrice: null }],
+        probes: [{ itemId: ITEM, uomId: UOM, mrp: null, salePrice: null, taxPerc: 5 }],
       });
+      // 2026-11-27 — the SQL answers 10.00 without GST; the branch's stock cost is 10.50 with 5 % GST
       expect(answer).toEqual([
-        [expect.objectContaining({ branchName: 'Counter2', stockCost: 11 })],
+        [expect.objectContaining({ branchName: 'Counter2', stockCost: 10.5, stockCostWot: 10 })],
       ]);
       const [strings, ...values] = client.$queryRaw.mock.calls[0] as [
         TemplateStringsArray,
@@ -587,7 +592,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
     });
 
     it('a new key is inserted at its scope with its typed cost', async () => {
-      cost = rowCost({ trackMrp: true, lineCost: null, stockCost: null });
+      cost = rowCost({ trackMrp: true, lineCost: null, stockCostWot: null });
       await service.saveBulk(
         save([
           line({
@@ -880,7 +885,6 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       lineKind: 'HEADLINE',
       lineCost: 100,
       lineCostWot: 95.238095,
-      stockCost: 90,
       stockCostWot: 85.714286,
       stockCostBasis: 'ITEM',
       profitType: 'By %',
@@ -952,7 +956,9 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
         lineNo: 1,
         lineKind: 'HEADLINE',
         lineCost: 100,
+        // 2026-11-27 — the record carries 85.714286 without GST; the line answers it with 5 % GST
         stockCost: 90,
+        stockCostWot: 85.714286,
         taxName: 'GST 5%',
         taxPerc: 5,
         otherBranchesStockCost: {
@@ -977,7 +983,6 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
         costBasis: 'ITEM',
         lineCost: null,
         lineCostWot: null,
-        stockCost: null,
         stockCostWot: null,
         stockCostBasis: null,
       });
@@ -990,18 +995,19 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       expect(prepared.belowCost).toEqual([]);
     });
 
-    it('S1: menu 30, no cost of its own but a stock cost -> stores and judges the stock cost', async () => {
-      cost = rowCost({ costRate: 341.67, lineCost: null, lineCostWot: null, stockCost: 25, stockCostWot: 23.8 });
+    it('S1: menu 30, no cost of its own but a stock cost -> stores and judges the stock cost (Cost with GST, Cost Wot without)', async () => {
+      // 2026-11-27 — 23.80 without GST + 5 % = 24.99: the line stores the pair on decision 12's footing
+      cost = rowCost({ costRate: 341.67, lineCost: null, lineCostWot: null, stockCostWot: 23.8 });
       const prepared = await service.prepareBulk(tx as never, save([line()]), {
         actor: USER,
         policy: 'warning',
         keepLineCost: true,
       });
-      expect(prepared.candidates[0]).toMatchObject({ costRate: 25, costWot: 23.8, judgeCost: 25 });
+      expect(prepared.candidates[0]).toMatchObject({ costRate: 24.99, costWot: 23.8, judgeCost: 24.99, stockCost: 24.99 });
     });
 
     it('S2: menu 244 sends no cost on an MRP row -> judged on the higher of the line\'s own cost and the stock cost', async () => {
-      cost = rowCost({ trackMrp: true, costRate: 450, lineCost: 500, stockCost: 450 });
+      cost = rowCost({ trackMrp: true, costRate: 450, lineCost: 500, stockCostWot: wot5(450) });
       const prepared = await service.prepareBulk(
         tx as never,
         save([line({ mrp: 600, scope: undefined, priceScope: 'BRANCH', levels: [{ level: 1, price: 480 }] })]),
@@ -1014,8 +1020,8 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
       ]);
     });
 
-    it('S2: a purchase sends this bill\'s cost -> judged on it (and the stock cost), not on the line\'s stored cost', async () => {
-      cost = rowCost({ costRate: 90, lineCost: 500, stockCost: 90 });
+    it('S2: a sent cost is judged on it (and the stock cost), not on the line\'s stored cost', async () => {
+      cost = rowCost({ costRate: 90, lineCost: 500 });
       const prepared = await service.prepareBulk(
         tx as never,
         save([line({ costPrice: 100, scope: undefined, priceScope: 'BRANCH', levels: [{ level: 1, price: 120 }] })]),
@@ -1026,7 +1032,7 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
     });
 
     it('S2 / S7: an MRP item with neither cost is not judged on the stored (mixed) figure', async () => {
-      cost = rowCost({ trackMrp: true, costRate: 341.67, lineCost: null, stockCost: null });
+      cost = rowCost({ trackMrp: true, costRate: 341.67, lineCost: null, stockCostWot: null });
       const prepared = await service.prepareBulk(
         tx as never,
         save([line({ scope: undefined, priceScope: 'BRANCH', levels: [{ level: 1, price: 100 }] })]),
@@ -1037,12 +1043,118 @@ describe('Change Selling Price P1 — SellingPriceBulkService', () => {
     });
 
     it('S4: a hidden (inactive) level below cost neither asks nor refuses on menu 30', async () => {
-      cost = rowCost({ lineCost: 100, stockCost: 90 });
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(90) });
       const result = await service.saveBulk(
         save([line({ levels: [{ level: 1, price: 120 }, { level: 3, price: 90 }] })]),
       );
       expect(result).toMatchObject({ needsConfirm: false });
       expect(result.problems.filter((p) => p.level === 3)).toEqual([]);
+    });
+  });
+
+  // ── CSP P2 follow-up (user "Go" 2026-11-27) ─────────────────────────────────
+  describe("one footing, and a purchase's own rows judged on their own cost (2026-11-27)", () => {
+    const counter2 = {
+      branchId: OTHER_BRANCH,
+      branchName: 'Counter2',
+      stockQty: 5,
+      stockCost: 300,
+      stockCostWot: 285.714286,
+      basis: 'ITEM' as const,
+    };
+
+    it('A3-C on one footing: 100.00 without GST is a 105.00 stock cost at 5 %, above the line cost 100 (STOCK_COST)', async () => {
+      cost = rowCost({ lineCost: 100, stockCostWot: 100 });
+      const result = await service.saveBulk(save([line({ levels: [{ level: 1, price: 104 }] })]));
+
+      expect(result.problems).toEqual([
+        expect.objectContaining({ rule: 'STOCK_COST', cost: 105, lineCost: 100, stockCost: 105 }),
+      ]);
+    });
+
+    it('a stock cost equal to the line cost as shown (2 dp) names the line cost (LINE_COST), not the stock cost', async () => {
+      // E1: the bill stored 1,415.631; its own lot reads 1,348.220004 + 5 % = 1,415.631004
+      cost = rowCost({ lineCost: 1415.631, stockCostWot: 1348.220004 });
+      const result = await service.saveBulk(save([line({ levels: [{ level: 1, price: 1400 }] })]));
+
+      expect(result.problems).toEqual([
+        expect.objectContaining({ rule: 'LINE_COST', cost: 1415.63, lineCost: 1415.63, stockCost: 1415.63 }),
+      ]);
+    });
+
+    it('ownCostOnly: judged on the cost the row sends alone — no stock cost beside it, no other branch (C6)', async () => {
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(200) });
+      gateway.otherBranchStockCosts.mockResolvedValue([[counter2]]);
+      const ownCostOnly = jest.fn(() => true);
+      const prepared = await service.prepareBulk(
+        tx as never,
+        save([line({ costPrice: 150, levels: [{ level: 1, price: 160 }] })]),
+        { actor: USER, policy: 'warning', keepLineCost: true, ownCostOnly },
+      );
+
+      expect(ownCostOnly).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ itemId: ITEM, costPrice: 150 }),
+        { mrp: null, salePrice: null },
+        cost,
+      );
+      expect(prepared.candidates[0]).toMatchObject({
+        costRate: 150,
+        ownCost: 150,
+        judgeCost: 150,
+        stockCost: null,
+        ownCostOnly: true,
+      });
+      expect(prepared.problems).toEqual([]);
+      expect(gateway.otherBranchStockCosts).not.toHaveBeenCalled();
+    });
+
+    it('ownCostOnly: below its own cost is the plain "below the cost" (no rule, no stock cost named)', async () => {
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(200) });
+      const prepared = await service.prepareBulk(
+        tx as never,
+        save([line({ costPrice: 150, levels: [{ level: 1, price: 140 }] })]),
+        { actor: USER, policy: 'warning', ownCostOnly: () => true },
+      );
+
+      expect(prepared.belowCost).toEqual([
+        expect.objectContaining({ verdict: 'BELOW_COST', cost: 150, lineCost: 150, stockCost: null }),
+      ]);
+      expect(prepared.belowCost[0]).not.toHaveProperty('rule');
+      expect(prepared.belowCost[0].params).not.toHaveProperty('stockCost');
+    });
+
+    it('ownCostOnly is not asked for a row that sends no cost: it keeps A3-C (the line cost and the stock cost)', async () => {
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(200) });
+      const ownCostOnly = jest.fn(() => true);
+      const prepared = await service.prepareBulk(
+        tx as never,
+        save([line({ scope: 'BRANCH', priceScope: 'BRANCH', levels: [{ level: 1, price: 150 }] })]),
+        { actor: USER, policy: 'warning', keepLineCost: true, ownCostOnly },
+      );
+
+      expect(ownCostOnly).not.toHaveBeenCalled();
+      expect(prepared.candidates[0]).toMatchObject({ judgeCost: 200, stockCost: 200 });
+      expect(prepared.belowCost).toEqual([expect.objectContaining({ rule: 'STOCK_COST', cost: 200 })]);
+    });
+
+    it("the purchase view's save hands its ownCostOnly to prepareBulk: the bill's row is written, nothing asked", async () => {
+      cost = rowCost({ lineCost: 100, stockCostWot: wot5(200) });
+      gateway.otherBranchStockCosts.mockResolvedValue([[counter2]]);
+      const result = await service.saveBulk(
+        save([line({ costPrice: 150, levels: [{ level: 1, price: 160 }] })]),
+        {
+          reason: 'From purchase PI-1 (27-11-2026)',
+          fromPurchase: { piId: 'pi', accYear: '2026-2027', refno: 'PI-1' },
+          afterPrepare: jest.fn().mockResolvedValue(undefined),
+          afterWrite: jest.fn().mockResolvedValue(undefined),
+          ownCostOnly: () => true,
+        },
+      );
+
+      expect(result).toMatchObject({ needsConfirm: false, problems: [] });
+      expect(gateway.otherBranchStockCosts).not.toHaveBeenCalled();
+      expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({ costRate: 150, judgeCost: 150 });
     });
   });
 });
@@ -1081,7 +1193,6 @@ describe('Change Selling Price P1 — PriceBucketGateway.listPriceLines', () => 
     markupB: null,
     markupC: null,
     markupD: null,
-    stockCost: dec(90),
     stockCostWot: dec(85),
     stockCostBasis: 'ITEM',
     profitType: 'By %',

@@ -63,7 +63,7 @@ describe('PurchasePriceStepService.afterPurchase — the line MSP (P9)', () => {
       priceLevels: jest.fn(async () => [1, 2, 3, 4].map((level) => ({ level, name: `L${level}`, active: true }))),
       loadRowCosts: jest.fn(async (): Promise<RowCost[]> => [{
         itemCode: 'RICE', itemName: 'Rice 25 Kg', uomBelongs: true, trackMrp: false, trackSalePrice: false, costRate: 95, costWot: 95,
-        costBasis: 'ITEM', minPrice: stored.min, unitName: 'BAG', stockCost: null,
+        costBasis: 'ITEM', minPrice: stored.min, unitName: 'BAG', stockCostWot: null,
       }]),
       validateRows: jest.fn((c: BucketPriceCandidate[], m: number[], o: object) => PriceBucketGateway.prototype.validateRows.call({}, c, m, o)),
       findBucketRowForUpdate: jest.fn(async () => ({ ipmId: IPM, effectiveFrom: '1900-01-01', effectiveTo: '9999-12-31' })),

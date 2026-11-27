@@ -251,7 +251,10 @@ export interface SellingPriceLineFields {
   /** ipm_cost_price / ipm_cost_wot of the line itself; null on NO_PRICE and an unpriced HEADLINE. */
   lineCost: number | null;
   lineCostWot: number | null;
-  /** This MRP's landing cost (MRP line) else the branch average, × the unit factor; null = none. */
+  /**
+   * This MRP's landing cost (MRP line) else the branch average, × the unit factor; null = none.
+   * WITH GST (stockCostWithGst: stockCostWot × (1 + taxPerc ÷ 100), 2026-11-27); the Wot without.
+   */
   stockCost: number | null;
   stockCostWot: number | null;
   stockCostBasis: 'MRP' | 'ITEM' | null;

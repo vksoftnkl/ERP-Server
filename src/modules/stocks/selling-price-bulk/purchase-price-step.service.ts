@@ -722,6 +722,12 @@ export class PurchasePriceStepService {
       },
       // N4 — the scheduled rows of each saved key are locked with the rows (sorted, S5).
       lockFuture: true,
+      // User 2026-11-27 ("every purchase and its stock is a single line maintenance") — the bill's
+      // own rows (its bought keys and their chain units, with a cost on the bill) are judged below
+      // cost on the cost they send only, as the post's automatic modes judge them: a price that
+      // UPDATE_PRICES writes silently is not asked about here. Any other row keeps A3-C (and C6).
+      ownCostOnly: (_index, row, key, cost) =>
+        isBillKey(lines, { itemId: row.itemId, mrp: key.mrp, salePrice: key.salePrice }, cost, { costed: true }),
       afterPrepare: async (tx, prepared) => {
         await this.assertLatest(tx, bill, lines, prepared);
       },
@@ -761,30 +767,9 @@ export class PurchasePriceStepService {
     lines: readonly StepBillLine[],
     prepared: PreparedBulkSave,
   ): Promise<void> {
-    const itemIds = new Set(lines.map((line) => line.itemId));
-    const keysOf = (itemId: string, trackMrp: boolean, trackSp: boolean) =>
-      lines
-        .filter((line) => line.itemId === itemId)
-        .flatMap((line) =>
-          line.portions.map((p) => ({
-            mrp: trackMrp ? keyPerBase(p.mrp, line.factor) : null,
-            sp: trackSp ? keyPerBase(p.salePrice, line.factor) : null,
-          })),
-        );
     const mine = prepared.candidates
       .map((candidate, index) => ({ candidate, index }))
-      .filter(({ candidate, index }) => {
-        if (!itemIds.has(candidate.itemId)) {
-          return false;
-        }
-        const cost = prepared.costs[index];
-        const factor = D(cost.unitFactor ?? 1);
-        const mrp = cost.trackMrp ? keyPerBase(candidate.mrp === null ? null : D(candidate.mrp), factor) : null;
-        const sp = cost.trackSalePrice ? keyPerBase(candidate.salePrice === null ? null : D(candidate.salePrice), factor) : null;
-        return keysOf(candidate.itemId, cost.trackMrp, cost.trackSalePrice).some(
-          (key) => sameKey(key.mrp, mrp) && sameKey(key.sp, sp),
-        );
-      });
+      .filter(({ candidate, index }) => isBillKey(lines, candidate, prepared.costs[index]));
     if (!mine.length) {
       return;
     }
@@ -836,7 +821,9 @@ export class PurchasePriceStepService {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * In THE BILL'S post transaction, after its stock (so the judged stock cost includes it):
+   * In THE BILL'S post transaction, after its stock. Below cost is judged on THIS bill's own cost
+   * for each key (the cost the line stores; user 2026-11-27: every purchase line is its own stock
+   * lot), never the higher of it and the branch / MRP stock average:
    *   NONE                 every line OFF, nothing read;
    *   OPEN_CHANGE_SELLING  nothing written; LATER_BILL where a later bill bought the key, else
    *                        TO_REVIEW (one PUR_PRICE_TO_REVIEW note for a buyer without Edit on 30);
@@ -1052,7 +1039,13 @@ export class PurchasePriceStepService {
           minPrice: withPrices && proposal.minPrice !== null ? proposal.minPrice.toNumber() : null,
           maxPrice: withPrices && proposal.maxPrice !== null ? proposal.maxPrice.toNumber() : null,
         } as unknown as SaveSellingPriceRowDto;
-        return this.bulk.toCandidate(dto, 0, bill.companyId, args.actor, taxRates, cost, { keepCost: () => keyed });
+        // User 2026-11-27 — every purchase line is its own stock lot, so the bill's cost IS that
+        // stock's cost: below cost is judged on it alone (ownCostOnly), not the higher of it and the
+        // branch / MRP stock average.
+        return this.bulk.toCandidate(dto, 0, bill.companyId, args.actor, taxRates, cost, {
+          keepCost: () => keyed,
+          ownCostOnly: () => true,
+        });
       };
       let candidate = build(args.mode === 'UPDATE_PRICES');
       let result: PurchasePriceResult = args.mode === 'UPDATE_PRICES' ? 'UPDATED' : 'COST_ONLY';
@@ -1335,9 +1328,8 @@ export class PurchasePriceStepService {
    * price and the figure it broke —
    *   rule=ABOVE_MRP   above a bucket's MRP or a plain line's typed MRP (U1): {mrp}
    *   rule=BELOW_MIN   below the MSP / minimum price: {min}
-   *   rule=BELOW_COST  below the judged cost (A3-C, the higher of this bill's cost and the stock
-   *                    cost at the bill's branch): {cost}, plus {lineCost} (this bill's) and
-   *                    {stockCost} (only when the branch has one)
+   *   rule=BELOW_COST  below this bill's own cost for the key (user 2026-11-27: the bill's cost
+   *                    only, no stock average beside it): {cost}, and {lineCost} (the same figure)
    *   rule=NEW_LINE_ABOVE_MRP / NEW_LINE_BELOW_MIN / NEW_LINE_BELOW_COST — the same on a Q9 new
    *                    line: nothing was written, "so no price line was made" — one rule per limit,
    *                    so the wording row can name it, with the same figure params.
@@ -1380,16 +1372,10 @@ export class PurchasePriceStepService {
         const min = money(D(refused.minPrice));
         push(level, price, `would be below its minimum price ${min}`, 'BELOW_MIN', { min });
       } else {
+        // User 2026-11-27 — judged on this bill's cost alone: the words name only that cost.
         const cost = money(D(p.cost ?? refused.judged.judgeCost ?? refused.judged.costRate));
         const lineCost = p.lineCost !== undefined && p.lineCost !== null ? money(D(p.lineCost)) : null;
-        const stockCost = p.stockCost !== undefined && p.stockCost !== null ? money(D(p.stockCost)) : null;
-        push(
-          level,
-          price,
-          `would be below the cost ${cost}` + (lineCost && stockCost ? ` (this bill ${lineCost}, stock ${stockCost})` : ''),
-          'BELOW_COST',
-          { cost, ...(lineCost ? { lineCost } : {}), ...(stockCost ? { stockCost } : {}) },
-        );
+        push(level, price, `would be below the cost ${cost}`, 'BELOW_COST', { cost, ...(lineCost ? { lineCost } : {}) });
       }
     }
     for (const above of refused.aboveTyped) {
@@ -1958,6 +1944,34 @@ function whenText(at: Date, withYear: boolean): string {
     .replace(/\//g, '-')
     .replace(',', '')
     .toUpperCase();
+}
+
+/**
+ * §7.3 — whether a save row is one of the bill's: its item is on the bill and its key (per base
+ * unit, Q5 / Q12) is one the bill bought — the bought key itself, or a chain unit of it (a plain
+ * item's key is the item: every unit). `cost` is the row's RowCost (the policy and the unit factor
+ * at the bill's branch); `row.mrp` / `row.salePrice` its key after the policy blanked it.
+ * `costed` — only a key the bill paid for (a landed cost above 0; free goods alone have none).
+ */
+function isBillKey(
+  lines: readonly StepBillLine[],
+  row: { itemId: string; mrp: number | null; salePrice: number | null },
+  cost: Pick<RowCost, 'trackMrp' | 'trackSalePrice' | 'unitFactor'>,
+  opts: { costed?: boolean } = {},
+): boolean {
+  const factor = D(cost.unitFactor ?? 1);
+  const mrp = cost.trackMrp ? keyPerBase(row.mrp === null ? null : D(row.mrp), factor) : null;
+  const sp = cost.trackSalePrice ? keyPerBase(row.salePrice === null ? null : D(row.salePrice), factor) : null;
+  return lines.some(
+    (line) =>
+      line.itemId === row.itemId &&
+      (!opts.costed || line.landedCostWot.greaterThan(0)) &&
+      line.portions.some(
+        (p) =>
+          sameKey(cost.trackMrp ? keyPerBase(p.mrp, line.factor) : null, mrp) &&
+          sameKey(cost.trackSalePrice ? keyPerBase(p.salePrice, line.factor) : null, sp),
+      ),
+  );
 }
 
 /** exclusion_violation — as a typed error (P2002-style) or a raw query's P2010 with meta.code. */

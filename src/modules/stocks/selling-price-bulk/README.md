@@ -101,6 +101,9 @@ A price line has TWO costs, and P1 keeps them apart:
   as the item card shows it);
 - the **stock cost** — what was paid here: this MRP's landing cost (its lots), else the branch
   average, × the unit factor (`stock-cost.reader.ts`, `StockCostReader`). Null when there is none.
+  The SQL reads it WITHOUT GST (`stockCostWot`; a purchase lot is costed on the ITC figure);
+  `stockCost` is ALWAYS `stockCostWithGst` = stockCostWot × (1 + the item's GST %), the line
+  cost's own footing (decision 12; user "Go" 2026-11-27).
 
 What a save STORES in `ipm_cost_price`:
 
@@ -116,6 +119,11 @@ BOTH are above 0, `rule` LINE_COST or STOCK_COST naming the higher (the wording 
 `rule=LINE_COST` / `rule=STOCK_COST`); with one cost known there is no rule and the old words
 stand. `params` = level (short name), price, cost, lineCost, stockCost (2 dp), unit, mrp, item, n.
 `inventory.below_cost_price` (restrict / warning / allow) decides what happens, as before.
+
+**A purchase's own rows (user 2026-11-27: "every purchase and its stock is a single line
+maintenance").** The post's price step, and the bill's own keys saved from menu 30's purchase
+view (`fromPurchase`, a row that sends a cost and whose key the bill bought at a cost), are judged
+on the cost they send ALONE (`ownCostOnly`): no stock cost beside it and no other branch (C6).
 
 **Every branch (C6, O10).** A row written at CHAIN scope is also judged at every OTHER active
 branch of the company that reads it: saleable stock on hand for the key (MRP line: that MRP;

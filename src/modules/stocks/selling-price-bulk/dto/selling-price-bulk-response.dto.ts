@@ -206,10 +206,10 @@ export class SellingPriceListSuccessDto {
 
 /** P1 C5 — the other branches reading an All branches line: their stock cost, lowest – highest. */
 export class OtherBranchesStockCostDto {
-  @ApiProperty({ example: 448.5 })
+  @ApiProperty({ example: 448.5, description: 'The lowest other branch stock cost, WITH GST (as stockCost).' })
   low!: number;
 
-  @ApiProperty({ example: 470.4 })
+  @ApiProperty({ example: 470.4, description: 'The highest other branch stock cost, WITH GST (as stockCost).' })
   high!: number;
 
   @ApiProperty({ example: 'Counter2' })
@@ -269,12 +269,17 @@ export class SellingPriceLineRowDto extends OmitType(SellingPriceRowDto, ['level
     nullable: true,
     example: 452,
     description:
-      "This MRP's landing cost (MRP / NO_PRICE at an MRP), else the branch average, × unitFactor. " +
+      "This MRP's landing cost (MRP / NO_PRICE at an MRP), else the branch average, × unitFactor, " +
+      "WITH GST: stockCostWot × (1 + taxPerc ÷ 100), 6 dp — the footing of lineCost (2026-11-27). " +
       'Null when the branch has neither. Grey, never sent back.',
   })
   stockCost!: number | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'The same stock cost WITHOUT GST (what the lots and the branch average carry).',
+  })
   stockCostWot!: number | null;
 
   @ApiPropertyOptional({ enum: ['MRP', 'ITEM'], nullable: true })

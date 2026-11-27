@@ -6,13 +6,44 @@ import { toNumber } from 'src/common/utils/module-service.utils';
  * line, apart from the line's own cost (`ipm_cost_price`, the last purchase cost).
  *
  * The stock cost is what was paid HERE: on an MRP line that MRP's landing cost (its lots'
- * `sbl_avg_cost_rate`, weighted by what is on hand — notes 75 / 92), else the branch's moving
- * average (`stock_item_cost`), times the unit's `iuc_to_base_factor`. Null when the branch has
+ * `sbl_avg_cost_rate_wot`, weighted by what is on hand — notes 75 / 92), else the branch's moving
+ * average (`stock_item_cost`, its _wot), times the unit's `iuc_to_base_factor`. Null when the branch has
  * neither. It is never the price row's cost: that is the other half of A3's "higher of the two".
  *
  * Used by the grid's Stock cost column and its other-branches tip (C5), the every-branch
  * below-cost check of an All branches save (C6, O10), and — P4 — the item card's check.
+ *
+ * ONE FOOTING (CSP P2 follow-up, user "Go" 2026-11-27): the SQL here answers the stock cost
+ * WITHOUT GST only (`stockCostWot`): a purchase lot is costed on the ITC figure (its
+ * slt_cost_rate equals slt_cost_rate_wot, and so do the balance and branch averages built from
+ * it), so the stored "cost_rate" is not a with-GST figure and is not read. The with-GST stock
+ * cost (`stockCost`) is ALWAYS `stockCostWithGst` below, the line cost's own rule.
  */
+
+/**
+ * THE stock cost WITH GST — the one definition every reader of the stock cost uses (the save's
+ * row costs, the grid's Stock cost column and purchase-lines, the other branches C5 / C6):
+ * `stockCostWot` × (1 + the item's GST %), 6 decimals half up — decision 12 of the P2 plan, the
+ * rule the line's own cost is stored by (Cost = Cost Wot × (1 + GST %)). So A3-C compares the
+ * line's cost and the stock cost on one footing. `taxPerc` is the item's GST % as the line uses
+ * it (resolveItemTaxRates, as of the line's day). Null = no stock cost (none, or not above 0).
+ */
+export function stockCostWithGst(
+  stockCostWot: Prisma.Decimal.Value | null | undefined,
+  taxPerc: Prisma.Decimal.Value,
+): number | null {
+  if (stockCostWot === null || stockCostWot === undefined) {
+    return null;
+  }
+  const wot = new Prisma.Decimal(stockCostWot);
+  if (!wot.greaterThan(0)) {
+    return null;
+  }
+  return wot
+    .plus(wot.times(taxPerc).dividedBy(100))
+    .toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP)
+    .toNumber();
+}
 
 /**
  * One MRP's lot cost at one branch, per BASE unit, as a LATERAL subquery body:
@@ -59,7 +90,8 @@ export function mrpLotCostLateral(a: {
  * The stock-cost columns from the aliases a statement joined: `mc` = the MRP lot cost (only
  * for an MRP key), `sic` = stock_item_cost, `factor` = the unit's iuc_to_base_factor, `mrpKey`
  * = the SQL predicate "this line is keyed on an MRP". Unlike the old `costColumns` there is no
- * price-row fallback: no stock cost is NULL.
+ * price-row fallback: no stock cost is NULL. `wot` is the stock cost WITHOUT GST per one of the
+ * unit; there is no with-GST column (2026-11-27): the caller makes it with `stockCostWithGst`.
  *
  * U2 (user 2026-11-24): an MRP line takes ONLY that MRP's lot cost. With no lot of the MRP at
  * the branch it has NO stock cost (the item's branch average mixes the other MRPs' lots, e.g.
@@ -76,25 +108,20 @@ export function stockCostColumns(a: {
   /** S7 (user 2026-11-24): true = the line has NO stock cost — an MRP item's main line ("other MRPs"). */
   none?: string;
 }): {
-  rate: Prisma.Sql;
   wot: Prisma.Sql;
   basis: Prisma.Sql;
 } {
-  const mrpRate = `NULLIF(${a.mc}.cost_rate, 0)`;
-  const itemRate = `NULLIF(${a.sic}.sic_avg_cost_rate, 0)`;
+  const mrpWot = `NULLIF(${a.mc}.cost_rate_wot, 0)`;
+  const itemWot = `NULLIF(${a.sic}.sic_avg_cost_rate_wot, 0)`;
   const onMrp = `COALESCE((${a.mrpKey}), false)`;
   const none = a.none ? `WHEN COALESCE((${a.none}), false) THEN NULL ` : '';
   return {
-    rate: Prisma.raw(
-      `CASE ${none}WHEN ${onMrp} THEN ${mrpRate} * ${a.factor} ELSE ${itemRate} * ${a.factor} END`,
-    ),
     wot: Prisma.raw(
-      `CASE ${none}WHEN ${onMrp} THEN CASE WHEN ${mrpRate} IS NOT NULL THEN COALESCE(${a.mc}.cost_rate_wot, 0) * ${a.factor} END` +
-        ` WHEN ${itemRate} IS NOT NULL THEN COALESCE(${a.sic}.sic_avg_cost_rate_wot, 0) * ${a.factor} END`,
+      `CASE ${none}WHEN ${onMrp} THEN ${mrpWot} * ${a.factor} ELSE ${itemWot} * ${a.factor} END`,
     ),
     basis: Prisma.raw(
-      `CASE ${none}WHEN ${onMrp} THEN CASE WHEN ${mrpRate} IS NOT NULL THEN 'MRP' END` +
-        ` WHEN ${itemRate} IS NOT NULL THEN 'ITEM' END`,
+      `CASE ${none}WHEN ${onMrp} THEN CASE WHEN ${mrpWot} IS NOT NULL THEN 'MRP' END` +
+        ` WHEN ${itemWot} IS NOT NULL THEN 'ITEM' END`,
     ),
   };
 }
@@ -105,6 +132,8 @@ export interface StockCostProbe {
   uomId: string;
   mrp: number | null;
   salePrice: number | null;
+  /** The item's GST % as the line uses it: the other branches' stock cost is made WITH it (stockCostWithGst). */
+  taxPerc: number;
 }
 
 /** One other branch that reads a line and has a stock cost for it. */
@@ -114,8 +143,9 @@ export interface BranchStockCost {
   branchName: string;
   /** On hand at that branch for the key, in the line's unit. */
   stockQty: number;
-  /** Per one of the line's unit, tax inclusive. */
+  /** Per one of the line's unit, WITH GST: stockCostWithGst(stockCostWot, the probe's taxPerc). */
   stockCost: number;
+  /** Per one of the line's unit, without GST (what the lots / the branch average carry). */
   stockCostWot: number;
   basis: 'MRP' | 'ITEM';
 }
@@ -150,7 +180,6 @@ export const StockCostReader = {
         branchId: string;
         branchName: string;
         stockQty: Prisma.Decimal | null;
-        stockCost: Prisma.Decimal | null;
         stockCostWot: Prisma.Decimal | null;
         basis: 'MRP' | 'ITEM' | null;
       }>
@@ -183,7 +212,6 @@ export const StockCostReader = {
              p.br_id    AS "branchId",
              p.br_label AS "branchName",
              st.qty / NULLIF(p.factor, 0) AS "stockQty",
-             ${cost.rate}  AS "stockCost",
              ${cost.wot}   AS "stockCostWot",
              ${cost.basis} AS "basis"
         FROM p
@@ -225,8 +253,9 @@ export const StockCostReader = {
     `;
     const out: BranchStockCost[][] = args.probes.map(() => []);
     for (const row of rows) {
-      const stockCost = row.stockCost === null ? 0 : toNumber(row.stockCost);
-      if (!(stockCost > 0) || row.basis === null) {
+      const probe = args.probes[Number(row.ord) - 1];
+      const stockCost = probe ? stockCostWithGst(row.stockCostWot, probe.taxPerc) : null;
+      if (stockCost === null || row.basis === null) {
         continue;
       }
       out[Number(row.ord) - 1]?.push({
