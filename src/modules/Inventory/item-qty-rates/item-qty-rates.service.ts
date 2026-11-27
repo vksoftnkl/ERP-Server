@@ -733,6 +733,9 @@ export class ItemQtyRatesService {
           })),
           args.companyId,
           args.branchId,
+          undefined,
+          // The stock-first cost WITH GST (2026-11-27, stockFirstCostRate) on the card's own tax.
+          new Map([[args.itemId, { taxPerc: args.basis.taxPerc.toNumber() }]]),
         )
       : [];
     const cards = new Map<string, { card: SlabCard; unitName: string | null }>();

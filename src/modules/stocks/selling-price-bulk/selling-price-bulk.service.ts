@@ -25,7 +25,7 @@ import { SaveSellingPriceBulkDto, SaveSellingPriceRowDto } from './dto/save-sell
 import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-policy.helper';
 import { exclusiveOfTax, markupReproduces, recomputeLevel } from './selling-price-math.helper';
 import { resolveTargetScope, type ScopeResolution } from './selling-price-scope.helper';
-import { stockCostWithGst } from './stock-cost.reader';
+import { stockCostWithGst, stockFirstCostRate } from './stock-cost.reader';
 import {
   PriceBucketGateway,
   priceKeyLockId,
@@ -114,6 +114,12 @@ export interface PreparedBulkSave {
   scheduledFrom: string | undefined;
   /** Per row, in dto.rows order. */
   costs: RowCost[];
+  /**
+   * The items' tax as of the save's day (resolveItemTaxRates) — what the candidates and the
+   * stock-first cost were made with; writeBulkInTx reads the costs back with it. Absent (a
+   * prepared save built by hand): loadRowCosts resolves it.
+   */
+  taxRates?: ReadonlyMap<string, ItemTaxRate>;
   candidates: PriceCandidateWrite[];
   resolutions: ScopeResolution[];
   /** Everything Q26 said (below cost included). */
@@ -524,6 +530,7 @@ export class SellingPriceBulkService {
       dto.companyId,
       dto.branchId,
       scheduledFrom,
+      taxRates,
     );
     this.assertUnitsBelong(dto.rows, costs);
 
@@ -605,6 +612,7 @@ export class SellingPriceBulkService {
       from,
       scheduledFrom,
       costs,
+      taxRates,
       candidates,
       resolutions,
       problems,
@@ -680,7 +688,8 @@ export class SellingPriceBulkService {
     }
     const ipmIds = applied.map((row) => row.ipmId);
     // Notes 147 B — what each row's cost reads as now, by the grid's rule,
-    // so the popup shows it without a reload.
+    // so the popup shows it without a reload (2026-11-27: on a stock basis WITH GST, the
+    // save's own tax — stockFirstCostRate).
     const shown = await this.gateway.loadRowCosts(
       tx,
       dto.rows.map((row) => ({
@@ -692,6 +701,7 @@ export class SellingPriceBulkService {
       dto.companyId,
       dto.branchId,
       scheduledFrom,
+      prepared.taxRates,
     );
 
     const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
@@ -875,7 +885,7 @@ export class SellingPriceBulkService {
           bucketId: record.previous.bucketId,
           priceScope: record.previous.priceScope,
           levels: PRICE_LEVELS.map((level) =>
-            recomputeLevel(level, record.previous!.prices[level - 1], row.taxPerc, record.costRate),
+            recomputeLevel(level, record.previous!.prices[level - 1], row.taxPerc, row.costRate),
           ),
         },
       };
@@ -1599,7 +1609,9 @@ export class SellingPriceBulkService {
     // Review S1 / S8 (user 2026-11-24) — menu 30 / Ctrl+R: no cost sent and no cost of its own →
     // the stock cost above, else NOTHING (0). Never the old stock-first figure, which fell back to
     // the branch average for an MRP with no lot and to another line's cost. Menu 244 and purchases
-    // store what they stored before (P2 / P4 move those writes).
+    // store what they stored before (P2 / P4 move those writes): the stock-first cost, which is on
+    // the same footing since 2026-11-27 (cost.costRate WITH GST — stockFirstCostRate — and
+    // cost.costWot without it, from the same source).
     const fromStock = keyedCost === null && lineCost === null && ctx?.keepLineCost === true;
     const costRate = keyedCost ?? lineCost ?? (fromStock ? (stockCost ?? 0) : cost.costRate);
     const costWot = kept
@@ -1741,13 +1753,18 @@ export class SellingPriceBulkService {
     );
   }
 
-  /** One grid row: the gateway's record plus tax and the four-number levels. */
+  /**
+   * One grid row: the gateway's record plus tax and the four-number levels. 2026-11-27 — the
+   * stock-first costRate is made HERE for every list reader (the grid, F12, the schedule, the
+   * P1 lines): on a stock basis stockCostWithGst(costWot, the row's tax), else the row's own.
+   */
   private toGridRow(
     record: PriceGridRecord,
     lineNo: number,
     tax: ItemTaxRate | undefined,
   ): SellingPriceRow {
     const taxPerc = tax?.taxPerc ?? 0;
+    const costRate = stockFirstCostRate(record, taxPerc);
     return {
       lineNo,
       itemId: record.itemId,
@@ -1763,7 +1780,7 @@ export class SellingPriceBulkService {
       priceSource: record.priceSource,
       priceScope: record.priceScope,
       bucketId: record.bucketId,
-      costRate: record.costRate,
+      costRate,
       costWot: record.costWot,
       costBasis: record.costBasis,
       minPrice: record.minPrice,
@@ -1772,7 +1789,7 @@ export class SellingPriceBulkService {
       inclTax: tax?.inclTax ?? false,
       hasCess: tax?.hasCess ?? false,
       levels: PRICE_LEVELS.map((level) =>
-        recomputeLevel(level, record.prices[level - 1], taxPerc, record.costRate),
+        recomputeLevel(level, record.prices[level - 1], taxPerc, costRate),
       ),
     };
   }

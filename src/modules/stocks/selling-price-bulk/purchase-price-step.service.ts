@@ -1029,6 +1029,8 @@ export class PurchasePriceStepService {
         [{ itemId: rowDto.itemId, uomId: rowDto.uomId, mrp: rowDto.mrp, salePrice: rowDto.salePrice }],
         bill.companyId,
         bill.branchId,
+        undefined,
+        taxRates,
       );
       const resolution = resolutions.get(target)!;
       const keyed = { costRate: n6(target.cost), costWot: n6(target.costWot) };

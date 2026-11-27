@@ -460,7 +460,11 @@ describe('SellingPriceBulkService', () => {
         BRANCH_ID,
         // Starts today: no scheduled day to cost as of (notes 140 A).
         undefined,
+        // 2026-11-27 — the save's own tax, so the stock-first cost is made WITH GST on it.
+        expect.any(Map),
       );
+      const taxes = gateway.loadRowCosts.mock.calls[0][5] as Map<string, { taxPerc: number }>;
+      expect(taxes.get(BUCKET_ITEM)?.taxPerc).toBe(TAX_PERC);
       // S2 / S3 store the cost the row was priced against.
       expect(writer.insertBucketPrice.mock.calls[0][1]).toMatchObject({ costRate: COST });
     });
@@ -1057,7 +1061,10 @@ describe('SellingPriceBulkService', () => {
 
   // ── §3 / §4 the grid and the bucket list ─────────────────────────────────
   describe('the grid rows — §3, §4', () => {
-    /** A Q25 row as the gateway answers it: MRP 120 stock, priced 118 at level A. */
+    /**
+     * A Q25 row as the gateway answers it: MRP 120 stock, priced 118 at level A. On a stock
+     * basis the gateway answers costRate 0 (2026-11-27): the service makes it from costWot.
+     */
     const record = (overrides: Record<string, unknown> = {}) => ({
       itemId: BUCKET_ITEM,
       itemCode: 'SALT',
@@ -1072,7 +1079,7 @@ describe('SellingPriceBulkService', () => {
       priceSource: 'BUCKET',
       priceScope: 'BRANCH',
       bucketId: IPM_ID,
-      costRate: COST,
+      costRate: 0,
       costWot: 80.508475,
       costBasis: 'MRP',
       minPrice: 100,
@@ -1080,6 +1087,8 @@ describe('SellingPriceBulkService', () => {
       prices: [PRICE, 0, 0, 0],
       ...overrides,
     });
+    /** stockCostWithGst(80.508475, 18): 80.508475 × 1.18 = 95.0000005 → 6 dp half up. */
+    const STOCK_COST = 95.000001;
 
     beforeEach(() => {
       // The grid resolves tax outside any transaction, on the service's own client.
@@ -1163,7 +1172,8 @@ describe('SellingPriceBulkService', () => {
         priceSource: 'BUCKET',
         priceScope: 'BRANCH',
         bucketId: IPM_ID,
-        costRate: COST,
+        // 2026-11-27 — the stock-first cost on one footing: costWot × (1 + GST %), 6 dp.
+        costRate: STOCK_COST,
         costWot: 80.508475,
         costBasis: 'MRP',
         minPrice: 100,
@@ -1172,13 +1182,36 @@ describe('SellingPriceBulkService', () => {
         inclTax: true,
         hasCess: false,
         levels: [
-          recomputeLevel(1, PRICE, TAX_PERC, COST),
-          recomputeLevel(2, 0, TAX_PERC, COST),
-          recomputeLevel(3, 0, TAX_PERC, COST),
-          recomputeLevel(4, 0, TAX_PERC, COST),
+          recomputeLevel(1, PRICE, TAX_PERC, STOCK_COST),
+          recomputeLevel(2, 0, TAX_PERC, STOCK_COST),
+          recomputeLevel(3, 0, TAX_PERC, STOCK_COST),
+          recomputeLevel(4, 0, TAX_PERC, STOCK_COST),
         ],
       });
       expect(page.items[0].levels[0]).toMatchObject({ price: 118, priceWot: 100 });
+    });
+
+    it('2026-11-27 — a stock basis costs WITH GST from costWot (never a stored cost_rate); PRICE_ROW keeps the row cost', async () => {
+      gateway.listPrices.mockResolvedValue({
+        items: [
+          // A purchased lot: the stored cost_rate was the ITC figure (= wot); the gateway sends 0.
+          record({ costBasis: 'ITEM', costRate: 0, costWot: 100 }),
+          // The answering row's own cost, as stored (with GST), whatever its wot.
+          record({ costBasis: 'PRICE_ROW', costRate: 95, costWot: 80.5 }),
+          record({ costBasis: null, costRate: 0, costWot: 0 }),
+        ],
+        meta: { limit: 200, offset: 0, count: 3 },
+      });
+
+      const page = await service.listPrices({ companyId: COMPANY_ID, branchId: BRANCH_ID });
+
+      expect(page.items.map((row) => [row.costBasis, row.costRate, row.costWot])).toEqual([
+        ['ITEM', 118, 100],
+        ['PRICE_ROW', 95, 80.5],
+        [null, 0, 0],
+      ]);
+      // The markups are against that cost: 118 on a 118 cost is 0 %.
+      expect(page.items[0].levels[0]).toMatchObject({ price: 118, markupPerc: 0, marginPerc: 0 });
     });
 
     it('answers 0% tax, exclusive and no cess for an item the tax resolver does not know', async () => {

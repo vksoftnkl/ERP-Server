@@ -123,9 +123,11 @@ export class SellingPriceRowDto {
   @ApiProperty({
     example: 95,
     description:
-      "Cost of one of this row's unit: for an MRP-tracked item's MRP bucket, the inward cost of " +
-      "that MRP's stock at the branch, weighted by what is on hand (notes 75); otherwise the " +
-      'branch moving average, else the price row’s stored cost.',
+      "Cost of one of this row's unit, WITH GST: for an MRP-tracked item's MRP bucket, the inward " +
+      "cost of that MRP's stock at the branch, weighted by what is on hand (notes 75); otherwise " +
+      'the branch moving average — on both, costWot × (1 + the item’s GST %), 6 dp (2026-11-27, ' +
+      'the line cost’s footing; the lots’ stored cost_rate is not read) — else the price row’s ' +
+      'stored cost.',
   })
   costRate!: number;
 
@@ -572,8 +574,8 @@ export class SellingPriceSavedRowDto {
     example: 1385,
     description:
       "Notes 147 B — the cost to show now, by the grid rule: this MRP's stock, else the " +
-      "item's average, else the price row's own (a keyed costPrice shows here only while the " +
-      'item has no stock). One of this unit, tax inclusive.',
+      "item's average (each costWot × (1 + GST %), 2026-11-27), else the price row's own (a " +
+      'keyed costPrice shows here only while the item has no stock). One of this unit, tax inclusive.',
   })
   costRate!: number;
 

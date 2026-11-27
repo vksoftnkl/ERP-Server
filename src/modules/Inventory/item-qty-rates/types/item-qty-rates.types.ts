@@ -104,7 +104,10 @@ export interface QtyRatesUnit {
   costRate: number;
   costWot: number;
   costBasis: CostBasis | null;
-  /** costRate when it is a stock figure (costBasis ITEM / MRP), else null. Shown, never written. */
+  /**
+   * costRate when it is a stock figure (costBasis ITEM / MRP), else null: WITH GST, costWot ×
+   * (1 + GST %) (2026-11-27, stockFirstCostRate). Shown, never written.
+   */
   stockAvg: number | null;
   /** The answering row's own ipm_cost_price / ipm_cost_wot; null with no row. */
   rowCost: number | null;

@@ -46,6 +46,25 @@ export function stockCostWithGst(
 }
 
 /**
+ * The deprecated STOCK-FIRST cost (P0's costRate / costWot / costBasis, notes 75) on the same
+ * footing (CSP P2 follow-up, user "Go" 2026-11-27): on a stock basis (MRP = this MRP's lots,
+ * ITEM = the branch average) the cost is `stockCostWithGst(costWot, taxPerc)` — the stored
+ * lot / branch cost_rate is never read (a purchased lot's is WITHOUT GST, an opening lot's WITH
+ * it); on PRICE_ROW (or no basis) it is the answering row's own ipm_cost_price, as stored.
+ * The gateway's SQL answers `costRate` only for PRICE_ROW (null on a stock basis, so a reader
+ * that skips this helper shows 0, never a mixed figure). `taxPerc` is the item's GST % as the
+ * row uses it (resolveItemTaxRates, as of the row's day).
+ */
+export function stockFirstCostRate(
+  cost: { costRate: number; costWot: number; costBasis: 'MRP' | 'ITEM' | 'PRICE_ROW' | null },
+  taxPerc: Prisma.Decimal.Value,
+): number {
+  return cost.costBasis === 'MRP' || cost.costBasis === 'ITEM'
+    ? (stockCostWithGst(cost.costWot, taxPerc) ?? 0)
+    : cost.costRate;
+}
+
+/**
  * One MRP's lot cost at one branch, per BASE unit, as a LATERAL subquery body:
  * `(…) alias` yields `cost_rate`, `cost_rate_wot`, and no row when no lot carries the MRP.
  * Σ value ÷ Σ qty over the lots with stock on hand; with nothing on hand the plain average
@@ -97,6 +116,8 @@ export function mrpLotCostLateral(a: {
  * the branch it has NO stock cost (the item's branch average mixes the other MRPs' lots, e.g.
  * 341.67 from lots at 25 and 500), so below cost is judged on the line's own cost alone and
  * the Stock cost column is blank. The branch average is for a line that is not keyed on an MRP.
+ * (The deprecated stock-first `costColumns` in price-bucket.gateway.ts still falls back to the
+ * branch average, then the price row: only its footing moved, see stockFirstCostRate.)
  * S7 (user 2026-11-24): an MRP item's main line ("other MRPs") has no stock cost at all — it prices
  * only the MRPs with no line of their own, and the branch average mixes every MRP's lots.
  */

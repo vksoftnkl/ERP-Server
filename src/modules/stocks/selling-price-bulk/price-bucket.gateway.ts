@@ -8,16 +8,19 @@ import {
   effectivePolicyLateral,
 } from '../stock-voucher/stock-voucher-posting.helper';
 import type { ScopeResolution } from './selling-price-scope.helper';
+import { resolveItemTaxRates } from '../../Inventory/utils/item-tax-rate.helper';
 import {
   StockCostReader,
   mrpLotCostLateral,
   stockCostColumns,
+  stockFirstCostRate,
   type BranchStockCost,
   type StockCostProbe,
 } from './stock-cost.reader';
 import {
   type BelowCostRule,
   type CostBasis,
+  type ItemTaxRate,
   type PagedResult,
   type PriceLevel,
   type PriceLineKind,
@@ -148,6 +151,10 @@ export interface PriceGridRecord {
   priceScope: PriceScope | null;
   /** The ipm_id that answered, null when none did. */
   bucketId: string | null;
+  /**
+   * PRICE_ROW (or no basis): the answering row's ipm_cost_price. On a stock basis (MRP / ITEM)
+   * 0 here: SellingPriceBulkService.toGridRow makes it with stockFirstCostRate and the item's tax.
+   */
   costRate: number;
   /** costRate without tax, from the same source — exact for an item with cess (notes 76). */
   costWot: number;
@@ -234,7 +241,11 @@ export interface RowCost {
   /** Whether the item's policy tracks MRP / sale price at this scope. */
   trackMrp: boolean;
   trackSalePrice: boolean;
-  /** Tax-inclusive cost of ONE of this unit: branch average (stock_item_cost), else the resolved row's. */
+  /**
+   * Tax-inclusive cost of ONE of this unit, stock first: this MRP's lots, else the branch average
+   * (stock_item_cost), each WITH GST by stockFirstCostRate (2026-11-27), else the resolved row's
+   * own ipm_cost_price. costWot is the same source without GST.
+   */
   costRate: number;
   costWot: number;
   /** Which figure costRate is (notes 75) — read back after a save (notes 147 B). */
@@ -482,16 +493,18 @@ function effectivePriceLateral(args: {
  * now there is one. No lot at that MRP → no row, and the caller falls back to
  * the item average.
  *
- * Exposes the CTE `mrp_cost(item_id, mrp, cost_rate, cost_rate_wot)`, per BASE
- * unit. `pairs` yields the DISTINCT (item_id, mrp) to cost, mrp not null — one
- * probe per item × MRP, however many unit rows join back to it.
+ * Exposes the CTE `mrp_cost(item_id, mrp, cost_rate_wot)`, per BASE
+ * unit — the cost WITHOUT GST only (2026-11-27, one footing: the with-GST
+ * figure is stockFirstCostRate's, never the lots' stored cost_rate). `pairs`
+ * yields the DISTINCT (item_id, mrp) to cost, mrp not null — one probe per
+ * item × MRP, however many unit rows join back to it.
  */
 function mrpCostCte(args: { companyId: string; branchId: string; pairs: Prisma.Sql }): Prisma.Sql {
   // The lateral body is StockCostReader's (stock-cost.reader.ts): one definition of a lot's
   // cost for the branch on screen and for the other branches (P1 C5 / C6).
   return Prisma.sql`
     mrp_cost AS (
-      SELECT k.item_id, k.mrp, mc.cost_rate, mc.cost_rate_wot
+      SELECT k.item_id, k.mrp, mc.cost_rate_wot
         FROM (${args.pairs}) k
         LEFT JOIN LATERAL ${mrpLotCostLateral({
           companyId: Prisma.sql`${args.companyId}::uuid`,
@@ -508,27 +521,34 @@ function mrpCostCte(args: { companyId: string; branchId: string; pairs: Prisma.S
  * `mc` = mrp_cost (only joined for an MRP-tracked bucket with an MRP), `sic` =
  * stock_item_cost, `p` = the answering price row, `factor` = the unit's
  * iuc_to_base_factor. The MRP's own cost first, else the branch average, else
- * the price row's stored cost — the last two exactly as before. costWot comes
- * from the SAME source as costRate, never a mix of the two.
+ * the price row's stored cost.
+ *
+ * ONE FOOTING (CSP P2 follow-up, user "Go" 2026-11-27): a stock basis (MRP / ITEM) is decided
+ * and answered on the cost WITHOUT GST only (`wot`, above 0); the stored lot / branch
+ * `cost_rate` is never read — it is without GST for a purchased lot (ITC) and with GST for an
+ * opening one. `rate` is answered for PRICE_ROW only (ipm_cost_price, as stored) and is NULL on
+ * a stock basis: the caller makes it with stockFirstCostRate (stockCostWithGst and the item's
+ * tax) — loadRowCosts does, and SellingPriceBulkService.toGridRow for the list readers.
  */
 function costColumns(a: { mc: string; sic: string; p: string; factor: string }): {
   rate: Prisma.Sql;
   wot: Prisma.Sql;
   basis: Prisma.Sql;
 } {
-  const mrpRate = `NULLIF(${a.mc}.cost_rate, 0)`;
-  const itemRate = `NULLIF(${a.sic}.sic_avg_cost_rate, 0)`;
+  const onMrp = `${a.mc}.cost_rate_wot > 0`;
+  const onItem = `${a.sic}.sic_avg_cost_rate_wot > 0`;
   return {
     rate: Prisma.raw(
-      `COALESCE(${mrpRate} * ${a.factor}, ${itemRate} * ${a.factor}, ${a.p}.ipm_cost_price, 0)`,
+      `CASE WHEN ${onMrp} OR ${onItem} THEN NULL ELSE COALESCE(${a.p}.ipm_cost_price, 0) END`,
     ),
     wot: Prisma.raw(
-      `CASE WHEN ${mrpRate} IS NOT NULL THEN COALESCE(${a.mc}.cost_rate_wot, 0) * ${a.factor}` +
-        ` ELSE COALESCE(NULLIF(${a.sic}.sic_avg_cost_rate_wot, 0) * ${a.factor}, ${a.p}.ipm_cost_wot, 0) END`,
+      `CASE WHEN ${onMrp} THEN ${a.mc}.cost_rate_wot * ${a.factor}` +
+        ` WHEN ${onItem} THEN ${a.sic}.sic_avg_cost_rate_wot * ${a.factor}` +
+        ` ELSE COALESCE(${a.p}.ipm_cost_wot, 0) END`,
     ),
     basis: Prisma.raw(
-      `CASE WHEN ${mrpRate} IS NOT NULL THEN 'MRP'` +
-        ` WHEN ${itemRate} IS NOT NULL THEN 'ITEM'` +
+      `CASE WHEN ${onMrp} THEN 'MRP'` +
+        ` WHEN ${onItem} THEN 'ITEM'` +
         ` WHEN ${a.p}.ipm_cost_price IS NOT NULL THEN 'PRICE_ROW' END`,
     ),
   };
@@ -880,6 +900,11 @@ export class PriceBucketGateway {
    *
    * Notes 140 A — `onDate` (`YYYY-MM-DD`) reads the policy and the resolved row
    * as they will stand on the day a scheduled price starts; omitted is today.
+   *
+   * 2026-11-27 (one footing) — `costRate` on a stock basis (MRP / ITEM) is
+   * stockFirstCostRate: the cost without GST × (1 + the item's GST %). `taxRates`
+   * is the caller's resolveItemTaxRates (as of the save's day); absent, it is
+   * resolved here as of `onDate` (today when absent), in `tx`.
    */
   async loadRowCosts(
     tx: Prisma.TransactionClient,
@@ -892,6 +917,7 @@ export class PriceBucketGateway {
     companyId: string,
     branchId: string,
     onDate?: string,
+    taxRates?: ReadonlyMap<string, Pick<ItemTaxRate, 'taxPerc'>>,
   ): Promise<RowCost[]> {
     if (!rows.length) {
       return [];
@@ -1013,8 +1039,23 @@ export class PriceBucketGateway {
     const byOrd = new Map(found.map((row) => [Number(row.ord), row]));
     const orNull = (value: Prisma.Decimal | null | undefined) =>
       value === null || value === undefined ? null : toNumber(value);
-    return rows.map((_, index) => {
+    // The item's GST % for the stock-first cost (stockFirstCostRate), ids matched in any case.
+    const taxes =
+      taxRates ??
+      (await resolveItemTaxRates(
+        tx,
+        rows.map((row) => row.itemId),
+        onDate ? new Date(`${onDate}T00:00:00.000Z`) : undefined,
+      ));
+    const taxPercOf = new Map([...taxes].map(([itemId, tax]) => [itemId.toLowerCase(), tax.taxPerc]));
+    return rows.map((source, index) => {
       const row = byOrd.get(index + 1);
+      const costWot = row?.costWot ? toNumber(row.costWot) : 0;
+      const costBasis = row?.costBasis ?? null;
+      const costRate = stockFirstCostRate(
+        { costRate: row?.costRate ? toNumber(row.costRate) : 0, costWot, costBasis },
+        taxPercOf.get(source.itemId.toLowerCase()) ?? 0,
+      );
       return {
         unitName: row?.unitName ?? null,
         unitFactor: orNull(row?.unitFactor) ?? 1,
@@ -1028,9 +1069,9 @@ export class PriceBucketGateway {
         uomBelongs: row?.uomBelongs ?? false,
         trackMrp: row?.trackMrp ?? false,
         trackSalePrice: row?.trackSalePrice ?? false,
-        costRate: row?.costRate ? toNumber(row.costRate) : 0,
-        costWot: row?.costWot ? toNumber(row.costWot) : 0,
-        costBasis: row?.costBasis ?? null,
+        costRate,
+        costWot,
+        costBasis,
         minPrice: row?.minPrice ? toNumber(row.minPrice) : 0,
         ...(row?.hasPrice
           ? { prices: [row.priceA, row.priceB, row.priceC, row.priceD].map((v) => (v ? toNumber(v) : 0)) as [number, number, number, number] }

@@ -317,6 +317,8 @@ describe('PriceBucketGateway', () => {
         ],
         COMPANY_ID,
         BRANCH_ID,
+        undefined,
+        new Map(),
       );
 
       const values = statementOf(tx.$queryRaw).values;
@@ -350,7 +352,8 @@ describe('PriceBucketGateway', () => {
           uomBelongs: true,
           trackMrp: true,
           trackSalePrice: false,
-          costRate: dec('25.5'),
+          // A stock basis: the statement answers no costRate (2026-11-27), only the wot.
+          costRate: null,
           costWot: dec('21.610169'),
           costBasis: 'MRP',
           minPrice: dec(26),
@@ -358,7 +361,14 @@ describe('PriceBucketGateway', () => {
       ]);
       const row = { itemId: ITEM_ID, uomId: UOM_ID, mrp: 40, salePrice: null };
 
-      const costs = await gateway.loadRowCosts(txClient(), [row, row, row], COMPANY_ID, BRANCH_ID);
+      const costs = await gateway.loadRowCosts(
+        txClient(),
+        [row, row, row],
+        COMPANY_ID,
+        BRANCH_ID,
+        undefined,
+        new Map([[ITEM_ID, { taxPerc: 18 }]]),
+      );
 
       // P1 — the line's own cost and the stock cost apart, none in these rows.
       const p1 = {
@@ -378,7 +388,8 @@ describe('PriceBucketGateway', () => {
           uomBelongs: true,
           trackMrp: true,
           trackSalePrice: false,
-          costRate: 25.5,
+          // stockCostWithGst(21.610169, 18) = 25.49999942 → 25.499999 (6 dp half up).
+          costRate: 25.499999,
           costWot: 21.610169,
           costBasis: 'MRP',
           minPrice: 26,
@@ -408,6 +419,75 @@ describe('PriceBucketGateway', () => {
           minPrice: 0,
         },
       ]);
+    });
+    it('2026-11-27 — the stock-first cost on one footing: a stock basis WITH GST from the wot, PRICE_ROW as stored', async () => {
+      tx.$queryRaw.mockResolvedValue([
+        // A purchased lot of the item at 5 %: the stored cost_rate was the ITC figure (= wot).
+        { ord: 1n, itemName: 'Oil', uomBelongs: true, costRate: null, costWot: dec('1348.220004'), costBasis: 'ITEM', minPrice: null },
+        // The answering row's own cost: stored WITH GST, read as it is.
+        { ord: 2n, itemName: 'Oil', uomBelongs: true, costRate: dec('1260'), costWot: dec('1200'), costBasis: 'PRICE_ROW', minPrice: null },
+        // An item id in other case still finds its tax.
+        { ord: 3n, itemName: 'Salt', uomBelongs: true, costRate: null, costWot: dec(100), costBasis: 'MRP', minPrice: null },
+      ]);
+
+      const costs = await gateway.loadRowCosts(
+        txClient(),
+        [
+          { itemId: ITEM_ID, uomId: UOM_ID, mrp: null, salePrice: null },
+          { itemId: ITEM_ID, uomId: UOM_ID, mrp: null, salePrice: null },
+          { itemId: OTHER_ITEM_ID.toUpperCase(), uomId: UOM_ID, mrp: 40, salePrice: null },
+        ],
+        COMPANY_ID,
+        BRANCH_ID,
+        undefined,
+        new Map([
+          [ITEM_ID, { taxPerc: 5 }],
+          [OTHER_ITEM_ID, { taxPerc: 18 }],
+        ]),
+      );
+
+      expect(costs.map((c) => [c.costBasis, c.costRate, c.costWot])).toEqual([
+        ['ITEM', 1415.631004, 1348.220004],
+        ['PRICE_ROW', 1260, 1200],
+        ['MRP', 118, 100],
+      ]);
+      // The basis is decided on the cost WITHOUT GST; the stored lot / branch cost_rate is not read.
+      const sql = statementOf(tx.$queryRaw).sql;
+      expect(sql).toContain('mc.cost_rate_wot > 0');
+      expect(sql).toContain('sic.sic_avg_cost_rate_wot > 0');
+      expect(sql).not.toMatch(/sic_avg_cost_rate(?!_wot)/);
+      expect(sql).not.toMatch(/mc\.cost_rate(?!_wot)/);
+    });
+
+    it('resolves the tax itself, as of the day asked, when the caller sends none', async () => {
+      const findItems = jest.fn().mockResolvedValue([
+        { itemId: ITEM_ID, itemDefaultTaxId: 'tax-12', itemInclTax: true },
+      ]);
+      const findHistory = jest.fn().mockResolvedValue([]);
+      const findTaxes = jest.fn().mockResolvedValue([
+        { taxId: 'tax-12', taxRatePerc: dec(12), taxCessBasis: 'NONE', taxAcessBasis: 'NONE' },
+      ]);
+      Object.assign(tx, {
+        itemMaster: { findMany: findItems },
+        itemTaxHistory: { findMany: findHistory },
+        taxRateMaster: { findMany: findTaxes },
+      });
+      tx.$queryRaw.mockResolvedValue([
+        { ord: 1n, itemName: 'Salt', uomBelongs: true, costRate: null, costWot: dec(50), costBasis: 'ITEM', minPrice: null },
+      ]);
+
+      const [cost] = await gateway.loadRowCosts(
+        txClient(),
+        [{ itemId: ITEM_ID, uomId: UOM_ID, mrp: null, salePrice: null }],
+        COMPANY_ID,
+        BRANCH_ID,
+        '2026-12-01',
+      );
+
+      expect(cost).toMatchObject({ costBasis: 'ITEM', costRate: 56, costWot: 50 });
+      // item_tax_history is read as of the scheduled day (UTC midnight of 2026-12-01).
+      const where = findHistory.mock.calls[0][0].where as { ithEffectiveFrom: { lte: Date } };
+      expect(where.ithEffectiveFrom.lte.toISOString()).toBe('2026-12-01T00:00:00.000Z');
     });
   });
 

@@ -1,4 +1,4 @@
-import { stockCostColumns, stockCostWithGst } from './stock-cost.reader';
+import { stockCostColumns, stockCostWithGst, stockFirstCostRate } from './stock-cost.reader';
 
 /** Review NIT 10 — the U2 / S7 rules live in SQL text; these pin the CASE they build. */
 describe('stockCostColumns', () => {
@@ -49,5 +49,23 @@ describe('stockCostWithGst', () => {
     expect(stockCostWithGst(undefined, 5)).toBeNull();
     expect(stockCostWithGst(0, 5)).toBeNull();
     expect(stockCostWithGst(-3, 5)).toBeNull();
+  });
+});
+
+/** CSP P2 follow-up (user "Go" 2026-11-27) — the deprecated stock-first cost on the same footing. */
+describe('stockFirstCostRate', () => {
+  it('on a stock basis (MRP / ITEM) is stockCostWithGst of the wot — a costRate sent beside it is not read', () => {
+    // A purchased lot: the stored cost_rate (1,348.220004) was the ITC figure, = wot.
+    expect(stockFirstCostRate({ costRate: 1348.220004, costWot: 1348.220004, costBasis: 'ITEM' }, 5)).toBe(1415.631004);
+    expect(stockFirstCostRate({ costRate: 0, costWot: 100, costBasis: 'MRP' }, 18)).toBe(118);
+    // An opening lot (wot = rate ÷ 1.05): unchanged within a millionth.
+    expect(stockFirstCostRate({ costRate: 105, costWot: 100, costBasis: 'MRP' }, 5)).toBe(105);
+    // A stock basis whose wot is not above 0 has no cost.
+    expect(stockFirstCostRate({ costRate: 9, costWot: 0, costBasis: 'ITEM' }, 5)).toBe(0);
+  });
+
+  it('on PRICE_ROW (or no basis) is the row cost as stored', () => {
+    expect(stockFirstCostRate({ costRate: 1260, costWot: 1200, costBasis: 'PRICE_ROW' }, 5)).toBe(1260);
+    expect(stockFirstCostRate({ costRate: 0, costWot: 0, costBasis: null }, 5)).toBe(0);
   });
 });
